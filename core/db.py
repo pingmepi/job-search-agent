@@ -51,11 +51,32 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 
+RUNS_MIGRATIONS: dict[str, str] = {
+    "input_mode": "TEXT",
+    "skip_upload": "INTEGER",
+    "skip_calendar": "INTEGER",
+    "error_count": "INTEGER",
+    "errors_json": "TEXT",
+    "context_json": "TEXT",
+}
+
 
 # ── Helpers ───────────────────────────────────────────────────────
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row[1] for row in rows}
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    runs_columns = _table_columns(conn, "runs")
+    for column, sql_type in RUNS_MIGRATIONS.items():
+        if column not in runs_columns:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {column} {sql_type}")
 
 
 def init_db(db_path: Path | None = None) -> Path:
@@ -65,6 +86,7 @@ def init_db(db_path: Path | None = None) -> Path:
     with sqlite3.connect(str(path)) as conn:
         conn.execute(JOBS_DDL)
         conn.execute(RUNS_DDL)
+        _apply_migrations(conn)
     return path
 
 
@@ -72,6 +94,7 @@ def init_db(db_path: Path | None = None) -> Path:
 def get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None, None]:
     """Yield a connection with row_factory set to sqlite3.Row."""
     path = db_path or get_settings().db_path
+    init_db(path)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     try:
@@ -161,14 +184,22 @@ def complete_run(
     tokens_used: int | None = None,
     cost_estimate: float | None = None,
     latency_ms: int | None = None,
+    input_mode: str | None = None,
+    skip_upload: bool | None = None,
+    skip_calendar: bool | None = None,
+    errors: list[str] | None = None,
+    context: dict[str, Any] | None = None,
     db_path: Path | None = None,
 ) -> None:
     """Mark a run as completed with eval results."""
+    error_count = len(errors) if errors else 0
     with get_conn(db_path) as conn:
         conn.execute(
             """UPDATE runs
                SET status = ?, eval_results = ?, tokens_used = ?,
-                   cost_estimate = ?, latency_ms = ?, completed_at = ?
+                   cost_estimate = ?, latency_ms = ?, input_mode = ?,
+                   skip_upload = ?, skip_calendar = ?, error_count = ?,
+                   errors_json = ?, context_json = ?, completed_at = ?
                WHERE run_id = ?""",
             (
                 status,
@@ -176,6 +207,12 @@ def complete_run(
                 tokens_used,
                 cost_estimate,
                 latency_ms,
+                input_mode,
+                int(skip_upload) if skip_upload is not None else None,
+                int(skip_calendar) if skip_calendar is not None else None,
+                error_count,
+                json.dumps(errors) if errors is not None else None,
+                json.dumps(context) if context is not None else None,
                 _now_iso(),
                 run_id,
             ),
@@ -190,5 +227,49 @@ def get_run(run_id: str, *, db_path: Path | None = None) -> dict[str, Any] | Non
             d = dict(row)
             if d.get("eval_results"):
                 d["eval_results"] = json.loads(d["eval_results"])
+            if d.get("errors_json"):
+                d["errors"] = json.loads(d["errors_json"])
+            if d.get("context_json"):
+                d["context"] = json.loads(d["context_json"])
             return d
         return None
+
+
+def get_db_stats(*, db_path: Path | None = None) -> dict[str, Any]:
+    """Return a lightweight summary of persisted jobs/runs for quick debugging."""
+    with get_conn(db_path) as conn:
+        jobs_row = conn.execute(
+            """SELECT
+                   COUNT(*) AS total_jobs,
+                   SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_jobs,
+                   SUM(CASE WHEN follow_up_count = 0 THEN 1 ELSE 0 END) AS follow_up_zero,
+                   SUM(CASE WHEN fit_score IS NULL THEN 1 ELSE 0 END) AS fit_score_nulls,
+                   SUM(CASE WHEN drive_link IS NULL OR drive_link = '' THEN 1 ELSE 0 END) AS drive_link_empty
+               FROM jobs"""
+        ).fetchone()
+        runs_row = conn.execute(
+            """SELECT
+                   COUNT(*) AS total_runs,
+                   SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_runs,
+                   SUM(CASE WHEN tokens_used IS NULL THEN 1 ELSE 0 END) AS tokens_nulls,
+                   SUM(CASE WHEN latency_ms IS NULL THEN 1 ELSE 0 END) AS latency_nulls,
+                   SUM(CASE WHEN error_count > 0 THEN 1 ELSE 0 END) AS runs_with_errors
+               FROM runs"""
+        ).fetchone()
+        compile_row = conn.execute(
+            """SELECT
+                   SUM(CASE WHEN json_extract(eval_results, '$.compile_success') = 1 THEN 1 ELSE 0 END) AS compile_successes,
+                   SUM(CASE WHEN json_extract(eval_results, '$.compile_success') = 0 THEN 1 ELSE 0 END) AS compile_failures
+               FROM runs
+               WHERE eval_results IS NOT NULL"""
+        ).fetchone()
+
+    jobs = dict(jobs_row) if jobs_row else {}
+    runs = dict(runs_row) if runs_row else {}
+    compile_stats = dict(compile_row) if compile_row else {}
+    return {
+        "db_path": str(db_path or get_settings().db_path),
+        "jobs": jobs,
+        "runs": runs,
+        "compile": compile_stats,
+    }

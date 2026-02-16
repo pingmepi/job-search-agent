@@ -103,6 +103,8 @@ def run_pipeline(
     start_time = time.time()
     total_tokens = 0
     total_cost = 0.0
+    is_url_input = bool(re.search(r"https?://", raw_text)) if raw_text else False
+    input_mode = "image" if image_path else ("url" if is_url_input else "text")
 
     # Ensure DB exists
     init_db()
@@ -290,6 +292,18 @@ def run_pipeline(
     pack.eval_results = eval_results
 
     try:
+        run_context = {
+            "company": jd.company,
+            "role": jd.role,
+            "jd_hash": jd.jd_hash,
+            "resume_base": pack.resume_base,
+            "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
+            "drive_link": pack.drive_link,
+            "skip_upload": skip_upload,
+            "skip_calendar": skip_calendar,
+            "input_mode": input_mode,
+            "error_count": len(pack.errors),
+        }
         pack.run_id = log_run(
             "inbox",
             eval_results,
@@ -297,6 +311,11 @@ def run_pipeline(
             tokens_used=total_tokens,
             cost_estimate=total_cost,
             latency_ms=latency_ms,
+            input_mode=input_mode,
+            skip_upload=skip_upload,
+            skip_calendar=skip_calendar,
+            errors=pack.errors,
+            context=run_context,
         )
     except Exception as e:
         pack.errors.append(f"Eval logging failed: {e}")

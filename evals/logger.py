@@ -27,6 +27,11 @@ def log_run(
     tokens_used: int = 0,
     cost_estimate: float = 0.0,
     latency_ms: int = 0,
+    input_mode: str | None = None,
+    skip_upload: bool | None = None,
+    skip_calendar: bool | None = None,
+    errors: list[str] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> str:
     """
     Log a completed run to both SQLite and a JSON file in runs/.
@@ -45,6 +50,11 @@ def log_run(
         tokens_used=tokens_used,
         cost_estimate=cost_estimate,
         latency_ms=latency_ms,
+        input_mode=input_mode,
+        skip_upload=skip_upload,
+        skip_calendar=skip_calendar,
+        errors=errors,
+        context=context,
     )
 
     # ── JSON file ──────────────────────────────────────
@@ -59,6 +69,12 @@ def log_run(
         "tokens_used": tokens_used,
         "cost_estimate": cost_estimate,
         "latency_ms": latency_ms,
+        "input_mode": input_mode,
+        "skip_upload": skip_upload,
+        "skip_calendar": skip_calendar,
+        "errors": errors or [],
+        "error_count": len(errors or []),
+        "context": context or {},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

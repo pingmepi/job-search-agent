@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,18 @@ class TestSchema:
         # Calling init again should not raise
         init_db(db_path)
         assert db_path.exists()
+
+    def test_init_applies_run_migrations(self, db_path: Path):
+        with sqlite3.connect(str(db_path)) as conn:
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+            }
+        assert "input_mode" in columns
+        assert "skip_upload" in columns
+        assert "skip_calendar" in columns
+        assert "error_count" in columns
+        assert "errors_json" in columns
+        assert "context_json" in columns
 
 
 class TestJobsCRUD:
@@ -96,12 +109,23 @@ class TestRunsCRUD:
             tokens_used=1500,
             cost_estimate=0.03,
             latency_ms=2500,
+            input_mode="text",
+            skip_upload=True,
+            skip_calendar=False,
+            errors=["example error"],
+            context={"company": "Acme", "jd_hash": "abc123"},
             db_path=db_path,
         )
         run = get_run("run-001", db_path=db_path)
         assert run["status"] == "completed"
         assert run["eval_results"]["compile_success"] is True
         assert run["tokens_used"] == 1500
+        assert run["input_mode"] == "text"
+        assert run["skip_upload"] == 1
+        assert run["skip_calendar"] == 0
+        assert run["error_count"] == 1
+        assert run["errors"] == ["example error"]
+        assert run["context"]["company"] == "Acme"
 
     def test_get_nonexistent_run(self, db_path: Path):
         assert get_run("nope", db_path=db_path) is None
