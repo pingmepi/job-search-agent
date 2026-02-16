@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     drive_link      TEXT,
     status          TEXT    DEFAULT 'applied',
     follow_up_count INTEGER DEFAULT 0,
+    last_follow_up_at TEXT,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
 );
@@ -60,6 +61,10 @@ RUNS_MIGRATIONS: dict[str, str] = {
     "context_json": "TEXT",
 }
 
+JOBS_MIGRATIONS: dict[str, str] = {
+    "last_follow_up_at": "TEXT",
+}
+
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -73,6 +78,11 @@ def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
+    jobs_columns = _table_columns(conn, "jobs")
+    for column, sql_type in JOBS_MIGRATIONS.items():
+        if column not in jobs_columns:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {sql_type}")
+
     runs_columns = _table_columns(conn, "runs")
     for column, sql_type in RUNS_MIGRATIONS.items():
         if column not in runs_columns:

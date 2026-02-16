@@ -18,6 +18,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     """Immutable app-wide settings.  Instantiate once at startup."""
@@ -60,6 +67,12 @@ class Settings:
     )
     webhook_process_timeout_seconds: float = field(
         default_factory=lambda: float(os.environ.get("WEBHOOK_PROCESS_TIMEOUT_SECONDS", "10"))
+    )
+    telegram_enable_drive_upload: bool = field(
+        default_factory=lambda: _env_bool("TELEGRAM_ENABLE_DRIVE_UPLOAD", default=False)
+    )
+    telegram_enable_calendar_events: bool = field(
+        default_factory=lambda: _env_bool("TELEGRAM_ENABLE_CALENDAR_EVENTS", default=False)
     )
 
     # ── Google Cloud ──────────────────────────────────────────────

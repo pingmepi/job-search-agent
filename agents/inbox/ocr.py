@@ -71,6 +71,27 @@ def clean_ocr_text(raw_text: str) -> str:
     return response.text.strip()
 
 
+def clean_ocr_text_with_usage(raw_text: str) -> tuple[str, dict[str, float | int]]:
+    """
+    Clean OCR text and return usage for the cleanup call.
+    """
+    if not raw_text.strip():
+        return "", {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        }
+
+    response = chat_text(OCR_CLEANUP_PROMPT, raw_text)
+    return response.text.strip(), {
+        "prompt_tokens": response.prompt_tokens,
+        "completion_tokens": response.completion_tokens,
+        "total_tokens": response.total_tokens,
+        "cost_estimate": response.cost_estimate,
+    }
+
+
 # ── Full pipeline ─────────────────────────────────────────────────
 
 def ocr_pipeline(image_path: Path) -> str:
@@ -88,3 +109,12 @@ def ocr_pipeline(image_path: Path) -> str:
     raw = extract_text_from_image(image_path)
     cleaned = clean_ocr_text(raw)
     return cleaned
+
+
+def ocr_pipeline_with_usage(image_path: Path) -> tuple[str, dict[str, float | int]]:
+    """
+    Full OCR pipeline with LLM usage metadata.
+    """
+    raw = extract_text_from_image(image_path)
+    cleaned, usage = clean_ocr_text_with_usage(raw)
+    return cleaned, usage

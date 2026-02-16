@@ -127,6 +127,15 @@ def select_base_resume(
     resumes_dir: Path,
 ) -> Path:
     """Select the best-matching base resume by keyword overlap."""
+    best_path, _ = select_base_resume_with_score(jd_skills, resumes_dir)
+    return best_path
+
+
+def select_base_resume_with_score(
+    jd_skills: list[str],
+    resumes_dir: Path,
+) -> tuple[Path, float]:
+    """Select the best-matching base resume and return overlap score."""
     best_path: Optional[Path] = None
     best_score = -1.0
 
@@ -140,7 +149,7 @@ def select_base_resume(
     if best_path is None:
         raise FileNotFoundError(f"No master_*.tex files found in {resumes_dir}")
 
-    return best_path
+    return best_path, best_score
 
 
 # ── Compilation ───────────────────────────────────────────────────
