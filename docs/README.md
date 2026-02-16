@@ -206,7 +206,7 @@ The runner logs telemetry into the `runs` table with `agent='followup_runner'`.
 .venv/bin/pytest -q
 ```
 
-Includes webhook auth + health tests (`tests/test_health.py`) and follow-up runner tests (`tests/test_followup_runner.py`).
+Includes webhook auth/health + webhook E2E tests (`tests/test_health.py`, `tests/test_webhook_api_e2e.py`) and follow-up runner tests (`tests/test_followup_runner.py`).
 
 ## 13) Troubleshooting
 
