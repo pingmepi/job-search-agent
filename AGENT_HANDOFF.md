@@ -9,7 +9,8 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Post-review stabilization + remaining feature completion
-- Current test baseline: `66 passed` with `.venv/bin/pytest -q`
+- Current test baseline: `70 passed` with `.venv/bin/pytest -q` (2026-02-16)
+- Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, threshold `95%`)
 - Active execution ticket: `KAR-49` (In Progress, due 2026-02-22)
 - Milestone targets:
   - Phase 0 (2026-03-01)

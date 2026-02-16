@@ -11,9 +11,16 @@ Last updated: 2026-02-16
 
 ## Current Status
 - Phase: Core pipeline hardening in progress.
-- Test status: `66 passed` (`.venv/bin/pytest -q`).
+- Test status: `70 passed` (`.venv/bin/pytest -q` on 2026-02-16).
+- CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-16; compile success rate `0.0%`, threshold `95%`).
 - Repo has implemented fixes for mutation scope, artifact persistence, real eval checks, and Telegram orchestration.
 - Active issue: `KAR-49` (`In Progress`, due `2026-02-22`).
+
+## Latest Progress (2026-02-16)
+- Verified current build/test baseline: `70 passed`.
+- Verified CI gating status: failing on compile success threshold only; other gates green.
+- Synced local tracker and Linear tracker doc with the same status snapshot.
+- Posted build verification status update on active execution issue `KAR-49`.
 
 ## Completed Work
 - [x] KAR-42 Enforce editable-region-only resume mutations
@@ -59,6 +66,7 @@ Last updated: 2026-02-16
 - Telegram ingestion now runs through webhook service endpoint `/telegram/webhook` (no polling runtime).
 - Telegram handlers currently call `run_pipeline(..., skip_upload=True, skip_calendar=True)` in adapter flow.
 - Pipeline artifacts persist to `runs/artifacts/`.
+- CI gate currently fails due to historical compile eval results in `runs` lowering compile success rate below threshold.
 - Follow-up logic still needs DB progression updates for tier advancement.
 - Local `.env` now includes bot credential wiring; `.env.example` includes `TELEGRAM_BOT_USERNAME` for onboarding consistency.
 - Added `set_webhook.sh` for Telegram webhook registration (`drop_pending_updates=true` + `secret_token`).
