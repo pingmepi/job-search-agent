@@ -116,7 +116,11 @@ def create_webhook_app(
         if runtime.telegram_app is None:
             raise HTTPException(status_code=503, detail="Telegram runtime not initialized")
 
-        update = Update.de_json(payload, runtime.telegram_app.bot)
+        try:
+            update = Update.de_json(payload, runtime.telegram_app.bot)
+        except Exception as exc:
+            logger.warning("Invalid Telegram update payload parse error=%s", exc)
+            raise HTTPException(status_code=400, detail="Invalid Telegram update payload") from exc
         if update is None:
             raise HTTPException(status_code=400, detail="Invalid Telegram update payload")
 

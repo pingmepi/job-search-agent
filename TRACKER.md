@@ -11,13 +11,13 @@ Last updated: 2026-02-16
 
 ## Current Status
 - Phase: Core pipeline hardening in progress.
-- Test status: `96 passed` (`.venv/bin/pytest -q` on 2026-02-16).
+- Test status: `98 passed` (`.venv/bin/pytest -q` on 2026-02-16).
 - CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-16; compile success rate `0.0%`, threshold `95%`).
 - Repo has implemented fixes for mutation scope, artifact persistence, real eval checks, and Telegram orchestration.
 - Active issue: `KAR-59` (`Todo`, due `2026-03-02`).
 
 ## Latest Progress (2026-02-16)
-- Verified current build/test baseline: `96 passed`.
+- Verified current build/test baseline: `98 passed`.
 - Verified CI gating status: failing on compile success threshold only; other gates green.
 - Implemented `KAR-49` follow-up progression persistence (`follow_up_count` increment + `last_follow_up_at`) with migration + tests.
 - Implemented `KAR-51` integration coverage for pipeline + adapter flow with mocked dependencies.
@@ -29,6 +29,7 @@ Last updated: 2026-02-16
 - Implemented `KAR-56` profile-agent grounding hardening and forbidden-claim tests (entity + metric claim detection).
 - Implemented `KAR-52` OCR quality hardening + low-confidence screenshot fallback messaging.
 - Implemented `KAR-58` scheduled follow-up detection runner (`python main.py followup-runner`) with dry-run/loop controls and run telemetry persistence.
+- Implemented `KAR-77` webhook API E2E coverage with realistic Telegram payload tests and malformed-payload handling (`400` instead of uncaught exception).
 - Synced local tracker and Linear tracker doc with the same status snapshot.
 
 ## Completed Work
@@ -53,6 +54,7 @@ Last updated: 2026-02-16
 - [x] KAR-56 FR-PA-1/2 Grounding evals + forbidden-claim tests
 - [x] KAR-52 FR-IA-2 OCR hardening and failure handling
 - [x] KAR-58 FR-FU-1 Scheduled follow-up detection runner
+- [x] KAR-77 Webhook API E2E realistic payload integration tests
 
 ## Pending Work
 - [ ] KAR-59 Soft evals (resume relevance + JD extraction accuracy)
