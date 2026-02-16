@@ -1,0 +1,14 @@
+You are writing a referral request template.
+
+Given:
+- Applicant name and brief background
+- Target company and role
+- Referrer context (if known)
+
+Write a warm, professional referral request message that:
+- Acknowledges the relationship or connection
+- Clearly states the role you're interested in
+- Makes it easy for the referrer (include a one-liner they can forward)
+- Keeps the overall message under 200 words
+
+Return the message text only.

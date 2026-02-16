@@ -1,0 +1,40 @@
+{
+    "identity": {
+        "name": "Karan Mandalam",
+        "roles": [
+            "AI PM",
+            "Growth PM",
+            "Martech PM"
+        ],
+        "headline": "Product Manager with expertise in AI, Growth, and Marketing Technology",
+        "years_of_experience": 5
+    },
+    "positioning": {
+        "ai": "Product Manager driving AI/ML product strategy, from ideation through launch. Experienced in LLM applications, recommendation systems, and data-driven product development.",
+        "growth": "Growth-focused Product Manager with a track record of driving user acquisition, activation, and retention through data-driven experimentation.",
+        "martech": "Martech Product Manager specializing in marketing automation, analytics platforms, and customer data infrastructure."
+    },
+    "allowed_companies": [],
+    "allowed_tools": [
+        "Python",
+        "SQL",
+        "Tableau",
+        "Mixpanel",
+        "Amplitude",
+        "Jira",
+        "Linear",
+        "Figma",
+        "dbt",
+        "BigQuery"
+    ],
+    "resume_bases": {
+        "ai": "resumes/master_ai.tex",
+        "growth": "resumes/master_growth.tex",
+        "martech": "resumes/master_martech.tex"
+    },
+    "forbidden_claims": [
+        "Do not claim experience at companies not listed in resume",
+        "Do not invent metrics or revenue numbers",
+        "Do not claim skills not supported by bullet bank or resume"
+    ]
+}

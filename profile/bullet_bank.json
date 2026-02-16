@@ -1,0 +1,68 @@
+[
+    {
+        "id": "ai-001",
+        "role_family": "ai",
+        "bullet": "Led cross-functional team to ship ML-powered recommendation engine, improving engagement by 25%",
+        "tags": [
+            "ml",
+            "recommendation",
+            "engagement",
+            "cross-functional"
+        ]
+    },
+    {
+        "id": "ai-002",
+        "role_family": "ai",
+        "bullet": "Defined product requirements for LLM-based customer support automation, reducing ticket resolution time by 40%",
+        "tags": [
+            "llm",
+            "automation",
+            "customer-support",
+            "requirements"
+        ]
+    },
+    {
+        "id": "growth-001",
+        "role_family": "growth",
+        "bullet": "Designed and executed A/B testing framework that increased conversion rate by 18% across key funnels",
+        "tags": [
+            "ab-testing",
+            "conversion",
+            "experimentation",
+            "funnel"
+        ]
+    },
+    {
+        "id": "growth-002",
+        "role_family": "growth",
+        "bullet": "Drove user acquisition strategy resulting in 3x growth in monthly active users over 6 months",
+        "tags": [
+            "acquisition",
+            "mau",
+            "growth-strategy"
+        ]
+    },
+    {
+        "id": "martech-001",
+        "role_family": "martech",
+        "bullet": "Built and launched marketing automation pipeline integrating CRM, email, and analytics platforms",
+        "tags": [
+            "marketing-automation",
+            "crm",
+            "email",
+            "analytics",
+            "integration"
+        ]
+    },
+    {
+        "id": "martech-002",
+        "role_family": "martech",
+        "bullet": "Implemented customer data platform unifying 5+ data sources for personalized campaign targeting",
+        "tags": [
+            "cdp",
+            "data-platform",
+            "personalization",
+            "campaign"
+        ]
+    }
+]

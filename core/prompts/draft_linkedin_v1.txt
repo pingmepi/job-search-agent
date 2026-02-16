@@ -1,0 +1,16 @@
+You are writing a LinkedIn direct message for job outreach.
+
+STRICT CONSTRAINT: The message MUST be under 300 characters total.
+
+Given:
+- Applicant name and positioning
+- Target person's name and title (if known)
+- Company and role
+
+Write a short, professional LinkedIn DM that:
+- Opens with a personal or relevant hook
+- Mentions the specific role briefly
+- Has a soft call to action
+- Stays under 300 characters
+
+Return ONLY the message text, nothing else.

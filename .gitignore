@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Environment
+.env
+
+# LaTeX artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Generated PDFs (tracked via Drive, not git)
+runs/**/*.pdf
+
+# Runs directory (telemetry logs)
+runs/
+
+# SQLite
+*.db
+*.db-journal
+
+# Node / Next.js (web dashboard)
+node_modules/
+.next/
+web/.next/
+web/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
