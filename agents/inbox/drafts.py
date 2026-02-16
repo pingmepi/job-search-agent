@@ -24,6 +24,10 @@ class DraftResult:
     draft_type: str
     char_count: int
     within_limit: bool
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_estimate: float = 0.0
 
 
 # ── Email draft ───────────────────────────────────────────────────
@@ -53,6 +57,10 @@ def generate_email_draft(
         draft_type="email",
         char_count=len(text),
         within_limit=True,  # emails don't have a character limit
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_tokens=response.total_tokens,
+        cost_estimate=response.cost_estimate,
     )
 
 
@@ -97,6 +105,10 @@ def generate_linkedin_dm(
         draft_type="linkedin_dm",
         char_count=len(text),
         within_limit=within_limit,
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_tokens=response.total_tokens,
+        cost_estimate=response.cost_estimate,
     )
 
 
@@ -127,4 +139,8 @@ def generate_referral_template(
         draft_type="referral",
         char_count=len(text),
         within_limit=True,
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_tokens=response.total_tokens,
+        cost_estimate=response.cost_estimate,
     )

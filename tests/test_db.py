@@ -39,9 +39,13 @@ class TestSchema:
 
     def test_init_applies_run_migrations(self, db_path: Path):
         with sqlite3.connect(str(db_path)) as conn:
+            job_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+            }
             columns = {
                 row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
             }
+        assert "last_follow_up_at" in job_columns
         assert "input_mode" in columns
         assert "skip_upload" in columns
         assert "skip_calendar" in columns

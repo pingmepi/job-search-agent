@@ -9,11 +9,8 @@ Responsibilities:
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from typing import Optional
 
-from core.config import get_settings
 from core.db import get_jobs_needing_followup, update_job
 from core.llm import chat_text
 
@@ -112,23 +109,43 @@ def generate_followup_draft(job: dict) -> str:
     return response.text
 
 
-def generate_all_followups(*, db_path=None) -> list[dict]:
+def _persist_followup_progress(job: dict, *, db_path=None) -> int:
+    """Increment follow-up count and persist follow-up timestamp. Returns new count."""
+    current_count = int(job.get("follow_up_count", 0) or 0)
+    next_count = current_count + 1
+    update_job(
+        job["id"],
+        db_path=db_path,
+        follow_up_count=next_count,
+        last_follow_up_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return next_count
+
+
+def generate_all_followups(*, db_path=None, persist_progress: bool = True) -> list[dict]:
     """
     Detect all pending follow-ups and generate drafts.
 
-    Returns list of {job, draft, tier} dicts.
+    Returns list of follow-up payloads.
+
+    If persist_progress=True, increments `follow_up_count` and updates
+    `last_follow_up_at` for each successfully generated draft.
     """
     jobs = detect_followups(db_path=db_path)
     results = []
 
     for job in jobs:
         draft = generate_followup_draft(job)
+        next_count = int(job.get("follow_up_count", 0) or 0)
+        if persist_progress:
+            next_count = _persist_followup_progress(job, db_path=db_path)
         results.append({
             "job_id": job["id"],
             "company": job["company"],
             "role": job["role"],
             "tier": job["tier_number"] + 1,
             "draft": draft,
+            "follow_up_count_after": next_count,
         })
 
     return results

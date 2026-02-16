@@ -27,10 +27,10 @@ from typing import Optional
 
 from core.config import get_settings
 from core.db import init_db, insert_job
-from agents.inbox.jd import JDSchema, extract_jd_from_text, get_cached_jd
+from agents.inbox.jd import JDSchema, extract_jd_with_usage, get_cached_jd
 from agents.inbox.resume import (
     parse_editable_regions,
-    select_base_resume,
+    select_base_resume_with_score,
     apply_mutations,
     compile_latex,
 )
@@ -82,6 +82,16 @@ def _outside_editable_content_changed(original_tex: str, mutated_tex: str) -> bo
     return original_masked != mutated_masked
 
 
+def _keyword_coverage(skills: list[str], text: str) -> float:
+    """Compute simple keyword coverage ratio for JD skills in resume text."""
+    normalized_skills = [s.strip().lower() for s in skills if isinstance(s, str) and s.strip()]
+    if not normalized_skills:
+        return 1.0
+    haystack = text.lower()
+    matched = sum(1 for s in normalized_skills if s in haystack)
+    return matched / len(normalized_skills)
+
+
 def run_pipeline(
     raw_text: str,
     *,
@@ -105,17 +115,62 @@ def run_pipeline(
     total_cost = 0.0
     is_url_input = bool(re.search(r"https?://", raw_text)) if raw_text else False
     input_mode = "image" if image_path else ("url" if is_url_input else "text")
+    llm_usage_breakdown: dict[str, dict[str, float | int]] = {
+        "ocr_cleanup": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+        "jd_extract": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+        "resume_mutation": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+        "draft_email": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+        "draft_linkedin": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+        "draft_referral": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+    }
 
     # Ensure DB exists
     init_db()
 
     # ── Step 1: OCR if needed ─────────────────────────────────
     if image_path:
-        from agents.inbox.ocr import ocr_pipeline
-        raw_text = ocr_pipeline(image_path)
+        from agents.inbox.ocr import ocr_pipeline_with_usage
+
+        raw_text, ocr_usage = ocr_pipeline_with_usage(image_path)
+        llm_usage_breakdown["ocr_cleanup"] = ocr_usage
+        total_tokens += int(ocr_usage.get("total_tokens", 0))
+        total_cost += float(ocr_usage.get("cost_estimate", 0.0))
 
     # ── Step 2: Extract & validate JD ─────────────────────────
-    jd = extract_jd_from_text(raw_text)
+    jd, jd_usage = extract_jd_with_usage(raw_text)
+    llm_usage_breakdown["jd_extract"] = jd_usage
+    total_tokens += int(jd_usage.get("total_tokens", 0))
+    total_cost += float(jd_usage.get("cost_estimate", 0.0))
 
     # Check cache
     cached = get_cached_jd(jd.jd_hash)
@@ -123,10 +178,13 @@ def run_pipeline(
         logger.info(f"JD cache hit: {jd.jd_hash}")
 
     pack = ApplicationPack(jd=jd, resume_base="")
+    fit_score_percent = 0
+    compile_rollback_used = False
 
     # ── Step 3: Select resume base ────────────────────────────
     try:
-        base_path = select_base_resume(jd.skills, settings.resumes_dir)
+        base_path, fit_score = select_base_resume_with_score(jd.skills, settings.resumes_dir)
+        fit_score_percent = int(round(fit_score * 100))
         pack.resume_base = base_path.name
         logger.info(f"Selected resume: {base_path.name}")
     except FileNotFoundError as e:
@@ -162,6 +220,12 @@ def run_pipeline(
             response = chat_text(system, user_msg, json_mode=True)
             total_tokens += response.total_tokens
             total_cost += response.cost_estimate
+            llm_usage_breakdown["resume_mutation"] = {
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "cost_estimate": response.cost_estimate,
+            }
 
             mutations_data = json.loads(response.text)
             mutations = mutations_data.get("mutations", [])
@@ -176,20 +240,32 @@ def run_pipeline(
 
     # ── Step 5: Compile LaTeX ─────────────────────────────────
     if pack.mutated_tex:
-        try:
-            import tempfile
+        import tempfile
+
+        def _compile_and_persist(tex_content: str, artifact_suffix: str = "") -> Path:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 tmp_tex = Path(tmp_dir) / base_path.name
-                tmp_tex.write_text(pack.mutated_tex, encoding="utf-8")
+                tmp_tex.write_text(tex_content, encoding="utf-8")
                 compiled_pdf = compile_latex(tmp_tex, Path(tmp_dir))
 
                 artifacts_dir = settings.runs_dir / "artifacts"
                 artifacts_dir.mkdir(parents=True, exist_ok=True)
-                persisted_pdf = artifacts_dir / f"{jd.jd_hash}_{base_path.stem}.pdf"
+                persisted_pdf = artifacts_dir / f"{jd.jd_hash}_{base_path.stem}{artifact_suffix}.pdf"
                 shutil.copy2(compiled_pdf, persisted_pdf)
-                pack.pdf_path = persisted_pdf
+                return persisted_pdf
+
+        try:
+            pack.pdf_path = _compile_and_persist(pack.mutated_tex)
         except Exception as e:
             pack.errors.append(f"LaTeX compile failed: {e}")
+            try:
+                # Roll back to base resume compile to avoid losing artifact generation entirely.
+                original_tex_for_fallback = base_path.read_text(encoding="utf-8")
+                pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
+                compile_rollback_used = True
+                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+            except Exception as fallback_error:
+                pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
 
     # ── Step 6: Upload to Drive ───────────────────────────────
     if not skip_upload and pack.pdf_path:
@@ -231,7 +307,26 @@ def run_pipeline(
         pack.linkedin_draft = linkedin.text
         pack.referral_draft = referral.text
 
-        total_tokens += 0  # token tracking from drafts (simplified)
+        total_tokens += email.total_tokens + linkedin.total_tokens + referral.total_tokens
+        total_cost += email.cost_estimate + linkedin.cost_estimate + referral.cost_estimate
+        llm_usage_breakdown["draft_email"] = {
+            "prompt_tokens": email.prompt_tokens,
+            "completion_tokens": email.completion_tokens,
+            "total_tokens": email.total_tokens,
+            "cost_estimate": email.cost_estimate,
+        }
+        llm_usage_breakdown["draft_linkedin"] = {
+            "prompt_tokens": linkedin.prompt_tokens,
+            "completion_tokens": linkedin.completion_tokens,
+            "total_tokens": linkedin.total_tokens,
+            "cost_estimate": linkedin.cost_estimate,
+        }
+        llm_usage_breakdown["draft_referral"] = {
+            "prompt_tokens": referral.prompt_tokens,
+            "completion_tokens": referral.completion_tokens,
+            "total_tokens": referral.total_tokens,
+            "cost_estimate": referral.cost_estimate,
+        }
     except Exception as e:
         pack.errors.append(f"Draft generation failed: {e}")
 
@@ -239,6 +334,7 @@ def run_pipeline(
     try:
         job_id = insert_job(
             jd.company, jd.role, jd.jd_hash,
+            fit_score=fit_score_percent,
             resume_used=pack.resume_base,
             drive_link=pack.drive_link,
         )
@@ -283,6 +379,11 @@ def run_pipeline(
         "edit_scope_violations": edit_scope_violations,
         "draft_length_ok": check_draft_length(pack.linkedin_draft or "", max_chars=300),
         "cost_ok": check_cost(total_cost, threshold=settings.max_cost_per_job),
+        "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
+        "compile_rollback_used": compile_rollback_used,
+        "llm_total_tokens": total_tokens,
+        "llm_total_cost": total_cost,
+        "llm_usage_breakdown": llm_usage_breakdown,
         "jd_schema_valid": check_jd_schema(
             {"company": jd.company, "role": jd.role, "location": jd.location,
              "experience_required": jd.experience_required, "skills": jd.skills,
@@ -297,6 +398,7 @@ def run_pipeline(
             "role": jd.role,
             "jd_hash": jd.jd_hash,
             "resume_base": pack.resume_base,
+            "fit_score": fit_score_percent,
             "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
             "drive_link": pack.drive_link,
             "skip_upload": skip_upload,

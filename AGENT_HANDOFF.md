@@ -9,9 +9,9 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Post-review stabilization + remaining feature completion
-- Current test baseline: `70 passed` with `.venv/bin/pytest -q` (2026-02-16)
+- Current test baseline: `96 passed` with `.venv/bin/pytest -q` (2026-02-16)
 - Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, threshold `95%`)
-- Active execution ticket: `KAR-49` (In Progress, due 2026-02-22)
+- Active execution ticket: `KAR-59` (Todo, due 2026-03-02)
 - Milestone targets:
   - Phase 0 (2026-03-01)
   - Phase 1 (2026-03-15)
@@ -30,16 +30,25 @@ This file is the short-lived operational handoff between sessions/windows when c
 - `Settings` now includes `telegram_bot_username` for explicit bot identity configuration.
 - Telegram ingestion migrated from polling to webhook service (`/telegram/webhook`) with secret-token validation.
 - Added webhook runtime (`app.py`), webhook registration script (`set_webhook.sh`), and health/auth tests.
+- Follow-up progression now persists via DB updates (`follow_up_count` + `last_follow_up_at`) when drafts are generated.
+- Added integration tests for inbox pipeline persistence + Telegram adapter route execution using mocks.
+- URL ingestion now fetches page content from links and requests screenshot fallback when extraction fails.
+- Eval logs now include full LLM token/cost accounting (OCR cleanup, JD extraction, mutation, drafts) plus `keyword_coverage`.
+- Resume selection now persists `fit_score` on `jobs` rows using keyword overlap.
+- Telegram adapter now supports env-guarded production toggles for Drive upload and Calendar events (`TELEGRAM_ENABLE_DRIVE_UPLOAD`, `TELEGRAM_ENABLE_CALENDAR_EVENTS`).
+- Compile step now rolls back to base resume artifact if mutated LaTeX compile fails (`compile_rollback_used` eval field).
+- Profile grounding checks now flag ungrounded entity + metric claims with expanded tests for forbidden claim scenarios.
+- OCR pipeline now applies quality gating and raises explicit low-confidence errors; photo handler returns screenshot-clarification guidance.
+- Scheduled follow-up runner implemented with CLI entrypoint (`python main.py followup-runner`) and telemetry-backed cycle logging.
 
 ## What Is Next
-1. KAR-49: Persist follow-up progression (`follow_up_count` updates).
-2. KAR-51: Add integration tests for pipeline + adapter with mocks.
-3. KAR-50: URL ingestion fetch path + screenshot fallback UX.
-4. KAR-57: Complete eval logging fields + full token accounting.
-5. KAR-53: Persist fit score from resume selection.
+1. KAR-59: Soft evals (resume relevance + JD extraction accuracy).
+2. KAR-60: Success criteria gates + CI threshold enforcement.
+3. KAR-61: Planner/executor separation.
+4. KAR-62: SaaS readiness scoping.
+5. KAR-72: Persist raw Telegram webhook events.
 
 ## Known Risks / Gaps
-- Follow-up tier may repeat because progression is not persisted yet.
 - URL ingestion behavior is incomplete relative to PRD expectations.
 - Adapter runs with upload/calendar disabled in chat flow by design for now.
 - PRD traceability expanded; new backlog items KAR-52..KAR-62 must be tracked in future phase updates.

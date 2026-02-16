@@ -11,6 +11,7 @@ from agents.profile.agent import (
     load_bullet_bank,
     select_narrative,
     check_response_grounding,
+    answer,
 )
 
 
@@ -92,3 +93,36 @@ class TestGroundingCheck:
         response = "Karan led a team at Stripe Finance delivering key results."
         claims = check_response_grounding(response, profile, bank)
         assert len(claims) > 0  # "Stripe Finance" should be flagged
+
+    def test_ungrounded_metric_claim_is_flagged(self, profile_path: Path, bullet_bank_path: Path):
+        profile = load_profile(profile_path)
+        bank = load_bullet_bank(bullet_bank_path)
+        response = "Karan improved retention by 42% at Acme Corp."
+        claims = check_response_grounding(response, profile, bank)
+        assert any("42%" in c or "42" in c for c in claims)
+
+    def test_grounded_metric_claim_is_not_flagged(self, profile_path: Path, bullet_bank_path: Path):
+        profile = load_profile(profile_path)
+        bank = load_bullet_bank(bullet_bank_path)
+        response = "Karan drove 3x MAU growth in prior work."
+        claims = check_response_grounding(response, profile, bank)
+        assert len(claims) == 0
+
+
+class TestAnswerGrounding:
+    def test_answer_returns_ungrounded_claims(self, profile_path: Path, bullet_bank_path: Path, monkeypatch):
+        class _FakeResponse:
+            text = "Karan scaled Stripe Finance conversion by 50%."
+
+        monkeypatch.setattr("agents.profile.agent.chat_text", lambda *_args, **_kwargs: _FakeResponse())
+
+        response_text, narrative, ungrounded = answer(
+            "Share Karan's highlights",
+            profile_path=profile_path,
+            bullet_bank_path=bullet_bank_path,
+        )
+
+        assert "Stripe Finance" in " ".join(ungrounded)
+        assert any("50%" in c or "50" in c for c in ungrounded)
+        assert narrative in {"ai", "growth", "martech"}
+        assert response_text

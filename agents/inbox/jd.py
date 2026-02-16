@@ -94,3 +94,32 @@ def extract_jd_from_text(raw_text: str) -> JDSchema:
         raise ValueError(f"LLM returned invalid JSON: {e}") from e
 
     return validate_jd_schema(data)
+
+
+def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | int]]:
+    """
+    Extract JD and return token/cost usage for the extraction call.
+
+    Returns
+    -------
+    tuple of (JDSchema, usage)
+    """
+    from core.llm import chat_text
+    from core.prompts import load_prompt
+
+    system_prompt = load_prompt("jd_extract", version=1)
+    response = chat_text(system_prompt, raw_text, json_mode=True)
+
+    try:
+        data = json.loads(response.text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM returned invalid JSON: {e}") from e
+
+    jd = validate_jd_schema(data)
+    usage = {
+        "prompt_tokens": response.prompt_tokens,
+        "completion_tokens": response.completion_tokens,
+        "total_tokens": response.total_tokens,
+        "cost_estimate": response.cost_estimate,
+    }
+    return jd, usage

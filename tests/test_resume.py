@@ -9,6 +9,8 @@ from agents.inbox.resume import (
     parse_editable_regions,
     EditableRegion,
     apply_mutations,
+    select_base_resume_with_score,
+    compute_keyword_overlap,
 )
 
 
@@ -96,3 +98,19 @@ Built ML pipeline improving accuracy by 20\%
         assert "\\section*{Summary}\nBuilt ML pipeline improving accuracy by 20\\%" in updated
         # Editable bullet should be updated.
         assert "  \\item Built ML pipeline improving accuracy by 30\\%" in updated
+
+
+class TestResumeSelection:
+    def test_compute_keyword_overlap(self):
+        score = compute_keyword_overlap(["python", "sql", "ml"], "Python and ML systems")
+        assert score == pytest.approx(2 / 3)
+
+    def test_select_base_resume_with_score(self, tmp_path: Path):
+        a = tmp_path / "master_a.tex"
+        b = tmp_path / "master_b.tex"
+        a.write_text("python sql ml", encoding="utf-8")
+        b.write_text("excel operations", encoding="utf-8")
+
+        best_path, score = select_base_resume_with_score(["python", "sql"], tmp_path)
+        assert best_path.name == "master_a.tex"
+        assert score == pytest.approx(1.0)

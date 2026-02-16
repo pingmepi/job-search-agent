@@ -27,6 +27,7 @@ from telegram.ext import (
 
 from core.config import get_settings
 from core.router import route, AgentTarget
+from agents.inbox.url_ingest import extract_first_url, fetch_url_text
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +94,17 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     try:
         from agents.inbox.agent import run_pipeline
+        from agents.inbox.ocr import OCRQualityError
+        settings = get_settings()
+        skip_upload = not settings.telegram_enable_drive_upload
+        skip_calendar = not settings.telegram_enable_calendar_events
 
         pack = await asyncio.to_thread(
             run_pipeline,
             "",
             image_path=image_path,
-            skip_upload=True,
-            skip_calendar=True,
+            skip_upload=skip_upload,
+            skip_calendar=skip_calendar,
         )
         jd = pack.jd
         await update.message.reply_text(
@@ -120,6 +125,12 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "⚠️ Completed with issues:\n" + "\n".join(f"• {e}" for e in pack.errors[:5])
             )
 
+    except OCRQualityError as e:
+        logger.warning("OCR quality too low: %s", e)
+        await update.message.reply_text(
+            "⚠️ I couldn't extract a reliable job description from that screenshot. "
+            "Please send a clearer screenshot (full JD section, readable text, minimal cropping)."
+        )
     except Exception as e:
         logger.error(f"OCR/extraction error: {e}")
         await update.message.reply_text(f"❌ Error processing screenshot: {e}")
@@ -137,12 +148,31 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"📥 Routing to Inbox Agent... ({result.reason})")
         try:
             from agents.inbox.agent import run_pipeline
+            settings = get_settings()
+            skip_upload = not settings.telegram_enable_drive_upload
+            skip_calendar = not settings.telegram_enable_calendar_events
+
+            pipeline_input = text
+            url = extract_first_url(text or "")
+            if url:
+                ingest = await asyncio.to_thread(fetch_url_text, url)
+                if ingest.ok:
+                    pipeline_input = ingest.extracted_text
+                    await update.message.reply_text(
+                        "🔗 Fetched job URL successfully. Processing extracted content..."
+                    )
+                else:
+                    await update.message.reply_text(
+                        "⚠️ I couldn't reliably extract the job description from that URL. "
+                        "Please send a screenshot of the job posting so I can continue."
+                    )
+                    return
 
             pack = await asyncio.to_thread(
                 run_pipeline,
-                text,
-                skip_upload=True,
-                skip_calendar=True,
+                pipeline_input,
+                skip_upload=skip_upload,
+                skip_calendar=skip_calendar,
             )
             jd = pack.jd
             await update.message.reply_text(
