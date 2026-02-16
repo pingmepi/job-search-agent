@@ -9,9 +9,9 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Post-review stabilization + remaining feature completion
-- Current test baseline: `85 passed` with `.venv/bin/pytest -q` (2026-02-16)
+- Current test baseline: `96 passed` with `.venv/bin/pytest -q` (2026-02-16)
 - Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, threshold `95%`)
-- Active execution ticket: `KAR-56` (Todo, due 2026-03-10)
+- Active execution ticket: `KAR-59` (Todo, due 2026-03-02)
 - Milestone targets:
   - Phase 0 (2026-03-01)
   - Phase 1 (2026-03-15)
@@ -37,16 +37,18 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Resume selection now persists `fit_score` on `jobs` rows using keyword overlap.
 - Telegram adapter now supports env-guarded production toggles for Drive upload and Calendar events (`TELEGRAM_ENABLE_DRIVE_UPLOAD`, `TELEGRAM_ENABLE_CALENDAR_EVENTS`).
 - Compile step now rolls back to base resume artifact if mutated LaTeX compile fails (`compile_rollback_used` eval field).
+- Profile grounding checks now flag ungrounded entity + metric claims with expanded tests for forbidden claim scenarios.
+- OCR pipeline now applies quality gating and raises explicit low-confidence errors; photo handler returns screenshot-clarification guidance.
+- Scheduled follow-up runner implemented with CLI entrypoint (`python main.py followup-runner`) and telemetry-backed cycle logging.
 
 ## What Is Next
-1. KAR-56: Grounding evals + forbidden-claim coverage.
-2. KAR-52: OCR hardening and failure handling.
-3. KAR-58: Scheduled follow-up detection runner.
-4. KAR-59: Soft evals (resume relevance + JD extraction accuracy).
-5. KAR-60: Success criteria gates + CI threshold enforcement.
+1. KAR-59: Soft evals (resume relevance + JD extraction accuracy).
+2. KAR-60: Success criteria gates + CI threshold enforcement.
+3. KAR-61: Planner/executor separation.
+4. KAR-62: SaaS readiness scoping.
+5. KAR-72: Persist raw Telegram webhook events.
 
 ## Known Risks / Gaps
-- Follow-up tier may repeat because progression is not persisted yet.
 - URL ingestion behavior is incomplete relative to PRD expectations.
 - Adapter runs with upload/calendar disabled in chat flow by design for now.
 - PRD traceability expanded; new backlog items KAR-52..KAR-62 must be tracked in future phase updates.

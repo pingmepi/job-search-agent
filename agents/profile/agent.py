@@ -83,27 +83,49 @@ def check_response_grounding(
     """
     import re
 
-    # Build allowed corpus
-    allowed_parts = [
-        json.dumps(profile),
-        " ".join(b["bullet"] for b in bullet_bank),
-    ]
+    # Build allowed corpus from structured profile + bullet bank content.
+    allowed_parts = [json.dumps(profile), " ".join(str(b.get("bullet", "")) for b in bullet_bank)]
     allowed_text = " ".join(allowed_parts).lower()
 
-    # Extract company/org names from response (capitalized multi-word sequences)
-    potential_claims = re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b", response_text)
+    def _is_allowed(snippet: str) -> bool:
+        return snippet.lower() in allowed_text
 
-    ungrounded = []
-    for claim in potential_claims:
-        if claim.lower() not in allowed_text:
-            # Skip common English phrases
-            common = {"Product Manager", "Senior Product", "Business Administration",
-                      "Product Management", "Data Science", "Machine Learning",
-                      "Cross Functional", "Master Of"}
-            if claim not in common:
-                ungrounded.append(claim)
+    # 1) Named entities (capitalized multi-word spans), e.g., "Stripe Finance".
+    entity_candidates = re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b", response_text)
 
-    return ungrounded
+    # 2) Metric/value claims, e.g., "increased conversion by 40%", "5x growth".
+    metric_patterns = [
+        r"\d+(?:\.\d+)?%",
+        r"\b\d+(?:\.\d+)?x\b",
+        r"\b(?:increased|reduced|improved|grew|growth|decreased)\b[^.]{0,40}\b\d+(?:\.\d+)?%?\b",
+    ]
+    metric_candidates: list[str] = []
+    for pattern in metric_patterns:
+        metric_candidates.extend(re.findall(pattern, response_text, flags=re.IGNORECASE))
+
+    common_entities = {
+        "Product Manager",
+        "Senior Product",
+        "Business Administration",
+        "Product Management",
+        "Data Science",
+        "Machine Learning",
+        "Cross Functional",
+        "Master Of",
+    }
+
+    ungrounded: set[str] = set()
+    for candidate in entity_candidates:
+        if candidate in common_entities:
+            continue
+        if not _is_allowed(candidate):
+            ungrounded.add(candidate)
+
+    for candidate in metric_candidates:
+        if not _is_allowed(candidate):
+            ungrounded.add(candidate)
+
+    return sorted(ungrounded)
 
 
 # ── Main agent function ───────────────────────────────────────────

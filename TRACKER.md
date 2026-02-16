@@ -11,13 +11,13 @@ Last updated: 2026-02-16
 
 ## Current Status
 - Phase: Core pipeline hardening in progress.
-- Test status: `85 passed` (`.venv/bin/pytest -q` on 2026-02-16).
+- Test status: `96 passed` (`.venv/bin/pytest -q` on 2026-02-16).
 - CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-16; compile success rate `0.0%`, threshold `95%`).
 - Repo has implemented fixes for mutation scope, artifact persistence, real eval checks, and Telegram orchestration.
-- Active issue: `KAR-56` (`Todo`, due `2026-03-10`).
+- Active issue: `KAR-59` (`Todo`, due `2026-03-02`).
 
 ## Latest Progress (2026-02-16)
-- Verified current build/test baseline: `85 passed`.
+- Verified current build/test baseline: `96 passed`.
 - Verified CI gating status: failing on compile success threshold only; other gates green.
 - Implemented `KAR-49` follow-up progression persistence (`follow_up_count` increment + `last_follow_up_at`) with migration + tests.
 - Implemented `KAR-51` integration coverage for pipeline + adapter flow with mocked dependencies.
@@ -26,6 +26,9 @@ Last updated: 2026-02-16
 - Implemented `KAR-53` fit score persistence from resume selection and keyword coverage eval logging.
 - Implemented `KAR-55` adapter production toggles for Drive upload + Calendar event creation (`TELEGRAM_ENABLE_*` flags).
 - Implemented `KAR-54` compile failure rollback to base resume artifact path with rollback eval flag.
+- Implemented `KAR-56` profile-agent grounding hardening and forbidden-claim tests (entity + metric claim detection).
+- Implemented `KAR-52` OCR quality hardening + low-confidence screenshot fallback messaging.
+- Implemented `KAR-58` scheduled follow-up detection runner (`python main.py followup-runner`) with dry-run/loop controls and run telemetry persistence.
 - Synced local tracker and Linear tracker doc with the same status snapshot.
 
 ## Completed Work
@@ -47,11 +50,11 @@ Last updated: 2026-02-16
 - [x] KAR-53 FR-IA-3 Persist fit score / keyword overlap
 - [x] KAR-55 FR-IA-6/7 Enable Drive + Calendar in production flow
 - [x] KAR-54 FR-IA-5 Compile failure rollback behavior
+- [x] KAR-56 FR-PA-1/2 Grounding evals + forbidden-claim tests
+- [x] KAR-52 FR-IA-2 OCR hardening and failure handling
+- [x] KAR-58 FR-FU-1 Scheduled follow-up detection runner
 
 ## Pending Work
-- [ ] KAR-52 FR-IA-2 OCR hardening and failure handling
-- [ ] KAR-56 FR-PA-1/2 Grounding evals + forbidden-claim tests
-- [ ] KAR-58 FR-FU-1 Scheduled follow-up detection runner
 - [ ] KAR-59 Soft evals (resume relevance + JD extraction accuracy)
 - [ ] KAR-60 Success criteria gates (10+ eval cases + CI thresholds)
 - [ ] KAR-61 Phase 2 planner/executor separation
@@ -81,11 +84,11 @@ Last updated: 2026-02-16
 - Phase 3 - SaaS Readiness (target: 2026-04-30)
 
 ## Execution Order
-1. KAR-56
-2. KAR-52
-3. KAR-58
-4. KAR-59
-5. KAR-60
+1. KAR-59
+2. KAR-60
+3. KAR-61
+4. KAR-62
+5. KAR-72
 
 ## Notes
 - Telegram ingestion now runs through webhook service endpoint `/telegram/webhook` (no polling runtime).
@@ -93,6 +96,6 @@ Last updated: 2026-02-16
 - Pipeline artifacts persist to `runs/artifacts/`.
 - `docs/execution_plan` has been merged into this tracker; this file is the canonical superset for planning/execution.
 - CI gate currently fails due to historical compile eval results in `runs` lowering compile success rate below threshold.
-- Follow-up logic still needs DB progression updates for tier advancement.
+- Follow-up scheduler is now available via `python main.py followup-runner --once` (or loop mode).
 - Local `.env` now includes bot credential wiring; `.env.example` includes `TELEGRAM_BOT_USERNAME` for onboarding consistency.
 - Added `set_webhook.sh` for Telegram webhook registration (`drop_pending_updates=true` + `secret_token`).

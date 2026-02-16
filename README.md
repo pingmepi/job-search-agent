@@ -56,6 +56,7 @@ python main.py webhook
 - `python main.py webhook` -> start Telegram webhook service
 - `python main.py init-db` -> initialize SQLite DB
 - `python main.py ci-gate` -> run CI eval gate
+- `python main.py followup-runner --once` -> execute one follow-up detection/generation cycle
 - `.venv/bin/pytest -q` -> run tests
 
 ## Documentation

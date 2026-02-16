@@ -94,6 +94,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     try:
         from agents.inbox.agent import run_pipeline
+        from agents.inbox.ocr import OCRQualityError
         settings = get_settings()
         skip_upload = not settings.telegram_enable_drive_upload
         skip_calendar = not settings.telegram_enable_calendar_events
@@ -124,6 +125,12 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "⚠️ Completed with issues:\n" + "\n".join(f"• {e}" for e in pack.errors[:5])
             )
 
+    except OCRQualityError as e:
+        logger.warning("OCR quality too low: %s", e)
+        await update.message.reply_text(
+            "⚠️ I couldn't extract a reliable job description from that screenshot. "
+            "Please send a clearer screenshot (full JD section, readable text, minimal cropping)."
+        )
     except Exception as e:
         logger.error(f"OCR/extraction error: {e}")
         await update.message.reply_text(f"❌ Error processing screenshot: {e}")

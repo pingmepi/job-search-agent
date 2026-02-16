@@ -92,6 +92,41 @@ def clean_ocr_text_with_usage(raw_text: str) -> tuple[str, dict[str, float | int
     }
 
 
+def assess_ocr_quality(cleaned_text: str) -> tuple[bool, str]:
+    """
+    Heuristic OCR quality gate for JD extraction readiness.
+
+    Returns (is_valid, reason).
+    """
+    text = (cleaned_text or "").strip()
+    if len(text) < 120:
+        return False, "Extracted text is too short"
+
+    alpha_chars = sum(1 for ch in text if ch.isalpha())
+    if alpha_chars < 60:
+        return False, "Extracted text has insufficient readable content"
+
+    jd_indicators = [
+        "responsibilities",
+        "requirements",
+        "qualifications",
+        "about the role",
+        "what you'll do",
+        "what we are looking for",
+        "experience",
+        "skills",
+    ]
+    indicator_hits = sum(1 for marker in jd_indicators if marker in text.lower())
+    if indicator_hits == 0:
+        return False, "Extracted text does not look like a job description"
+
+    return True, "ok"
+
+
+class OCRQualityError(RuntimeError):
+    """Raised when OCR output is too weak for reliable JD extraction."""
+
+
 # ── Full pipeline ─────────────────────────────────────────────────
 
 def ocr_pipeline(image_path: Path) -> str:
@@ -108,6 +143,9 @@ def ocr_pipeline(image_path: Path) -> str:
     """
     raw = extract_text_from_image(image_path)
     cleaned = clean_ocr_text(raw)
+    valid, reason = assess_ocr_quality(cleaned)
+    if not valid:
+        raise OCRQualityError(reason)
     return cleaned
 
 
@@ -117,4 +155,7 @@ def ocr_pipeline_with_usage(image_path: Path) -> tuple[str, dict[str, float | in
     """
     raw = extract_text_from_image(image_path)
     cleaned, usage = clean_ocr_text_with_usage(raw)
+    valid, reason = assess_ocr_quality(cleaned)
+    if not valid:
+        raise OCRQualityError(reason)
     return cleaned, usage

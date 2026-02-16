@@ -169,22 +169,46 @@ server {
 
 ## 10) Optional: Drive + Calendar Integrations
 
-Current Telegram adapter still runs pipeline with:
+Telegram adapter behavior is env-controlled:
 
-- `skip_upload=True`
-- `skip_calendar=True`
+- `TELEGRAM_ENABLE_DRIVE_UPLOAD=true|false`
+- `TELEGRAM_ENABLE_CALENDAR_EVENTS=true|false`
 
-So Drive/Calendar are intentionally disabled in chat flow for now.
+Defaults are disabled for safety.
 
-## 11) Tests
+## 11) Scheduled Follow-Up Runner
+
+Run one cycle:
+
+```bash
+python main.py followup-runner --once
+```
+
+Run continuously (every hour by default):
+
+```bash
+python main.py followup-runner
+```
+
+Useful options:
+
+```bash
+python main.py followup-runner --dry-run --once
+python main.py followup-runner --interval-minutes 30 --max-cycles 4
+python main.py followup-runner --once --no-persist-progress
+```
+
+The runner logs telemetry into the `runs` table with `agent='followup_runner'`.
+
+## 12) Tests
 
 ```bash
 .venv/bin/pytest -q
 ```
 
-Includes webhook auth + health tests (`tests/test_health.py`).
+Includes webhook auth + health tests (`tests/test_health.py`) and follow-up runner tests (`tests/test_followup_runner.py`).
 
-## 12) Troubleshooting
+## 13) Troubleshooting
 
 `401 Invalid webhook secret`:
 
