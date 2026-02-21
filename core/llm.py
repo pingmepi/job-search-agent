@@ -61,6 +61,11 @@ def _is_model_endpoint_error(exc: Exception) -> bool:
         "no endpoints found" in message
         or "model not found" in message
         or "not available" in message
+        or "developer instruction is not enabled" in message
+        or "provider returned error" in message
+        or "rate limit" in message
+        or "too many requests" in message
+        or "error code: 429" in message
     )
 
 

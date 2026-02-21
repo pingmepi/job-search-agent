@@ -63,8 +63,8 @@ Set required values:
 
 ```env
 OPENROUTER_API_KEY=...
-LLM_MODEL=google/gemma-2-9b-it:free
-LLM_FALLBACK_MODELS=openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct
+LLM_MODEL=stepfun/step-3.5-flash:free
+LLM_FALLBACK_MODELS=qwen/qwen3-coder:free,meta-llama/llama-3.2-3b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,mistralai/mistral-small-3.1-24b-instruct:free,deepseek/deepseek-r1-0528:free,openai/gpt-oss-120b:free,arcee-ai/trinity-mini:free
 
 TELEGRAM_TOKEN=...
 TELEGRAM_BOT_USERNAME=@job_notes_bot
@@ -116,6 +116,12 @@ One-command runtime snapshot:
 
 ```bash
 ./scripts/check_runtime.sh
+```
+
+One-command webhook restart:
+
+```bash
+./scripts/restart_webhook.sh
 ```
 
 Useful checks from another terminal:

@@ -92,6 +92,14 @@ def _keyword_coverage(skills: list[str], text: str) -> float:
     return matched / len(normalized_skills)
 
 
+def _slugify_filename_part(value: str, fallback: str) -> str:
+    """Normalize free text into a filesystem-safe filename segment."""
+    text = (value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = text.strip("_")
+    return text or fallback
+
+
 def run_pipeline(
     raw_text: str,
     *,
@@ -250,7 +258,12 @@ def run_pipeline(
 
                 artifacts_dir = settings.runs_dir / "artifacts"
                 artifacts_dir.mkdir(parents=True, exist_ok=True)
-                persisted_pdf = artifacts_dir / f"{jd.jd_hash}_{base_path.stem}{artifact_suffix}.pdf"
+                company_slug = _slugify_filename_part(jd.company, "company")
+                role_slug = _slugify_filename_part(jd.role, "role")
+                short_hash = jd.jd_hash[:8]
+                persisted_pdf = artifacts_dir / (
+                    f"{company_slug}_{role_slug}_{base_path.stem}_{short_hash}{artifact_suffix}.pdf"
+                )
                 shutil.copy2(compiled_pdf, persisted_pdf)
                 return persisted_pdf
 
@@ -266,6 +279,14 @@ def run_pipeline(
                 pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
             except Exception as fallback_error:
                 pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
+
+        logger.info(
+            "Compile result jd_hash=%s success=%s pdf_path=%s rollback_used=%s",
+            jd.jd_hash,
+            bool(pack.pdf_path),
+            str(pack.pdf_path) if pack.pdf_path else None,
+            compile_rollback_used,
+        )
 
     # ── Step 6: Upload to Drive ───────────────────────────────
     if not skip_upload and pack.pdf_path:
@@ -418,6 +439,13 @@ def run_pipeline(
             skip_calendar=skip_calendar,
             errors=pack.errors,
             context=run_context,
+        )
+        logger.info(
+            "Run logged run_id=%s jd_hash=%s pdf_path=%s errors=%s",
+            pack.run_id,
+            jd.jd_hash,
+            str(pack.pdf_path) if pack.pdf_path else None,
+            len(pack.errors),
         )
     except Exception as e:
         pack.errors.append(f"Eval logging failed: {e}")

@@ -21,6 +21,7 @@ except ImportError:
     HAS_TESSERACT = False
 
 from core.llm import chat_text
+from core.config import get_settings
 
 
 # ── OCR ───────────────────────────────────────────────────────────
@@ -92,18 +93,24 @@ def clean_ocr_text_with_usage(raw_text: str) -> tuple[str, dict[str, float | int
     }
 
 
-def assess_ocr_quality(cleaned_text: str) -> tuple[bool, str]:
+def assess_ocr_quality(
+    cleaned_text: str,
+    *,
+    min_text_chars: int = 120,
+    min_alpha_chars: int = 60,
+    require_jd_indicator: bool = True,
+) -> tuple[bool, str]:
     """
     Heuristic OCR quality gate for JD extraction readiness.
 
     Returns (is_valid, reason).
     """
     text = (cleaned_text or "").strip()
-    if len(text) < 120:
+    if len(text) < min_text_chars:
         return False, "Extracted text is too short"
 
     alpha_chars = sum(1 for ch in text if ch.isalpha())
-    if alpha_chars < 60:
+    if alpha_chars < min_alpha_chars:
         return False, "Extracted text has insufficient readable content"
 
     jd_indicators = [
@@ -117,7 +124,7 @@ def assess_ocr_quality(cleaned_text: str) -> tuple[bool, str]:
         "skills",
     ]
     indicator_hits = sum(1 for marker in jd_indicators if marker in text.lower())
-    if indicator_hits == 0:
+    if require_jd_indicator and indicator_hits == 0:
         return False, "Extracted text does not look like a job description"
 
     return True, "ok"
@@ -143,7 +150,13 @@ def ocr_pipeline(image_path: Path) -> str:
     """
     raw = extract_text_from_image(image_path)
     cleaned = clean_ocr_text(raw)
-    valid, reason = assess_ocr_quality(cleaned)
+    settings = get_settings()
+    valid, reason = assess_ocr_quality(
+        cleaned,
+        min_text_chars=settings.ocr_min_text_chars,
+        min_alpha_chars=settings.ocr_min_alpha_chars,
+        require_jd_indicator=settings.ocr_require_jd_indicator,
+    )
     if not valid:
         raise OCRQualityError(reason)
     return cleaned
@@ -155,7 +168,13 @@ def ocr_pipeline_with_usage(image_path: Path) -> tuple[str, dict[str, float | in
     """
     raw = extract_text_from_image(image_path)
     cleaned, usage = clean_ocr_text_with_usage(raw)
-    valid, reason = assess_ocr_quality(cleaned)
+    settings = get_settings()
+    valid, reason = assess_ocr_quality(
+        cleaned,
+        min_text_chars=settings.ocr_min_text_chars,
+        min_alpha_chars=settings.ocr_min_alpha_chars,
+        require_jd_indicator=settings.ocr_require_jd_indicator,
+    )
     if not valid:
         raise OCRQualityError(reason)
     return cleaned, usage

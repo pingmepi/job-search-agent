@@ -87,6 +87,17 @@ class Settings:
         default_factory=lambda: float(os.environ.get("MAX_COST_PER_JOB", "0.15"))
     )
 
+    # ── OCR quality gate ───────────────────────────────────────
+    ocr_min_text_chars: int = field(
+        default_factory=lambda: int(os.environ.get("OCR_MIN_TEXT_CHARS", "80"))
+    )
+    ocr_min_alpha_chars: int = field(
+        default_factory=lambda: int(os.environ.get("OCR_MIN_ALPHA_CHARS", "35"))
+    )
+    ocr_require_jd_indicator: bool = field(
+        default_factory=lambda: _env_bool("OCR_REQUIRE_JD_INDICATOR", default=True)
+    )
+
     # ── Paths ─────────────────────────────────────────────────────
     project_root: Path = PROJECT_ROOT
     db_path: Path = field(

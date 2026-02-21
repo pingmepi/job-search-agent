@@ -24,6 +24,7 @@ class TelegramWebhookRuntime:
     def __init__(self, telegram_app: Any | None = None) -> None:
         self.telegram_app = telegram_app
         self.processed_update_ids: set[int] = set()
+        self.processing_update_ids: set[int] = set()
         self.update_attempts: dict[int, int] = {}
         self.lock = asyncio.Lock()
 
@@ -130,35 +131,59 @@ def create_webhook_app(
                 if update_id in runtime.processed_update_ids:
                     logger.info("Skipping already-processed update_id=%s", update_id)
                     return {"ok": True}
+                if update_id in runtime.processing_update_ids:
+                    logger.info("Skipping in-flight update_id=%s", update_id)
+                    return {"ok": True}
+                runtime.processing_update_ids.add(update_id)
 
         max_attempts = 3
         last_error: Exception | None = None
-        for attempt in range(1, max_attempts + 1):
-            try:
-                if isinstance(update_id, int):
-                    runtime.update_attempts[update_id] = attempt
-                logger.info("Processing update_id=%s attempt=%s/%s", update_id, attempt, max_attempts)
-                await asyncio.wait_for(
-                    runtime.telegram_app.process_update(update),
-                    timeout=resolved_settings.webhook_process_timeout_seconds,
-                )
-                last_error = None
-                if isinstance(update_id, int):
-                    async with runtime.lock:
-                        runtime.processed_update_ids.add(update_id)
-                        runtime.update_attempts.pop(update_id, None)
-                break
-            except Exception as exc:
-                last_error = exc
-                logger.warning("Update processing failed update_id=%s attempt=%s error=%s", update_id, attempt, exc)
-                if attempt == max_attempts:
-                    await _notify_processing_failed(update)
+        try:
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    if isinstance(update_id, int):
+                        runtime.update_attempts[update_id] = attempt
+                    logger.info("Processing update_id=%s attempt=%s/%s", update_id, attempt, max_attempts)
+                    await asyncio.wait_for(
+                        runtime.telegram_app.process_update(update),
+                        timeout=resolved_settings.webhook_process_timeout_seconds,
+                    )
+                    last_error = None
                     if isinstance(update_id, int):
                         async with runtime.lock:
                             runtime.processed_update_ids.add(update_id)
                             runtime.update_attempts.pop(update_id, None)
-                else:
-                    await asyncio.sleep(0.2)
+                    break
+                except asyncio.TimeoutError:
+                    # process_update may continue async work (e.g. thread offload) after timeout.
+                    # Mark this update as processed to prevent duplicate redelivery execution.
+                    logger.warning(
+                        "Update processing timed out update_id=%s attempt=%s timeout_seconds=%s",
+                        update_id,
+                        attempt,
+                        resolved_settings.webhook_process_timeout_seconds,
+                    )
+                    last_error = None
+                    if isinstance(update_id, int):
+                        async with runtime.lock:
+                            runtime.processed_update_ids.add(update_id)
+                            runtime.update_attempts.pop(update_id, None)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("Update processing failed update_id=%s attempt=%s error=%s", update_id, attempt, exc)
+                    if attempt == max_attempts:
+                        await _notify_processing_failed(update)
+                        if isinstance(update_id, int):
+                            async with runtime.lock:
+                                runtime.processed_update_ids.add(update_id)
+                                runtime.update_attempts.pop(update_id, None)
+                    else:
+                        await asyncio.sleep(0.2)
+        finally:
+            if isinstance(update_id, int):
+                async with runtime.lock:
+                    runtime.processing_update_ids.discard(update_id)
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if last_error is None:

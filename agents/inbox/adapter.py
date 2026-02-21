@@ -80,7 +80,7 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle photo messages (JD screenshots)."""
     logger.info("Handling photo message via OCR path")
-    await update.message.reply_text("📸 Got your screenshot! Processing via OCR...")
+    await update.message.reply_text("📸 Got your screenshot. ⏳ Process started (OCR + pipeline)...")
 
     # Download the photo
     photo = update.message.photo[-1]  # highest resolution
@@ -106,8 +106,16 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             skip_upload=skip_upload,
             skip_calendar=skip_calendar,
         )
+        logger.info(
+            "Pipeline result mode=photo run_id=%s pdf_file=%s pdf_path=%s errors=%s",
+            pack.run_id,
+            pack.pdf_path.name if pack.pdf_path else None,
+            str(pack.pdf_path) if pack.pdf_path else None,
+            len(pack.errors),
+        )
         jd = pack.jd
         await update.message.reply_text(
+            f"✅ **Process completed**\n"
             f"✅ **JD Extracted:**\n"
             f"🏢 Company: {jd.company}\n"
             f"💼 Role: {jd.role}\n"
@@ -143,9 +151,22 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = update.message.text
     logger.info("Handling text message via router path")
     result = route(text)
+    preview = (text or "").replace("\n", " ").strip()
+    if len(preview) > 80:
+        preview = preview[:80] + "..."
+    logger.info(
+        "Router decision update_id=%s target=%s reason=%s text_preview=%s",
+        getattr(update, "update_id", None),
+        result.target.value,
+        result.reason,
+        preview,
+    )
 
     if result.target == AgentTarget.INBOX:
-        await update.message.reply_text(f"📥 Routing to Inbox Agent... ({result.reason})")
+        await update.message.reply_text(
+            f"📥 Routing to Inbox Agent... ({result.reason})\n"
+            "⏳ Process started (JD pipeline)..."
+        )
         try:
             from agents.inbox.agent import run_pipeline
             settings = get_settings()
@@ -174,8 +195,16 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 skip_upload=skip_upload,
                 skip_calendar=skip_calendar,
             )
+            logger.info(
+                "Pipeline result mode=text run_id=%s pdf_file=%s pdf_path=%s errors=%s",
+                pack.run_id,
+                pack.pdf_path.name if pack.pdf_path else None,
+                str(pack.pdf_path) if pack.pdf_path else None,
+                len(pack.errors),
+            )
             jd = pack.jd
             await update.message.reply_text(
+                f"✅ **Process completed**\n"
                 f"✅ **JD Extracted:**\n"
                 f"🏢 Company: {jd.company}\n"
                 f"💼 Role: {jd.role}\n"
