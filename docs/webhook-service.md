@@ -143,7 +143,7 @@ Provide:
 2. Full code per file
 3. Setup instructions
 4. Webhook registration instructions
-5. How to run locally with ngrok
+5. How to run locally with Cloudflare Tunnel
 6. How to deploy on VPS
 
 ---

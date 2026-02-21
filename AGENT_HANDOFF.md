@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last updated: 2026-02-16
+Last updated: 2026-02-21
 
 ## Purpose
 This file is the short-lived operational handoff between sessions/windows when context gets full. Keep it concise and current.
@@ -9,9 +9,9 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Post-review stabilization + remaining feature completion
-- Current test baseline: `98 passed` with `.venv/bin/pytest -q` (2026-02-16)
-- Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, threshold `95%`)
-- Active execution ticket: `KAR-59` (Todo, due 2026-03-02)
+- Current test baseline: `98 passed` with `.venv/bin/pytest -q` (2026-02-21)
+- Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, forbidden claims `3`)
+- Active execution ticket: `KAR-59` (In Progress, due 2026-03-15)
 - Milestone targets:
   - Phase 0 (2026-03-01)
   - Phase 1 (2026-03-15)
@@ -19,6 +19,8 @@ This file is the short-lived operational handoff between sessions/windows when c
   - Phase 3 (2026-04-30)
 
 ## What Was Just Completed
+- Synced tracker/handoff with current Linear issue status + due dates.
+- Added operational docs for staged setup/testing and troubleshooting issue tracking (`docs/setup-and-test.md`, `docs/troubleshooting-and-debugging.md`).
 - Resume mutation edits constrained to editable markers.
 - Regression test added for edit-scope guard.
 - Compiled PDFs persisted outside temp dir (`runs/artifacts/`).

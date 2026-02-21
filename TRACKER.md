@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-02-16
+Last updated: 2026-02-21
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -11,14 +11,18 @@ Last updated: 2026-02-16
 
 ## Current Status
 - Phase: Core pipeline hardening in progress.
-- Test status: `98 passed` (`.venv/bin/pytest -q` on 2026-02-16).
-- CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-16; compile success rate `0.0%`, threshold `95%`).
+- Test status: `98 passed` (`.venv/bin/pytest -q` on 2026-02-21).
+- CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-21; compile success rate `0.0%`, forbidden claims `3`, thresholds unmet).
 - Repo has implemented fixes for mutation scope, artifact persistence, real eval checks, and Telegram orchestration.
-- Active issue: `KAR-59` (`Todo`, due `2026-03-02`).
+- Active issue: `KAR-59` (`In Progress`, due `2026-03-15`).
 
-## Latest Progress (2026-02-16)
+## Latest Progress (2026-02-21)
+- Synced local tracker against Linear issue states and due dates.
+- Re-verified test baseline on `main`: `98 passed`.
+- Re-ran CI gate and confirmed current failing signals are compile success threshold and forbidden-claims threshold.
+- Added operational docs for setup/test flow and troubleshooting/issue debugging: `docs/setup-and-test.md`, `docs/troubleshooting-and-debugging.md`.
 - Verified current build/test baseline: `98 passed`.
-- Verified CI gating status: failing on compile success threshold only; other gates green.
+- Verified CI gating status: failing on compile success threshold and forbidden-claims threshold.
 - Implemented `KAR-49` follow-up progression persistence (`follow_up_count` increment + `last_follow_up_at`) with migration + tests.
 - Implemented `KAR-51` integration coverage for pipeline + adapter flow with mocked dependencies.
 - Implemented `KAR-50` URL ingestion fetch path with screenshot fallback UX in Telegram adapter flow.

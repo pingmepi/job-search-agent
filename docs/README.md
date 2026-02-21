@@ -2,6 +2,11 @@
 
 This document explains how to run the full `job-search-agent` project in webhook mode (no Telegram polling).
 
+## Related Operational Docs
+
+- Setup + staged test flow: `docs/setup-and-test.md`
+- Troubleshooting + issue log: `docs/troubleshooting-and-debugging.md`
+
 ## 1) What This Project Does
 
 The system ingests job descriptions from Telegram (text, URL, screenshot) and runs a pipeline:
@@ -103,6 +108,63 @@ Exposed endpoints:
 - `GET /health` -> `{"status":"ok"}`
 - `POST /telegram/webhook` -> validates `X-Telegram-Bot-Api-Secret-Token` and processes updates
 
+## 6b) Service Logs and Verification
+
+If running in foreground (`python main.py webhook`), logs print directly in that terminal.
+
+One-command runtime snapshot:
+
+```bash
+./scripts/check_runtime.sh
+```
+
+Useful checks from another terminal:
+
+```bash
+curl -sS http://127.0.0.1:8000/health
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+```
+
+Optional background run with file logs:
+
+```bash
+mkdir -p runs
+nohup ./.venv/bin/python main.py webhook > runs/webhook.log 2>&1 &
+echo $! > runs/webhook.pid
+tail -f runs/webhook.log
+```
+
+Process checks:
+
+```bash
+ps -fp "$(cat runs/webhook.pid)"
+tail -n 100 runs/webhook.log
+```
+
+If startup fails with `address already in use`:
+
+```bash
+lsof -tiTCP:8000 -sTCP:LISTEN
+kill <PID>
+sleep 1
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+```
+
+Then restart webhook:
+
+```bash
+nohup ./.venv/bin/python main.py webhook > runs/webhook.log 2>&1 &
+echo $! > runs/webhook.pid
+```
+
+Webhook registration verification:
+
+```bash
+./set_webhook.sh
+```
+
+Expected: `Webhook info` output includes your configured `PUBLIC_BASE_URL`.
+
 ## 7) Register Telegram Webhook
 
 Use included script:
@@ -119,7 +181,32 @@ Script behavior:
 - Sends `secret_token`
 - Prints `getWebhookInfo`
 
-## 8) Local Testing With ngrok
+## 8) Primary URL Flow (Recommended)
+
+Use your fixed domain from `.env` (example: `https://bot.merekapade.com`).
+
+1. Set `PUBLIC_BASE_URL` in `.env` to your fixed HTTPS domain.
+2. Start app:
+
+```bash
+python main.py webhook
+```
+
+3. Register webhook:
+
+```bash
+./set_webhook.sh
+```
+
+4. Confirm output shows:
+
+```text
+Setting webhook to: https://<your-fixed-domain>/telegram/webhook
+```
+
+## 8b) Backup: Quick Cloudflare Tunnel (Temporary)
+
+Use only when your fixed domain route is unavailable.
 
 1. Start app:
 
@@ -127,15 +214,15 @@ Script behavior:
 python main.py webhook
 ```
 
-2. In a second terminal:
+2. Start temporary tunnel in another terminal:
 
 ```bash
-ngrok http 8000
+cloudflared tunnel --url http://localhost:8000
 ```
 
-3. Set `PUBLIC_BASE_URL` to the ngrok HTTPS URL in `.env`.
-4. Re-run `./set_webhook.sh`.
-5. Send messages to your bot and inspect logs.
+3. Copy the shown `https://<random>.trycloudflare.com` URL and set it as `PUBLIC_BASE_URL` in `.env`.
+4. Run `./set_webhook.sh` again.
+5. Keep the `cloudflared` process running; when it stops, webhook delivery stops.
 
 ## 9) Reverse Proxy Deployment
 
@@ -208,6 +295,10 @@ The runner logs telemetry into the `runs` table with `agent='followup_runner'`.
 
 Includes webhook auth/health + webhook E2E tests (`tests/test_health.py`, `tests/test_webhook_api_e2e.py`) and follow-up runner tests (`tests/test_followup_runner.py`).
 
+Operational check shortcut:
+
+- `./scripts/check_runtime.sh` -> listener, health, log tail, Telegram webhook info, DB stats, CI gate
+
 ## 13) Troubleshooting
 
 `401 Invalid webhook secret`:
@@ -232,3 +323,13 @@ Webhook not receiving events:
 
 - Your configured `LLM_MODEL` currently has no active OpenRouter endpoints.
 - Set `LLM_FALLBACK_MODELS` in `.env` (comma-separated) so requests auto-retry on alternate models.
+
+`[Errno 48] ... address already in use`:
+
+- Cause: another process already listens on `WEBHOOK_PORT` (default `8000`).
+- Fix: identify and stop the existing listener (`lsof ...`, `kill <pid>`), then restart webhook.
+
+Webhook retries then fails after ~30s:
+
+- Cause: pipeline work exceeded webhook processing timeout and retried 3 times.
+- Fix: increase `WEBHOOK_PROCESS_TIMEOUT_SECONDS` in `.env` (example `45`) and reduce slow/failing model retries by setting stable `LLM_MODEL` + `LLM_FALLBACK_MODELS`.
