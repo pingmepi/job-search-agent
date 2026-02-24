@@ -62,18 +62,31 @@ class TestEditableRegionParsing:
 
 
 class TestMutationBounds:
-    def test_max_three_mutations(self):
-        """Resume mutation should never produce more than 3 changes."""
-        from agents.inbox.resume import validate_mutation_count
-        # 3 should be fine
-        validate_mutation_count(3)
-        # 4 should raise
-        with pytest.raises(ValueError, match="at most 3"):
-            validate_mutation_count(4)
+    def test_unlimited_mutations_allowed(self):
+        """Mutations are no longer capped — model can make as many as needed."""
+        # 5+ mutations should work fine (previously capped at 3)
+        mutations = [
+            {"original": "Built ML pipeline improving accuracy by 20\\%",
+             "replacement": "Built ML pipeline improving accuracy by 30\\%"},
+            {"original": "Led team of 5 engineers",
+             "replacement": "Led cross-functional team of 5 engineers"},
+            {"original": "Launched recommendation engine",
+             "replacement": "Launched AI-powered recommendation engine"},
+            {"original": "Managed product roadmap",
+             "replacement": "Owned end-to-end product roadmap"},
+            {"original": "Drove 15\\% increase in retention",
+             "replacement": "Drove 15\\% improvement in user retention"},
+        ]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "accuracy by 30" in result
+        assert "cross-functional team" in result
+        assert "AI-powered recommendation" in result
+        assert "end-to-end product roadmap" in result
+        assert "improvement in user retention" in result
 
     def test_zero_mutations_ok(self):
-        from agents.inbox.resume import validate_mutation_count
-        validate_mutation_count(0)
+        result = apply_mutations(SAMPLE_TEX, [])
+        assert "Built ML pipeline" in result
 
     def test_apply_mutations_does_not_edit_outside_markers(self):
         tex = r"""

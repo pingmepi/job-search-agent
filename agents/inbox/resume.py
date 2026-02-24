@@ -3,8 +3,8 @@ Resume engine — editable regions, mutation, selection, compilation.
 
 Key constraints (PRD §10):
 - Only modify content within %%BEGIN_EDITABLE / %%END_EDITABLE markers
-- Max 3 bullets rewritten per mutation
 - No new companies, metrics, or achievements invented
+- Resume must fit on a single page
 """
 
 from __future__ import annotations
@@ -68,11 +68,6 @@ def parse_editable_regions(tex_content: str) -> list[EditableRegion]:
 
 # ── Mutation validation ───────────────────────────────────────────
 
-def validate_mutation_count(count: int) -> None:
-    """Raise if more than 3 mutations are attempted."""
-    if count > 3:
-        raise ValueError(f"Resume mutation produced {count} changes — at most 3 allowed")
-
 
 def apply_mutations(
     tex_content: str,
@@ -85,7 +80,6 @@ def apply_mutations(
 
     Only applied within editable regions.
     """
-    validate_mutation_count(len(mutations))
 
     regions = parse_editable_regions(tex_content)
     if not regions:
@@ -186,3 +180,13 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         raise FileNotFoundError(f"pdflatex succeeded but PDF not found at {pdf_path}")
 
     return pdf_path
+
+
+# ── Page-count verification ───────────────────────────────────────
+
+def get_pdf_page_count(pdf_path: Path) -> int:
+    """Return the number of pages in a compiled PDF."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(pdf_path))
+    return len(reader.pages)
