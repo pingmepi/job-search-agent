@@ -95,6 +95,9 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
     monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_args, **_kwargs: _response("referral"))
 
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
     pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
 
     assert pack.job_id is not None
@@ -200,6 +203,9 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
     monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_args, **_kwargs: _response("referral"))
 
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
     pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
 
     assert call_counter["count"] == 2
@@ -232,6 +238,15 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         adapter,
         "route",
         lambda _text: RouteResult(AgentTarget.INBOX, "test route"),
+    )
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(
+            telegram_enable_drive_upload=False,
+            telegram_enable_calendar_events=False,
+        ),
     )
 
     fake_pack = SimpleNamespace(

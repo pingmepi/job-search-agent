@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-02-21
+Last updated: 2026-02-24
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -10,13 +10,29 @@ Last updated: 2026-02-21
   - https://linear.app/karans/document/tracker-2026-02-16-20e846e0ca54
 
 ## Current Status
-- Phase: Core pipeline hardening in progress.
-- Test status: `98 passed` (`.venv/bin/pytest -q` on 2026-02-21).
+- Phase: Core pipeline hardening + feature enhancements.
+- Test status: `114 passed` (`.venv/bin/pytest -q` on 2026-02-24).
 - CI gate status: `FAILED` (`.venv/bin/python main.py ci-gate` on 2026-02-21; compile success rate `0.0%`, forbidden claims `3`, thresholds unmet).
 - Repo has implemented fixes for mutation scope, artifact persistence, real eval checks, and Telegram orchestration.
-- Active issue: `KAR-59` (`In Progress`, due `2026-03-15`).
+- Active issue: `KAR-59` (`Done`), `KAR-87` (`Done`).
 
-## Latest Progress (2026-02-21)
+## Latest Progress (2026-02-24)
+- Removed 3-mutation cap — model can now make unlimited edits within editable regions.
+- Added bullet density rules to resume mutation prompt (max 5/role, min 1, density by relevance).
+- Created `resume_condense_v1.txt` prompt for post-compile overflow condensing.
+- Added `get_pdf_page_count()` helper using pypdf for single-page PDF verification.
+- Wired single-page enforcement loop into pipeline: compile → page check → LLM condense (2 retries) → margin fallback.
+- Changed artifact output to per-application folders: `runs/artifacts/{company}_{role}_{hash}/`.
+- Added draft file persistence: `email_draft.txt`, `linkedin_dm.txt`, `referral.txt` saved to output folder.
+- Enabled Drive upload and Calendar events in `.env` (`TELEGRAM_ENABLE_DRIVE_UPLOAD=true`, `TELEGRAM_ENABLE_CALENDAR_EVENTS=true`).
+- Added `pypdf>=4.0.0` to dependencies.
+- Wired soft evals (`score_resume_relevance`, `score_jd_accuracy`) into pipeline — results logged in `eval_results`.
+- Added 14 soft eval test cases in `tests/test_soft_evals.py`.
+- Replaced placeholder cost estimate with real USD cost tracking via OpenRouter's `/api/v1/generation` endpoint.
+- Cost resolution is deferred (batch at pipeline end) to avoid inline latency. Free models → `$0.00`.
+- Updated and fixed integration tests. Test baseline: 114 passed.
+
+## Previous Progress (2026-02-21)
 - Synced local tracker against Linear issue states and due dates.
 - Re-verified test baseline on `main`: `98 passed`.
 - Re-ran CI gate and confirmed current failing signals are compile success threshold and forbidden-claims threshold.

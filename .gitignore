@@ -26,6 +26,7 @@ runs/**/*.pdf
 
 # Runs directory (telemetry logs)
 runs/
+credentials/
 
 # SQLite
 *.db

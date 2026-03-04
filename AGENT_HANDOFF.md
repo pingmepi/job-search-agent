@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last updated: 2026-02-21
+Last updated: 2026-02-24
 
 ## Purpose
 This file is the short-lived operational handoff between sessions/windows when context gets full. Keep it concise and current.
@@ -8,10 +8,10 @@ This file is the short-lived operational handoff between sessions/windows when c
 ## Snapshot
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
-- Active phase: Post-review stabilization + remaining feature completion
-- Current test baseline: `98 passed` with `.venv/bin/pytest -q` (2026-02-21)
+- Active phase: Pipeline enhancements + feature completion
+- Current test baseline: `114 passed` with `.venv/bin/pytest -q` (2026-02-24)
 - Current CI gate: `FAILED` with `.venv/bin/python main.py ci-gate` (compile success rate `0.0%`, forbidden claims `3`)
-- Active execution ticket: `KAR-59` (In Progress, due 2026-03-15)
+- Active execution ticket: `KAR-60` (Pending)
 - Milestone targets:
   - Phase 0 (2026-03-01)
   - Phase 1 (2026-03-15)
@@ -43,13 +43,16 @@ This file is the short-lived operational handoff between sessions/windows when c
 - OCR pipeline now applies quality gating and raises explicit low-confidence errors; photo handler returns screenshot-clarification guidance.
 - Scheduled follow-up runner implemented with CLI entrypoint (`python main.py followup-runner`) and telemetry-backed cycle logging.
 - Webhook API E2E tests now cover realistic Telegram payload ingestion and malformed payload handling returns `400` cleanly.
+- **KAR-87: Pipeline Enhancements Complete.** (Removed mutation cap, added single-page enforcement, output bundling, Drive/Calendar enablement).
+- **KAR-59: Soft Evals Integrated.** (score_resume_relevance and score_jd_accuracy wired with 14 new test cases).
+- Real-time cost tracking from OpenRouter generation API (0.0 for free models, exact cost for paid).
+- Test suite expanded to **114 passed**.
 
 ## What Is Next
-1. KAR-59: Soft evals (resume relevance + JD extraction accuracy).
-2. KAR-60: Success criteria gates + CI threshold enforcement.
-3. KAR-61: Planner/executor separation.
-4. KAR-62: SaaS readiness scoping.
-5. KAR-72: Persist raw Telegram webhook events.
+1. KAR-60: Success criteria gates + CI threshold enforcement.
+2. KAR-61: Planner/executor separation.
+3. KAR-62: Phase 3 SaaS readiness scoping.
+4. KAR-72: Persist raw Telegram webhook events.
 
 ## Known Risks / Gaps
 - URL ingestion behavior is incomplete relative to PRD expectations.

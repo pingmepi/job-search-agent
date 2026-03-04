@@ -33,6 +33,7 @@ from agents.inbox.resume import (
     select_base_resume_with_score,
     apply_mutations,
     compile_latex,
+    get_pdf_page_count,
 )
 from evals.hard import (
     check_jd_schema,
@@ -54,6 +55,7 @@ class ApplicationPack:
     resume_base: str
     mutated_tex: Optional[str] = None
     pdf_path: Optional[Path] = None
+    output_dir: Optional[Path] = None
     drive_link: Optional[str] = None
     email_draft: Optional[str] = None
     linkedin_draft: Optional[str] = None
@@ -121,6 +123,7 @@ def run_pipeline(
     start_time = time.time()
     total_tokens = 0
     total_cost = 0.0
+    generation_ids: list[tuple[str, str]] = []  # (step_name, gen_id)
     is_url_input = bool(re.search(r"https?://", raw_text)) if raw_text else False
     input_mode = "image" if image_path else ("url" if is_url_input else "text")
     llm_usage_breakdown: dict[str, dict[str, float | int]] = {
@@ -172,13 +175,15 @@ def run_pipeline(
         raw_text, ocr_usage = ocr_pipeline_with_usage(image_path)
         llm_usage_breakdown["ocr_cleanup"] = ocr_usage
         total_tokens += int(ocr_usage.get("total_tokens", 0))
-        total_cost += float(ocr_usage.get("cost_estimate", 0.0))
+        if ocr_usage.get("generation_id"):
+            generation_ids.append(("ocr_cleanup", ocr_usage["generation_id"]))
 
     # ── Step 2: Extract & validate JD ─────────────────────────
     jd, jd_usage = extract_jd_with_usage(raw_text)
     llm_usage_breakdown["jd_extract"] = jd_usage
     total_tokens += int(jd_usage.get("total_tokens", 0))
-    total_cost += float(jd_usage.get("cost_estimate", 0.0))
+    if jd_usage.get("generation_id"):
+        generation_ids.append(("jd_extract", jd_usage["generation_id"]))
 
     # Check cache
     cached = get_cached_jd(jd.jd_hash)
@@ -227,7 +232,8 @@ def run_pipeline(
 
             response = chat_text(system, user_msg, json_mode=True)
             total_tokens += response.total_tokens
-            total_cost += response.cost_estimate
+            if response.generation_id:
+                generation_ids.append(("resume_mutation", response.generation_id))
             llm_usage_breakdown["resume_mutation"] = {
                 "prompt_tokens": response.prompt_tokens,
                 "completion_tokens": response.completion_tokens,
@@ -246,9 +252,18 @@ def run_pipeline(
         pack.errors.append(f"Resume mutation failed: {e}")
         pack.mutated_tex = original_tex if 'original_tex' in dir() else None
 
-    # ── Step 5: Compile LaTeX ─────────────────────────────────
+    # ── Step 5: Compile LaTeX + single-page enforcement ────────
+    condense_retries = 0
     if pack.mutated_tex:
         import tempfile
+
+        # Create per-application output folder
+        company_slug = _slugify_filename_part(jd.company, "company")
+        role_slug = _slugify_filename_part(jd.role, "role")
+        short_hash = jd.jd_hash[:8]
+        app_output_dir = settings.runs_dir / "artifacts" / f"{company_slug}_{role_slug}_{short_hash}"
+        app_output_dir.mkdir(parents=True, exist_ok=True)
+        pack.output_dir = app_output_dir
 
         def _compile_and_persist(tex_content: str, artifact_suffix: str = "") -> Path:
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -256,23 +271,90 @@ def run_pipeline(
                 tmp_tex.write_text(tex_content, encoding="utf-8")
                 compiled_pdf = compile_latex(tmp_tex, Path(tmp_dir))
 
-                artifacts_dir = settings.runs_dir / "artifacts"
-                artifacts_dir.mkdir(parents=True, exist_ok=True)
-                company_slug = _slugify_filename_part(jd.company, "company")
-                role_slug = _slugify_filename_part(jd.role, "role")
-                short_hash = jd.jd_hash[:8]
-                persisted_pdf = artifacts_dir / (
-                    f"{company_slug}_{role_slug}_{base_path.stem}_{short_hash}{artifact_suffix}.pdf"
+                persisted_pdf = app_output_dir / (
+                    f"{base_path.stem}{artifact_suffix}.pdf"
                 )
                 shutil.copy2(compiled_pdf, persisted_pdf)
                 return persisted_pdf
 
         try:
             pack.pdf_path = _compile_and_persist(pack.mutated_tex)
+
+            # ── Single-page enforcement loop ──────────────────
+            MAX_CONDENSE_RETRIES = 2
+            current_tex = pack.mutated_tex
+            while pack.pdf_path and pack.pdf_path.exists():
+                page_count = get_pdf_page_count(pack.pdf_path)
+                if page_count <= 1:
+                    break
+                if condense_retries >= MAX_CONDENSE_RETRIES:
+                    pack.errors.append(
+                        f"Resume is {page_count} pages after {condense_retries} condense retries. "
+                        "Minor margin adjustments applied as fallback."
+                    )
+                    # Last-resort: tighten margins slightly
+                    if r"\usepackage[" in current_tex and "geometry" in current_tex:
+                        current_tex = current_tex.replace(
+                            "margin=", "margin=0.4in, margin=", 1
+                        ).replace("margin=0.4in, margin=", "margin=0.4in", 1)
+                    elif r"\usepackage{geometry}" in current_tex:
+                        current_tex = current_tex.replace(
+                            r"\usepackage{geometry}",
+                            r"\usepackage[margin=0.4in]{geometry}",
+                        )
+                    try:
+                        pack.pdf_path = _compile_and_persist(current_tex, "_tight")
+                    except Exception:
+                        pass
+                    break
+
+                logger.info(
+                    "PDF is %d pages, running condense pass %d/%d",
+                    page_count, condense_retries + 1, MAX_CONDENSE_RETRIES,
+                )
+                try:
+                    import json as _cjson
+                    from core.llm import chat_text as _condense_chat
+                    from core.prompts import load_prompt as _condense_load
+
+                    condense_system = _condense_load("resume_condense", version=1)
+                    editable_content = "\n".join(
+                        r.content for r in parse_editable_regions(current_tex)
+                    )
+                    condense_user = (
+                        f"Page count: {page_count} (must be 1)\n\n"
+                        f"JD context:\n{_cjson.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills})}\n\n"
+                        f"Current editable content:\n{editable_content}"
+                    )
+                    condense_resp = _condense_chat(condense_system, condense_user, json_mode=True)
+                    total_tokens += condense_resp.total_tokens
+                    if condense_resp.generation_id:
+                        generation_ids.append((f"condense_pass_{condense_retries + 1}", condense_resp.generation_id))
+
+                    condense_data = _cjson.loads(condense_resp.text)
+                    condense_mutations = condense_data.get("mutations", [])
+
+                    # Handle bullet removals as mutations to empty string
+                    for removed in condense_data.get("bullets_removed", []):
+                        original = removed.get("original", "")
+                        if original:
+                            condense_mutations.append(
+                                {"original": original, "replacement": ""}
+                            )
+
+                    if condense_mutations:
+                        current_tex = apply_mutations(current_tex, condense_mutations)
+                        pack.mutated_tex = current_tex
+                        pack.pdf_path = _compile_and_persist(current_tex, f"_v{condense_retries + 2}")
+
+                    condense_retries += 1
+                except Exception as ce:
+                    pack.errors.append(f"Condense pass {condense_retries + 1} failed: {ce}")
+                    condense_retries += 1
+
         except Exception as e:
             pack.errors.append(f"LaTeX compile failed: {e}")
             try:
-                # Roll back to base resume compile to avoid losing artifact generation entirely.
                 original_tex_for_fallback = base_path.read_text(encoding="utf-8")
                 pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
                 compile_rollback_used = True
@@ -281,11 +363,12 @@ def run_pipeline(
                 pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
 
         logger.info(
-            "Compile result jd_hash=%s success=%s pdf_path=%s rollback_used=%s",
+            "Compile result jd_hash=%s success=%s pdf_path=%s rollback_used=%s condense_retries=%d",
             jd.jd_hash,
             bool(pack.pdf_path),
             str(pack.pdf_path) if pack.pdf_path else None,
             compile_rollback_used,
+            condense_retries,
         )
 
     # ── Step 6: Upload to Drive ───────────────────────────────
@@ -329,7 +412,9 @@ def run_pipeline(
         pack.referral_draft = referral.text
 
         total_tokens += email.total_tokens + linkedin.total_tokens + referral.total_tokens
-        total_cost += email.cost_estimate + linkedin.cost_estimate + referral.cost_estimate
+        for _step, _resp in [("draft_email", email), ("draft_linkedin", linkedin), ("draft_referral", referral)]:
+            if _resp.generation_id:
+                generation_ids.append((_step, _resp.generation_id))
         llm_usage_breakdown["draft_email"] = {
             "prompt_tokens": email.prompt_tokens,
             "completion_tokens": email.completion_tokens,
@@ -350,6 +435,25 @@ def run_pipeline(
         }
     except Exception as e:
         pack.errors.append(f"Draft generation failed: {e}")
+
+    # ── Step 8b: Persist drafts to output folder ──────────────
+    if pack.output_dir and pack.output_dir.exists():
+        try:
+            if pack.email_draft:
+                (pack.output_dir / "email_draft.txt").write_text(
+                    pack.email_draft, encoding="utf-8"
+                )
+            if pack.linkedin_draft:
+                (pack.output_dir / "linkedin_dm.txt").write_text(
+                    pack.linkedin_draft, encoding="utf-8"
+                )
+            if pack.referral_draft:
+                (pack.output_dir / "referral.txt").write_text(
+                    pack.referral_draft, encoding="utf-8"
+                )
+            logger.info("Drafts saved to %s", pack.output_dir)
+        except Exception as e:
+            pack.errors.append(f"Draft file persistence failed: {e}")
 
     # ── Step 9: Log to DB ─────────────────────────────────────
     try:
@@ -394,6 +498,48 @@ def run_pipeline(
             bullet_bank,
         )
 
+    # ── Resolve real costs from OpenRouter ─────────────────────
+    try:
+        from core.llm import resolve_costs_batch
+
+        gen_id_list = [gid for _, gid in generation_ids]
+        resolved = resolve_costs_batch(gen_id_list)
+
+        # Backfill per-step costs and compute total
+        for step_name, gen_id in generation_ids:
+            cost = resolved.get(gen_id, 0.0)
+            total_cost += cost
+            if step_name in llm_usage_breakdown:
+                llm_usage_breakdown[step_name]["cost_estimate"] = cost
+    except Exception as cost_err:
+        pack.errors.append(f"Cost resolution failed: {cost_err}")
+
+    # ── Soft evals (LLM-judged quality signals) ────────────────
+    soft_resume_relevance: float | None = None
+    soft_jd_accuracy: float | None = None
+
+    try:
+        from evals.soft import score_resume_relevance, score_jd_accuracy
+
+        if pack.mutated_tex:
+            soft_resume_relevance = score_resume_relevance(
+                jd.description, pack.mutated_tex,
+            )
+
+        soft_jd_accuracy = score_jd_accuracy(
+            raw_text,
+            {
+                "company": jd.company,
+                "role": jd.role,
+                "location": jd.location,
+                "experience_required": jd.experience_required,
+                "skills": jd.skills,
+                "description": jd.description,
+            },
+        )
+    except Exception as soft_err:
+        pack.errors.append(f"Soft eval failed: {soft_err}")
+
     eval_results = {
         "compile_success": bool(pack.pdf_path and pack.pdf_path.exists()),
         "forbidden_claims_count": forbidden_claims_count,
@@ -402,6 +548,7 @@ def run_pipeline(
         "cost_ok": check_cost(total_cost, threshold=settings.max_cost_per_job),
         "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
         "compile_rollback_used": compile_rollback_used,
+        "condense_retries": condense_retries,
         "llm_total_tokens": total_tokens,
         "llm_total_cost": total_cost,
         "llm_usage_breakdown": llm_usage_breakdown,
@@ -410,6 +557,8 @@ def run_pipeline(
              "experience_required": jd.experience_required, "skills": jd.skills,
              "description": jd.description}
         ),
+        "soft_resume_relevance": soft_resume_relevance,
+        "soft_jd_accuracy": soft_jd_accuracy,
     }
     pack.eval_results = eval_results
 

@@ -121,5 +121,6 @@ def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | in
         "completion_tokens": response.completion_tokens,
         "total_tokens": response.total_tokens,
         "cost_estimate": response.cost_estimate,
+        "generation_id": response.generation_id,
     }
     return jd, usage
