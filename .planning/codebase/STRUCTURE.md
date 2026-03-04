@@ -1,78 +1,93 @@
 # Structure
 
 ## Top-Level Layout
-- `main.py`: CLI command dispatcher for runtime operations (`webhook`, `init-db`, `ci-gate`, `db-stats`, `followup-runner`).
-- `app.py`: FastAPI webhook application and server startup.
-- `agents/`: business-facing agent modules (inbox, followup, profile).
-- `core/`: shared platform services (config, DB, LLM, router, prompts).
-- `integrations/`: Google API adapters (Drive, Calendar).
-- `evals/`: hard/soft quality checks, CI gate, run logger.
-- `tests/`: pytest suite for modules and integration paths.
-- `profile/`: profile and bullet-bank source data.
-- `resumes/`: master LaTeX resume templates and exported PDFs.
-- `runs/`: runtime artifacts and JSON telemetry logs.
-- `docs/`: operational runbooks and service docs.
-- `scripts/`: environment/runtime helper scripts.
-- `data/`: SQLite DB location (`data/inbox_agent.db` by default).
-- `credentials/`: OAuth client secrets and token files for Google integrations.
 
-## Package-Level Map
+- `agents/`: domain agent implementations and adapter glue
+- `core/`: shared infrastructure utilities (config, db, llm, routing, prompts)
+- `integrations/`: third-party service adapters (Google Drive, Calendar)
+- `evals/`: quality checks and CI evaluation gate
+- `tests/`: unit/integration/e2e test modules
+- `docs/`: runbooks, setup, troubleshooting, webhook docs
+- `scripts/`: operational shell scripts
+- `profile/`: canonical candidate profile + bullet bank inputs
+- `resumes/`: source `.tex` and exported PDF resume assets
+- `data/`: SQLite database file location
+- `runs/`: generated runtime artifacts and outputs
+- `.planning/codebase/`: architecture mapping documents
 
-### `agents/`
-- `agents/inbox/agent.py`: primary job-application pipeline orchestrator.
-- `agents/inbox/adapter.py`: Telegram handlers and routing bridge.
-- `agents/inbox/jd.py`: JD extraction and schema validation.
-- `agents/inbox/ocr.py`: OCR pipeline and quality gate.
-- `agents/inbox/resume.py`: editable-region parsing, mutation, LaTeX compile.
-- `agents/inbox/drafts.py`: email/LinkedIn/referral draft generators.
-- `agents/inbox/url_ingest.py`: URL fetch and HTML-to-text extraction.
-- `agents/followup/agent.py`: follow-up detection/tiering/draft generation.
-- `agents/followup/runner.py`: scheduled follow-up cycle runner.
-- `agents/profile/agent.py`: profile-grounded Q&A.
+## Key Code Locations
 
-### `core/`
-- `core/config.py`: `Settings` singleton, `.env` load, path resolution.
-- `core/db.py`: SQLite schema, migrations, CRUD, stats helpers.
-- `core/llm.py`: OpenRouter client wrapper and cost resolution.
-- `core/router.py`: deterministic message router.
-- `core/prompts/__init__.py`: versioned prompt loader.
-- `core/prompts/*.txt`: prompt templates (`*_v1.txt`).
+### Entry and Runtime
+- `main.py`: CLI command dispatcher (`webhook`, `init-db`, `ci-gate`, `db-stats`, `followup-runner`)
+- `app.py`: FastAPI app creation and webhook runtime lifecycle
 
-### `integrations/`
-- `integrations/drive.py`: Drive folder creation and PDF upload.
-- `integrations/calendar.py`: application/follow-up calendar events.
+### Agent Domain
+- `agents/inbox/agent.py`: primary job-application pipeline orchestration
+- `agents/inbox/adapter.py`: Telegram handlers and router-to-agent dispatch
+- `agents/inbox/ocr.py`: OCR pipeline for screenshot ingestion
+- `agents/inbox/jd.py`: JD extraction and caching logic
+- `agents/inbox/resume.py`: resume region parsing, mutation application, PDF compile utilities
+- `agents/inbox/url_ingest.py`: URL extraction + content fetch helpers
+- `agents/followup/agent.py`: follow-up detection and draft generation
+- `agents/followup/runner.py`: scheduled execution wrapper with run telemetry
+- `agents/profile/agent.py`: grounded profile answering and narrative selection
 
-### `evals/`
-- `evals/hard.py`: non-negotiable checks (schema, edit scope, cost, etc.).
-- `evals/soft.py`: LLM-judged quality scores.
-- `evals/logger.py`: run telemetry persistence.
-- `evals/ci_gate.py`: CI-facing eval gate command.
+### Shared Infrastructure
+- `core/config.py`: environment-backed immutable settings singleton
+- `core/router.py`: deterministic routing engine
+- `core/db.py`: SQLite schema, migrations, and CRUD helpers
+- `core/llm.py`: OpenRouter-backed LLM gateway
+- `core/prompts/`: versioned prompt text files (`*_v{n}.txt`)
 
-## Data and Artifacts
-- `profile/profile.json`: canonical identity/profile facts.
-- `profile/bullet_bank.json`: approved bullet corpus used for mutation grounding.
-- `resumes/master_*.tex`: editable base resume templates.
-- `runs/artifacts/<company>_<role>_<hash>/`: generated PDFs and drafts per application run.
-- `runs/run-*.json`: run-level telemetry snapshots.
-- `data/inbox_agent.db`: SQLite store (`jobs`, `runs`).
+### External Integrations
+- `integrations/drive.py`: Drive OAuth and PDF upload
+- `integrations/calendar.py`: Calendar OAuth and event creation
 
-## Tests Layout
-- Unit-style module tests are mostly named `tests/test_<module>.py`.
-- Cross-module behavior tests include files such as `tests/test_webhook_api_e2e.py` and `tests/test_integration_pipeline_adapter.py`.
-- Async endpoint behavior uses pytest async mode configured in `pyproject.toml` (`asyncio_mode = "auto"`).
+### Evaluation and QA
+- `evals/hard.py`, `evals/soft.py`: rule-based checks
+- `evals/logger.py`: run/eval logging helpers
+- `evals/ci_gate.py`: CI gate entrypoint
+- `tests/test_*.py`: pytest suite by subsystem
 
-## Naming and Organization Conventions
-- Python modules use snake_case filenames (for example `url_ingest.py`, `followup/runner.py`).
-- Packages use explicit `__init__.py` files (`agents/__init__.py`, `core/__init__.py`, etc.).
-- Prompt files follow `{name}_v{version}.txt` in `core/prompts/` (for example `jd_extract_v1.txt`, `resume_mutate_v1.txt`).
-- Resume templates follow `master_<variant>.tex` in `resumes/`.
-- Runtime IDs follow prefixed patterns:
-- telemetry runs: `run-<12 hex>` (`evals/logger.py`).
-- follow-up cycles: `followup-<12 hex>` (`agents/followup/runner.py`).
-- Generated artifact folders use slugified `{company}_{role}_{jd_hash8}`.
+## Directory Conventions
 
-## Practical Navigation Shortcuts
-- Start reading runtime behavior from `main.py` then `app.py`.
-- For inbound message handling, follow `agents/inbox/adapter.py` → `core/router.py` and `agents/inbox/agent.py`.
-- For persistence/telemetry, inspect `core/db.py` and `evals/logger.py`.
-- For model prompts and generation behavior, inspect `core/prompts/*.txt` and `core/llm.py`.
+### Packaging and Modules
+- Python package roots declared in `pyproject.toml`: `core*`, `agents*`, `integrations*`, `evals*`
+- Package directories include `__init__.py`
+- Modules are grouped by domain first (`agents/inbox`, `agents/profile`, etc.)
+
+### Naming Patterns
+- Files: snake_case module names (example: `url_ingest.py`, `extract_pdfs.py`)
+- Tests: `tests/test_<module_or_flow>.py`
+- Prompts: `<prompt_name>_v<version>.txt` (example: `jd_extract_v1.txt`)
+- Shell utilities: `.sh` scripts under `scripts/` or root helper scripts
+
+### Runtime Data Locations
+- DB default: `data/inbox_agent.db`
+- Run outputs/artifacts: `runs/artifacts/`
+- Profile source of truth: `profile/profile.json` and `profile/bullet_bank.json`
+- Resume sources: `resumes/*.tex`; additional generated/exported docs under `resumes/Resumes/`
+- Credentials: `credentials/` (OAuth material and tokens)
+
+## Logical Grouping by Concern
+- Transport/API concern: `app.py`, `agents/inbox/adapter.py`
+- Control flow concern: `core/router.py`, CLI in `main.py`
+- Business/domain concern: `agents/*/agent.py`, `agents/followup/runner.py`
+- Infrastructure concern: `core/config.py`, `core/db.py`, `core/llm.py`
+- Integration concern: `integrations/*.py`
+- Verification concern: `evals/*.py`, `tests/*.py`
+
+## Notable Structural Characteristics
+- The project is intentionally flat at top-level for quick discoverability.
+- Domain logic is centralized by agent type, not by technical layer per feature.
+- Shared cross-cutting concerns are consolidated under `core/`.
+- The inbox pipeline is the most structurally dense module cluster.
+
+## Cross-Reference Map (Fast Orientation)
+- Start service: `main.py` -> `app.py` -> `agents/inbox/adapter.py`
+- Route decision: `agents/inbox/adapter.py` -> `core/router.py`
+- Inbox execution: `agents/inbox/adapter.py` -> `agents/inbox/agent.py`
+- Follow-up schedule: `main.py` -> `agents/followup/runner.py` -> `agents/followup/agent.py`
+- Profile response: `agents/inbox/adapter.py` -> `agents/profile/agent.py`
+- Persistence: agents -> `core/db.py`
+- LLM calls: agents -> `core/llm.py` with prompts from `core/prompts/`

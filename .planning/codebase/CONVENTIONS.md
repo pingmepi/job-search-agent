@@ -1,31 +1,60 @@
 # CONVENTIONS
 
-## Language and Style Baseline
-- Codebase is Python 3.9+ (`pyproject.toml`) with pervasive type annotations across runtime and tests (for example `Path`, `Optional[...]`, `dict[str, Any]`).
-- `from __future__ import annotations` is standard in modules and tests (`app.py`, `main.py`, `core/llm.py`, `tests/test_db.py`).
-- Module/class/function docstrings are widely used and usually explain behavior and intent (`agents/inbox/agent.py`, `core/db.py`, `app.py`).
-- Logging uses module-level `logger = logging.getLogger(__name__)`; structured message templates with `%s` args are preferred in newer paths (`app.py`), but f-strings still appear (`agents/inbox/adapter.py`).
+## Scope
+- Repository type: Python 3.9+ service-style application with FastAPI webhook runtime and multi-agent pipeline logic.
+- Primary source roots: `agents/`, `core/`, `evals/`, `integrations/`, entrypoints `main.py` and `app.py`.
+
+## Code Style
+- Type-hint-first style is used broadly (function signatures, dataclass fields, local variables in critical paths).
+- `from __future__ import annotations` is used in most modules for forward-reference-friendly typing.
+- Module-level docstrings are common and usually explain purpose plus runtime context.
+- Standard library imports are generally grouped before local imports.
+- Formatting appears Black-compatible (4-space indent, double-quoted strings, trailing commas), but no explicit formatter config is committed.
 
 ## Naming Conventions
-- Files and modules use `snake_case` (`agents/inbox/url_ingest.py`, `tests/test_followup_runner.py`).
-- Functions and variables use `snake_case`; constants are `UPPER_SNAKE_CASE` (`JOBS_DDL`, `RUNS_MIGRATIONS` in `core/db.py`).
-- Dataclasses are `PascalCase` and model structured domain payloads (`Settings` in `core/config.py`, `ApplicationPack` in `agents/inbox/agent.py`, `LLMResponse` in `core/llm.py`).
-- Internal/private helpers are prefixed with `_` (`_parse_followup_runner_args` in `main.py`, `_keyword_coverage` in `agents/inbox/agent.py`).
-- Test helper doubles use `_Dummy*` / `_Fake*` naming (`tests/test_llm.py`, `tests/test_webhook_api_e2e.py`, `tests/test_integration_pipeline_adapter.py`).
+- Modules and files use `snake_case` (`url_ingest.py`, `followup_runner.py`, `test_soft_evals.py`).
+- Functions and variables use `snake_case`; constants use `UPPER_SNAKE_CASE` (`JOBS_DDL`, `_URL_PATTERN`).
+- Classes use `PascalCase` (`ApplicationPack`, `RouteResult`, `TelegramWebhookRuntime`).
+- Internal helpers are prefixed with `_` (`_env_bool`, `_slugify_filename_part`, `_outside_editable_content_changed`).
+- Test classes follow `Test*` and test functions follow `test_*`.
 
-## Structural and Design Patterns
-- Dependency access is centralized through `get_settings()` singleton from `core/config.py`, then patched in tests via monkeypatch.
-- Pipeline orchestration is step-oriented with explicit progress comments and staged exception handling (`agents/inbox/agent.py`).
-- Storage layer wraps SQLite with context-managed connections (`get_conn`) and small CRUD helpers (`core/db.py`).
-- Adapter pattern separates transport/webhook concerns from core pipeline logic (`agents/inbox/adapter.py` delegates to `agents/inbox/agent.py`; `app.py` owns webhook API lifecycle).
+## Typing and Data Modeling Patterns
+- `dataclass` is the primary data model primitive for internal structs (`Settings`, `ApplicationPack`, `LLMResponse`, `RouteResult`).
+- `Optional[T]` and `T | None` are both used (mixed style but consistently meaningful).
+- Return shapes are explicit for public functions (`dict[str, Any] | None`, `list[dict[str, Any]]`, etc.).
+- Pydantic is a dependency, but core domain objects are mostly dataclasses and explicit validation functions.
 
-## Error Handling Patterns
-- Input/argument validation raises `ValueError` for CLI and parser invariants (`main.py`, `agents/followup/runner.py`, `agents/inbox/jd.py`).
-- HTTP boundary errors raise `HTTPException` with explicit status codes and stable error messages (`app.py`).
-- Pipeline/runtime failures are often captured with broad `except Exception as e`, accumulated into `pack.errors`, and allow degraded completion (`agents/inbox/agent.py`, `agents/inbox/adapter.py`).
-- Defensive fallbacks favor continuity over hard failure (example: LLM fallback model retry in `core/llm.py`; compile rollback path in `tests/test_integration_pipeline_adapter.py` expectations).
+## Architectural Patterns in Code
+- Layered separation is visible:
+- `core/` for infra primitives (config, DB, LLM client, router).
+- `agents/` for domain workflows and adapters.
+- `evals/` for scoring/guardrail logic.
+- Orchestration-heavy functions (`run_pipeline`) aggregate step-by-step operations while keeping helper logic in module-private functions.
+- Configuration is centralized through `core.config.get_settings()` singleton access.
+- Deterministic routing intentionally avoids LLM use in `core/router.py`.
 
-## Practical Consistency Notes
-- Keep new logging consistent with `%s` parameterized logging style used in webhook code (`app.py`) instead of interpolated f-strings.
-- Preserve typed signatures and dataclass-centric boundaries for cross-module contracts (`core/config.py`, `core/llm.py`, `agents/inbox/agent.py`).
-- For user-visible failures, prefer explicit typed exceptions at boundaries and convert them to stable response/error payloads (`app.py`) rather than leaking raw exceptions.
+## Error Handling Conventions
+- Operational pipeline code favors resilient, step-local `try/except` blocks that collect recoverable errors instead of crashing whole runs.
+- Recoverable failures are appended to `pack.errors` in `agents/inbox/agent.py` and processing continues when possible.
+- API boundary errors are translated into `HTTPException` with explicit status codes in `app.py`.
+- Parsing/validation functions raise typed errors (`ValueError`, `TypeError`, `FileNotFoundError`) when data is invalid.
+- Fallback behavior is explicit in key paths (LLM model fallback, PDF compile rollback, webhook retry loop).
+- Some broad `except Exception` blocks are intentionally defensive in runtime-facing code.
+
+## Logging and Observability Patterns
+- Module-level `logger = logging.getLogger(__name__)` is standard.
+- Logs use structured message templates and include runtime identifiers where possible (`update_id`, `attempt`, `latency_ms`).
+- Logging levels align with severity (`info` for state transitions, `warning` for degraded behavior, `error/exception` for failures).
+
+## Consistency Notes and Gaps
+- No committed linter config (`ruff`, `flake8`, `pylint`) or formatter config (`black`, `isort`) was found in `pyproject.toml`.
+- No pre-commit config was found; conventions are mostly enforced socially and by tests.
+- Type checking is style-oriented (good annotations) but no mypy/pyright config was found.
+- String interpolation style is mixed (`f"..."` and logger `%s` formatting), with `%s` used in many logging callsites.
+
+## Practical Convention Summary
+- Keep new modules in `snake_case` and expose typed public functions.
+- Prefer dataclasses for internal domain payloads.
+- Route user/input-facing errors into explicit, non-crashing outcomes.
+- Preserve stepwise pipeline structure with local fallback handling.
+- Add tests for regressions whenever fallback or retry behavior changes.

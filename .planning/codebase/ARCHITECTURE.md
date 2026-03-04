@@ -1,125 +1,149 @@
 # Architecture
 
-## System Style
-- The repository is a modular monolith in Python: transport adapters, domain agents, shared core services, integrations, and evaluation logic are separated by package (`agents/`, `core/`, `integrations/`, `evals/`).
-- Runtime is webhook-first: FastAPI receives Telegram updates in `app.py`, then delegates update handling to a `python-telegram-bot` `Application` created in `agents/inbox/adapter.py`.
-- The primary business pipeline is orchestrated in one function, `run_pipeline()` in `agents/inbox/agent.py`, which executes OCR/JD extraction/resume mutation/compile/integrations/drafts/persistence/evaluation end-to-end.
-- Persistence is SQLite-centered via `core/db.py`, with telemetry dual-written to DB plus JSON logs (`runs/*.json`) via `evals/logger.py`.
+## Summary
+This repository is a webhook-first, multi-agent Python system for job application automation. The runtime is message-driven from Telegram updates, with deterministic routing and specialized agents for inbox processing, profile Q&A, and follow-up generation.
 
-## Layers
+## Architectural Pattern
+- Pattern: Layered modular monolith (single deployable service + internal modules)
+- Orchestration style: Agent-oriented workflow with explicit function boundaries
+- Runtime mode: FastAPI webhook service hosting a python-telegram-bot `Application`
+- Persistence: SQLite via hand-written data access helpers
+- External integration model: Adapter modules under `integrations/` and message ingress adapter in `agents/inbox/adapter.py`
 
-### 1) Entry/Transport Layer
-- CLI entrypoint: `main.py`.
-- Web server entrypoint: `app.py` (`create_webhook_app()`, `run_webhook_server()`).
-- Bot message adapter and handlers: `agents/inbox/adapter.py`.
+## Core Layers
 
-Responsibilities:
-- Accept external events (HTTP webhook, Telegram commands/messages, CLI commands).
-- Perform request-level controls (webhook secret check, update dedupe/retry/timeout in `app.py`).
-- Route user text to target agents via deterministic router (`core/router.py`).
-
-### 2) Orchestration Layer
-- Inbox pipeline orchestrator: `agents/inbox/agent.py`.
-- Follow-up orchestration: `agents/followup/agent.py`, scheduled loop in `agents/followup/runner.py`.
-- Profile response orchestration: `agents/profile/agent.py`.
+### 1) Interface and Entry Layer
+- HTTP entrypoint: `app.py`
+- CLI entrypoint: `main.py`
+- Telegram message adapter/handlers: `agents/inbox/adapter.py`
+- Health and webhook endpoints:
+  - `GET /health`
+  - `POST /telegram/webhook` (or configured path)
 
 Responsibilities:
-- Compose multi-step workflows across extraction, generation, validation, persistence, and integrations.
-- Manage step-local fallback behavior (compile fallback, condense retries, optional integrations).
-- Assemble cross-step telemetry payloads for run logging.
+- Validate webhook secret
+- Parse Telegram update payloads
+- Deduplicate update processing (`processed_update_ids`, `processing_update_ids`)
+- Route user intents and invoke domain agents
 
-### 3) Domain/Processing Components
-- JD extraction and schema validation: `agents/inbox/jd.py`.
-- OCR extraction/cleanup/quality gate: `agents/inbox/ocr.py`.
-- Resume parsing/mutation/selection/compile: `agents/inbox/resume.py`.
-- Outreach draft generation: `agents/inbox/drafts.py`.
-- URL text extraction: `agents/inbox/url_ingest.py`.
-- Deterministic routing heuristics: `core/router.py`.
+### 2) Routing and Control Layer
+- Deterministic router: `core/router.py`
 
 Responsibilities:
-- Perform bounded transformations with clear inputs/outputs.
-- Encapsulate reusable business rules (editable LaTeX regions, skill overlap selection, follow-up escalation tiers).
+- Classify input by content signals (image, URL, keywords, JD indicators)
+- Select target agent: `INBOX`, `PROFILE`, `FOLLOWUP`, or `CLARIFY`
+- Keep routing behavior non-LLM and reproducible
 
-### 4) Platform Services
-- Configuration and env loading: `core/config.py`.
-- LLM gateway and deferred cost resolution: `core/llm.py`.
-- Prompt loading/versioning: `core/prompts/__init__.py` + prompt files in `core/prompts/*.txt`.
-- Data access and schema/migrations: `core/db.py`.
-
-Responsibilities:
-- Centralize shared infra concerns (settings, API clients, DB access, prompt lookup).
-- Keep agent code focused on workflow logic.
-
-### 5) Integrations Layer
-- Google Drive upload: `integrations/drive.py`.
-- Google Calendar event creation: `integrations/calendar.py`.
+### 3) Domain Agent Layer
+- Inbox pipeline orchestrator: `agents/inbox/agent.py`
+- Follow-up logic: `agents/followup/agent.py`, scheduler `agents/followup/runner.py`
+- Profile responder: `agents/profile/agent.py`
 
 Responsibilities:
-- Isolate third-party API auth/state and API-specific logic from core agent flows.
+- Inbox: end-to-end pipeline (OCR/JD extraction/resume mutation/compile/integrations/evals/telemetry)
+- Follow-up: detect due jobs, generate tiered follow-up drafts, optionally persist follow-up progress
+- Profile: grounded narrative response generation from profile data
 
-### 6) Evaluation/Quality Layer
-- Hard checks: `evals/hard.py`.
-- Soft LLM-judged checks: `evals/soft.py`.
-- Run logging: `evals/logger.py`.
-- CI gate: `evals/ci_gate.py`.
+### 4) Shared Core Services Layer
+- Config singleton: `core/config.py`
+- Database access: `core/db.py`
+- LLM gateway: `core/llm.py`
+- Prompt loader/versioning: `core/prompts/__init__.py`
+- PDF utilities: `core/extract_pdfs.py`
 
 Responsibilities:
-- Provide quality gates/signals independent of business orchestration.
-- Persist auditable telemetry per run.
+- Centralize settings and paths
+- Encapsulate storage schema and migrations
+- Standardize LLM calls and deferred cost lookup
+- Decouple prompt text from Python code
 
-## Primary Data Flow
+### 5) Integration Layer
+- Google Drive adapter: `integrations/drive.py`
+- Google Calendar adapter: `integrations/calendar.py`
+- URL ingestion helper: `agents/inbox/url_ingest.py`
 
-### A) Webhook message to completed application pack
-1. `app.py` receives `POST /telegram/webhook`, validates secret, deduplicates by `update_id`, retries processing up to 3 attempts.
-2. `app.py` passes parsed Telegram `Update` to bot app from `agents/inbox/adapter.py`.
-3. `agents/inbox/adapter.py` handler:
-- Photo path: downloads image and calls `run_pipeline(..., image_path=...)`.
-- Text path: calls `core/router.py::route()`.
-- If URL present, pre-fetches plain text with `agents/inbox/url_ingest.py` before pipeline.
-4. `agents/inbox/agent.py::run_pipeline()` executes stepwise:
-- OCR (optional) via `agents/inbox/ocr.py`.
-- JD extraction via `agents/inbox/jd.py`.
-- Resume selection/mutation/compile via `agents/inbox/resume.py`.
-- Optional Drive/Calendar via `integrations/drive.py` and `integrations/calendar.py`.
-- Draft generation via `agents/inbox/drafts.py`.
-- Job persistence via `core/db.py`.
-- Eval computation via `evals/hard.py` and `evals/soft.py`.
-- Run logging via `evals/logger.py`.
-5. Handler sends summarized completion/errors back to Telegram chat.
+Responsibilities:
+- Boundary to third-party APIs
+- OAuth token management and API client creation
+- File upload/event creation and URL text fetch
 
-### B) Follow-up cycle
-1. `main.py followup-runner` invokes `agents/followup/runner.py`.
-2. Runner detects jobs needing follow-up (`core/db.py::get_jobs_needing_followup`).
-3. Drafts generated with LLM in `agents/followup/agent.py` and progress optionally persisted (`follow_up_count`, `last_follow_up_at`).
-4. Runner logs cycle as run telemetry in `runs` table.
+### 6) Quality and Evaluation Layer
+- Hard gates: `evals/hard.py`
+- Soft checks: `evals/soft.py`
+- Run logging helper: `evals/logger.py`
+- CI gate: `evals/ci_gate.py`
 
-### C) Profile Q&A
-1. Router sends profile-like queries to `agents/profile/agent.py`.
-2. Agent loads `profile/profile.json` and `profile/bullet_bank.json`.
-3. LLM answer generated through `core/llm.py`, then checked for grounding heuristics before response.
+Responsibilities:
+- Validate schema/claims/cost/draft constraints
+- Persist quality and telemetry outcomes in runs table
 
-## Core Abstractions
-- `Settings` (`core/config.py`): immutable runtime configuration singleton.
-- `LLMResponse` (`core/llm.py`): normalized LLM output shape for usage/cost telemetry.
-- `RouteResult` + `AgentTarget` (`core/router.py`): deterministic routing contract.
-- `JDSchema` (`agents/inbox/jd.py`): normalized extracted job-description object with deterministic hash.
-- `EditableRegion` (`agents/inbox/resume.py`): explicit editable-scope model for safe LaTeX mutation.
-- `ApplicationPack` (`agents/inbox/agent.py`): aggregate result model spanning outputs, artifacts, evals, and errors.
-- `DraftResult` (`agents/inbox/drafts.py`): typed outreach generation result.
+## Data Flow
 
-## Entry Points and Execution Modes
-- `main.py` command modes:
-- `webhook`/`bot`: run FastAPI+Telegram webhook service (`app.py`).
-- `init-db`: initialize/migrate SQLite schema (`core/db.py`).
-- `ci-gate`: run evaluation gate (`evals/ci_gate.py`).
-- `db-stats`: print DB quality/debug stats.
-- `followup-runner`: run one-shot or scheduled follow-up processing.
-- `app.py` can also be started directly (`run_webhook_server()`) and exposes `GET /health`.
+### Telegram Webhook Flow
+1. Telegram sends update to FastAPI webhook (`app.py`).
+2. Webhook verifies secret token and parses update.
+3. Adapter handlers process command/photo/text (`agents/inbox/adapter.py`).
+4. Text route determined by `core/router.py`.
+5. Target agent executes:
+   - Inbox: `run_pipeline(...)`
+   - Profile: `answer(...)`
+   - Follow-up: status or follow-up generation path
+6. Reply messages are sent back through Telegram bot API.
 
-## Architectural Patterns in Use
-- Deterministic pre-routing before costly model calls (`core/router.py`).
-- Ports/adapters split at boundaries: transport in `app.py`/`agents/inbox/adapter.py`, external APIs in `integrations/*.py`.
-- Prompt-as-artifact pattern with versioned text files in `core/prompts/`.
-- Cost-latency decoupling: generation cost resolved asynchronously after primary flow (`core/llm.py::resolve_costs_batch`).
-- Progressive fallback strategy in critical path (`agents/inbox/agent.py` compile fallback + condense retries).
-- Observability by design: structured run logs in both relational (`runs` table) and file (`runs/*.json`) sinks.
+### Inbox Pipeline Flow
+1. Input normalization: text, URL extraction/fetch, or image OCR.
+2. JD extraction: LLM prompt -> structured JD schema.
+3. Resume selection: choose base resume by skills fit.
+4. Resume mutation: LLM-guided editable-region mutation.
+5. Compile: LaTeX to PDF with single-page enforcement/condense retries.
+6. Optional integrations: upload PDF to Drive, create Calendar events.
+7. Draft generation: email/linkedin/referral text.
+8. Evaluation gates + telemetry logging.
+9. Persistence: job/run records in SQLite.
+
+## Main Abstractions
+- `Settings` dataclass (`core/config.py`): immutable runtime configuration contract
+- `LLMResponse` dataclass (`core/llm.py`): normalized LLM response envelope
+- `RouteResult` dataclass (`core/router.py`): deterministic routing output
+- `ApplicationPack` dataclass (`agents/inbox/agent.py`): end-to-end pipeline result container
+
+These abstractions provide explicit typed handoffs across modules and reduce implicit dict-based coupling in critical paths.
+
+## Entry Points
+- Service runtime:
+  - `python main.py webhook`
+  - module-level ASGI app object: `app:app`
+- Initialization:
+  - `python main.py init-db`
+- Evaluation and diagnostics:
+  - `python main.py ci-gate`
+  - `python main.py db-stats`
+- Scheduled flow:
+  - `python main.py followup-runner [--once|--dry-run|--interval-minutes ...]`
+
+## Dependency Direction
+- Outer layers (`app.py`, handlers) depend inward on core/domain modules.
+- Domain agents depend on shared core services and integrations.
+- `core/*` is foundational and does not depend on `agents/*`.
+- `integrations/*` are invoked by domain logic but isolated from transport entrypoints.
+
+This mostly preserves one-way dependencies and supports incremental modularization if split into separate services later.
+
+## Architectural Strengths
+- Clear boundary between ingress/routing and domain execution
+- Deterministic routing removes LLM uncertainty for intent classification
+- Centralized config + prompt versioning improves operational control
+- Pipeline state encapsulated in `ApplicationPack`
+- Webhook dedupe/retry logic reduces duplicate processing risk
+
+## Architectural Constraints and Tradeoffs
+- Single-process in-memory webhook dedupe state is not durable across restarts
+- SQLite and local filesystem artifacts suit single-node deployment but limit horizontal scale
+- Domain pipeline in `agents/inbox/agent.py` is feature-rich and comparatively heavy, increasing coupling
+- No explicit interface/protocol classes for integrations, so adapters are concrete-function based
+
+## Suggested Evolution Path
+- Extract inbox pipeline stages into smaller service modules/classes for testability
+- Move webhook idempotency state to persistent/shared storage if scaling out
+- Introduce explicit integration interfaces (ports) and adapter implementations
+- Add domain event objects for clearer boundaries between pipeline stages

@@ -1,89 +1,74 @@
-# INTEGRATIONS
-
-## Overview
-This repository integrates with messaging, LLM, Google Workspace, and arbitrary job-posting web pages. Integration wiring is primarily in `app.py`, `agents/inbox/adapter.py`, `core/llm.py`, and `integrations/*.py`.
+# External Integrations
 
 ## External APIs
 
+### OpenRouter (LLM Inference and Cost Metadata)
+- Purpose: chat completion inference for extraction/drafting pipeline steps.
+- Client path: `core/llm.py` using OpenAI SDK with `base_url` set to OpenRouter.
+- Base URL: `https://openrouter.ai/api/v1`.
+- Auth: bearer API key from `OPENROUTER_API_KEY`.
+- Extra endpoint usage: generation cost lookup via `GET /generation?id=<generation_id>`.
+- Failover behavior: configurable fallback model list via `LLM_FALLBACK_MODELS`.
+
 ### Telegram Bot API
-- Purpose: inbound user messages via webhook and bot responses.
-- Inbound webhook endpoint: `POST /telegram/webhook` implemented in `app.py`.
-- SDK usage: `python-telegram-bot` application processes updates and sends chat responses (`agents/inbox/adapter.py`, `app.py`).
-- Webhook registration call: `setWebhook` + `getWebhookInfo` via `curl` in `set_webhook.sh`.
-- Required secrets/config: `TELEGRAM_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `PUBLIC_BASE_URL` (`.env.example`, `core/config.py`, `set_webhook.sh`).
+- Purpose: inbound job ingestion and bot messaging.
+- Inbound webhook receiver: FastAPI route in `app.py` (`POST /telegram/webhook` by default).
+- Outbound registration/inspection: `set_webhook.sh` calls:
+  - `POST https://api.telegram.org/bot<TOKEN>/setWebhook`
+  - `GET https://api.telegram.org/bot<TOKEN>/getWebhookInfo`
+- Runtime bot operations are handled through `python-telegram-bot` adapter code.
 
-### OpenRouter (through OpenAI-compatible client)
-- Purpose: JD extraction, OCR cleanup, resume mutation/condensing, draft generation, soft eval scoring.
-- API client: OpenAI SDK configured with OpenRouter base URL (`core/llm.py`).
-- Endpoints used:
-  - Chat completions via `client.chat.completions.create(...)` (`core/llm.py`).
-  - Cost resolution via OpenRouter generation lookup `GET /generation?id=...` (`core/llm.py`).
-- Required secrets/config: `OPENROUTER_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODELS` (`.env.example`, `core/config.py`).
-
-### Google Drive API (Optional)
-- Purpose: upload generated resume PDFs to Drive folder hierarchy.
-- Integration module: `integrations/drive.py`.
+### Google Drive API
+- Purpose: optional upload of generated application artifacts.
+- Implementation: `integrations/drive.py` via Google API client (`drive v3`).
 - Scope: `https://www.googleapis.com/auth/drive.file`.
-- Token persistence: `drive_token.pickle` beside credentials file (`integrations/drive.py`).
-- Feature flag: `TELEGRAM_ENABLE_DRIVE_UPLOAD` (`core/config.py`, `.env.example`).
+- Behavior: creates/uses folder hierarchy `Jobs/{Company}/{Role}/`, uploads PDF, returns share link.
 
-### Google Calendar API (Optional)
-- Purpose: create applied/follow-up calendar events.
-- Integration module: `integrations/calendar.py`.
+### Google Calendar API
+- Purpose: optional calendar event creation for apply/follow-up workflow.
+- Implementation: `integrations/calendar.py` via Google API client (`calendar v3`).
 - Scope: `https://www.googleapis.com/auth/calendar.events`.
-- Token persistence: `calendar_token.pickle` beside credentials file (`integrations/calendar.py`).
-- Feature flag: `TELEGRAM_ENABLE_CALENDAR_EVENTS` (`core/config.py`, `.env.example`).
-
-### Arbitrary Job URL Fetching
-- Purpose: ingest job-posting content from user-provided links.
-- Implementation: HTTP(S) fetch using stdlib `urllib.request` in `agents/inbox/url_ingest.py`.
-- Network behavior: direct outbound GET with browser-like User-Agent; no site-specific API adapters.
+- Behavior: inserts 2 events on primary calendar (applied date and follow-up date).
 
 ## Databases and Storage
-
-### SQLite (Primary Data Store)
-- Engine: local SQLite via stdlib `sqlite3` (`core/db.py`).
-- File location: `data/inbox_agent.db` by default, configurable via `DB_PATH` (`core/config.py`, `.env.example`).
-- Tables: `jobs`, `runs` with additive migration logic (`core/db.py`).
-
-### File-Based State/Artifacts
-- Runtime outputs: artifacts and logs in `runs/` (`agents/inbox/agent.py`, `scripts/check_runtime.sh`).
-- Profile inputs: local JSON profile/bullet bank (`profile/profile.json`, `profile/bullet_bank.json`, `core/config.py`).
-- Credentials/tokens: local OAuth client JSON and pickle token files (`credentials/`, `integrations/drive.py`, `integrations/calendar.py`).
+- Primary datastore: SQLite database (`data/inbox_agent.db` by default).
+- Access layer: `core/db.py` using stdlib `sqlite3` with lightweight migration logic.
+- Main tables:
+  - `jobs` (application records, fit score, Drive link, follow-up metadata)
+  - `runs` (agent run telemetry, token/cost/latency/error context)
+- File storage:
+  - `runs/` for runtime outputs/logs.
+  - `resumes/`, `profile/`, `core/prompts/` for local domain assets.
 
 ## Authentication and Authorization
 
+### OpenRouter
+- Auth mechanism: API key bearer token (`OPENROUTER_API_KEY`).
+
 ### Telegram Webhook Verification
-- Mechanism: shared-secret header `X-Telegram-Bot-Api-Secret-Token` checked per request (`app.py`).
-- Failure behavior:
-  - Invalid header value -> `401`.
-  - Missing/misconfigured expected secret -> `500`.
+- Auth/validation mechanism: secret header check.
+- Header: `X-Telegram-Bot-Api-Secret-Token`.
+- Config key: `TELEGRAM_WEBHOOK_SECRET`.
+- Behavior: webhook requests are rejected with `401` if secret mismatch.
 
-### OpenRouter API Key
-- Mechanism: bearer key in OpenAI client config (`core/llm.py`, `core/config.py`).
-- No user-level OAuth; single application credential model.
+### Google OAuth
+- Auth mechanism: OAuth client credentials + token refresh flow.
+- Credentials file path: `GOOGLE_CREDENTIALS_PATH` (default `credentials/google_oauth.json`).
+- Token cache files:
+  - `credentials/drive_token.pickle`
+  - `credentials/calendar_token.pickle`
 
-### Google OAuth (Installed App Flow)
-- Mechanism: interactive OAuth flow via `InstalledAppFlow.run_local_server(...)` (`integrations/drive.py`, `integrations/calendar.py`).
-- Refresh behavior: refresh token reuse when available (`integrations/drive.py`, `integrations/calendar.py`).
+## Webhooks and Event Interfaces
+- Inbound webhook provider: Telegram.
+- Endpoint path: configurable via `TELEGRAM_WEBHOOK_PATH` (default `/telegram/webhook`).
+- Host/port binding: `WEBHOOK_HOST` and `WEBHOOK_PORT`.
+- Processing timeout: `WEBHOOK_PROCESS_TIMEOUT_SECONDS`.
+- Delivery semantics in app logic:
+  - validates secret header before processing.
+  - deduplicates `update_id` to avoid duplicate execution.
+  - retries failed processing up to 3 attempts before user notification.
 
-## Webhooks and Event Flows
-
-### Inbound Webhooks
-- Telegram -> app webhook:
-  - Endpoint: configurable path defaulting to `/telegram/webhook` (`app.py`, `core/config.py`, `.env.example`).
-  - Processing: update de-duplication + retry/timeout handling in webhook runtime (`app.py`).
-
-### Outbound Webhook Configuration
-- App operator -> Telegram API:
-  - Scripted registration via `set_webhook.sh`.
-  - Passes `secret_token` and `drop_pending_updates=true`.
-
-## Integration Control Flags and Safety
-- Optional integrations are explicitly toggled at runtime (`TELEGRAM_ENABLE_DRIVE_UPLOAD`, `TELEGRAM_ENABLE_CALENDAR_EVENTS`) (`core/config.py`, `.env.example`, `agents/inbox/adapter.py`).
-- Pipeline degrades gracefully: Drive/Calendar failures are captured in `ApplicationPack.errors` without hard-failing the full processing flow (`agents/inbox/agent.py`).
-
-## Current Gaps/Constraints (Integration View)
-- No external queue/event bus integration; webhook handler processes updates inline (`app.py`).
-- No first-party user authentication layer for API endpoints beyond Telegram webhook secret (`app.py`).
-- OAuth token storage is file-based pickle in local filesystem, which is simple but not centralized secret management (`integrations/drive.py`, `integrations/calendar.py`).
+## Integration Feature Flags and Operational Controls
+- `TELEGRAM_ENABLE_DRIVE_UPLOAD` toggles Drive upload integration.
+- `TELEGRAM_ENABLE_CALENDAR_EVENTS` toggles Calendar event integration.
+- `PUBLIC_BASE_URL` controls external webhook URL registration target.
