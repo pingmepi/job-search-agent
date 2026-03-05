@@ -65,6 +65,12 @@ class TestForbiddenClaims:
         )
         assert count > 0
 
+    def test_invented_numeric_metric(self):
+        original_bullets = ["Improved retention by 10%"]
+        mutated_bullets = ["Improved retention by 35%"]
+        count = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank=[])
+        assert count > 0
+
 
 class TestDraftLength:
     def test_linkedin_under_limit(self):

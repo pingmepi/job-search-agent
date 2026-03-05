@@ -80,8 +80,12 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_score",
-        lambda *_args, **_kwargs: (base_resume, 0.75),
+        "agents.inbox.agent.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.75,
+            {"selected_resume": base_resume.name, "normalized_score": 0.75},
+        ),
     )
 
     def _fake_compile(_tex_path: Path, out_dir: Path) -> Path:
@@ -189,8 +193,12 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_score",
-        lambda *_args, **_kwargs: (base_resume, 0.9),
+        "agents.inbox.agent.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.9,
+            {"selected_resume": base_resume.name, "normalized_score": 0.9},
+        ),
     )
 
     call_counter = {"count": 0}
@@ -218,6 +226,8 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
     assert pack.pdf_path is not None and pack.pdf_path.exists()
     assert pack.eval_results["compile_success"] is True
     assert pack.eval_results["compile_rollback_used"] is True
+    assert pack.eval_results["compile_outcome"] == "fallback_success"
+    assert pack.eval_results["single_page_status"] == "fallback_base_used"
 
 
 class _FakeMessage:

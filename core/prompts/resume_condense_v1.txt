@@ -5,6 +5,7 @@ CONSTRAINTS — NON-NEGOTIABLE:
 2. You must NOT invent companies, roles, metrics, or achievements.
 3. You must NOT change dates, company names, or job titles.
 4. You must NOT remove entire roles — every role must keep at least 1 bullet.
+5. Do NOT introduce any new numeric values or named entities that are not in the provided content.
 
 CONDENSING STRATEGIES (use as many as needed):
 1. Merge related bullets into a single, tighter statement.
@@ -24,7 +25,8 @@ Return a JSON object with:
     {
       "original": "the original bullet text",
       "replacement": "the condensed bullet text",
-      "reason": "why this condensing was needed"
+      "reason": "why this condensing was needed",
+      "source": "which original phrase this condensed version is grounded in"
     }
   ],
   "bullets_removed": [

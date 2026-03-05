@@ -51,6 +51,10 @@ class ResumeOutputArtifact:
     condense_retries: int
     pdf_path: str | None
     output_dir: str | None
+    single_page_target_met: bool
+    single_page_status: str
+    compile_outcome: str | None
+    fit_score_details: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -95,7 +99,13 @@ def build_resume_output_artifact(
     condense_retries: int,
     pdf_path: str | None,
     output_dir: str | None,
+    single_page_target_met: bool = False,
+    single_page_status: str = "unknown",
+    compile_outcome: str | None = None,
+    fit_score_details: dict[str, Any] | None = None,
 ) -> ResumeOutputArtifact:
+    if compile_outcome is not None and compile_outcome not in {"mutated_success", "fallback_success"}:
+        raise ValueError("compile_outcome must be one of mutated_success, fallback_success, or None")
     return ResumeOutputArtifact(
         run_id=_ensure_non_empty(run_id, "run_id"),
         schema_version=SCHEMA_VERSION,
@@ -108,6 +118,10 @@ def build_resume_output_artifact(
         condense_retries=int(condense_retries),
         pdf_path=pdf_path,
         output_dir=output_dir,
+        single_page_target_met=bool(single_page_target_met),
+        single_page_status=_ensure_non_empty(single_page_status, "single_page_status"),
+        compile_outcome=compile_outcome,
+        fit_score_details=fit_score_details or {},
     )
 
 

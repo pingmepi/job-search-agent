@@ -11,7 +11,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Intake Reliability and Contracts** - Stabilize input routing, replayability, and canonical artifact contracts. (completed 2026-03-05)
-- [ ] **Phase 2: Resume Tailoring Safety** - Deliver grounded, compile-safe, one-page resume tailoring with reliable fallback.
+- [x] **Phase 2: Resume Tailoring Safety** - Deliver grounded, compile-safe, one-page resume tailoring with reliable fallback. (completed 2026-03-05)
 - [ ] **Phase 3: Collateral Selection and Delivery** - Generate only requested collateral and persist outputs in local and Drive application folders.
 - [ ] **Phase 4: Eval Gates and Release Quality** - Enforce CI quality thresholds with representative eval coverage and ATS signaling.
 - [ ] **Phase 5: Workflow State and Linear Sync** - Persist follow-up progression and keep one up-to-date Linear issue per application run.
@@ -39,7 +39,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
   2. Resume edits stay within editable regions and preserve grounded factual claims.
   3. Resume output passes single-page constraints with bounded condense retries and safe fallback behavior.
   4. Pipeline always returns a compilable PDF, either from mutated output or rollback base artifact.
-**Plans**: 3 planned (`02-01`, `02-02`, `02-03`)
+**Plans**: 3/3 complete (`02-01`, `02-02`, `02-03`)
 
 ### Phase 3: Collateral Selection and Delivery
 **Goal**: Users can choose exactly which outreach collateral to generate, with all artifacts organized per application across local and Drive storage.
@@ -77,7 +77,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Intake Reliability and Contracts | 3/3 | Complete    | 2026-03-05 |
-| 2. Resume Tailoring Safety | 0/3 | Planned | - |
+| 2. Resume Tailoring Safety | 3/3 | Complete    | 2026-03-05 |
 | 3. Collateral Selection and Delivery | 0/TBD | Not started | - |
 | 4. Eval Gates and Release Quality | 0/TBD | Not started | - |
 | 5. Workflow State and Linear Sync | 0/TBD | Not started | - |

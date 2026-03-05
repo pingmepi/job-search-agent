@@ -30,7 +30,7 @@ from core.db import init_db, insert_job
 from agents.inbox.jd import JDSchema, extract_jd_with_usage, get_cached_jd
 from agents.inbox.resume import (
     parse_editable_regions,
-    select_base_resume_with_score,
+    select_base_resume_with_details,
     apply_mutations,
     compile_latex,
     get_pdf_page_count,
@@ -194,11 +194,19 @@ def run_pipeline(
     pack = ApplicationPack(jd=jd, resume_base="")
     pack.run_id = run_id
     fit_score_percent = 0
+    fit_score_details: dict = {}
     compile_rollback_used = False
+    truthfulness_fallback_used = False
+    single_page_target_met = False
+    single_page_status = "not_checked"
+    compile_outcome: str | None = None
 
     # ── Step 3: Select resume base ────────────────────────────
     try:
-        base_path, fit_score = select_base_resume_with_score(jd.skills, settings.resumes_dir)
+        base_path, fit_score, fit_score_details = select_base_resume_with_details(
+            jd.skills,
+            settings.resumes_dir,
+        )
         fit_score_percent = int(round(fit_score * 100))
         pack.resume_base = base_path.name
         logger.info(f"Selected resume: {base_path.name}")
@@ -223,7 +231,8 @@ def run_pipeline(
             bullet_bank = json.loads(
                 settings.bullet_bank_path.read_text(encoding="utf-8")
             )
-            bullet_bank_text = "\n".join(b["bullet"] for b in bullet_bank)
+            bullet_bank_values = [b["bullet"] for b in bullet_bank if isinstance(b, dict) and "bullet" in b]
+            bullet_bank_text = "\n".join(bullet_bank_values)
 
             system = load_prompt("resume_mutate", version=1)
             user_msg = (
@@ -247,6 +256,22 @@ def run_pipeline(
             mutations = mutations_data.get("mutations", [])
 
             pack.mutated_tex = apply_mutations(original_tex, mutations)
+
+            # Enforce safe behavior if fabricated claims appear in mutated bullets.
+            original_bullets_pre = _extract_bullets(original_tex)
+            mutated_bullets_pre = _extract_bullets(pack.mutated_tex)
+            forbidden_claims_pre = check_forbidden_claims(
+                original_bullets_pre,
+                mutated_bullets_pre,
+                bullet_bank_values,
+            )
+            if forbidden_claims_pre > 0:
+                truthfulness_fallback_used = True
+                pack.errors.append(
+                    f"Truthfulness safeguard triggered ({forbidden_claims_pre} suspected fabricated claims); "
+                    "using safe base resume content."
+                )
+                pack.mutated_tex = original_tex
         else:
             pack.mutated_tex = original_tex
 
@@ -279,6 +304,13 @@ def run_pipeline(
                 shutil.copy2(compiled_pdf, persisted_pdf)
                 return persisted_pdf
 
+        def _safe_page_count(pdf_path: Path) -> int | None:
+            try:
+                return get_pdf_page_count(pdf_path)
+            except Exception as page_err:
+                pack.errors.append(f"Page count check failed: {page_err}")
+                return None
+
         try:
             pack.pdf_path = _compile_and_persist(pack.mutated_tex)
 
@@ -286,28 +318,32 @@ def run_pipeline(
             MAX_CONDENSE_RETRIES = 2
             current_tex = pack.mutated_tex
             while pack.pdf_path and pack.pdf_path.exists():
-                page_count = get_pdf_page_count(pack.pdf_path)
+                page_count = _safe_page_count(pack.pdf_path)
+                if page_count is None:
+                    single_page_status = "unknown"
+                    compile_outcome = "mutated_success"
+                    break
                 if page_count <= 1:
+                    single_page_target_met = True
+                    single_page_status = "met"
+                    compile_outcome = "mutated_success"
                     break
                 if condense_retries >= MAX_CONDENSE_RETRIES:
                     pack.errors.append(
                         f"Resume is {page_count} pages after {condense_retries} condense retries. "
-                        "Minor margin adjustments applied as fallback."
+                        "Falling back to safe base resume PDF."
                     )
-                    # Last-resort: tighten margins slightly
-                    if r"\usepackage[" in current_tex and "geometry" in current_tex:
-                        current_tex = current_tex.replace(
-                            "margin=", "margin=0.4in, margin=", 1
-                        ).replace("margin=0.4in, margin=", "margin=0.4in", 1)
-                    elif r"\usepackage{geometry}" in current_tex:
-                        current_tex = current_tex.replace(
-                            r"\usepackage{geometry}",
-                            r"\usepackage[margin=0.4in]{geometry}",
-                        )
                     try:
-                        pack.pdf_path = _compile_and_persist(current_tex, "_tight")
-                    except Exception:
-                        pass
+                        original_tex_for_fallback = base_path.read_text(encoding="utf-8")
+                        pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
+                        compile_rollback_used = True
+                        compile_outcome = "fallback_success"
+                        fallback_pages = _safe_page_count(pack.pdf_path)
+                        single_page_target_met = fallback_pages is not None and fallback_pages <= 1
+                        single_page_status = "fallback_base_used"
+                    except Exception as fallback_error:
+                        pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
+                        single_page_status = "fallback_failed"
                     break
 
                 logger.info(
@@ -360,9 +396,14 @@ def run_pipeline(
                 original_tex_for_fallback = base_path.read_text(encoding="utf-8")
                 pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
                 compile_rollback_used = True
+                compile_outcome = "fallback_success"
                 pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+                fallback_pages = _safe_page_count(pack.pdf_path)
+                single_page_target_met = fallback_pages is not None and fallback_pages <= 1
+                single_page_status = "fallback_base_used"
             except Exception as fallback_error:
                 pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
+                single_page_status = "fallback_failed"
 
         logger.info(
             "Compile result jd_hash=%s success=%s pdf_path=%s rollback_used=%s condense_retries=%d",
@@ -500,6 +541,8 @@ def run_pipeline(
             mutated_bullets,
             bullet_bank,
         )
+    if truthfulness_fallback_used and forbidden_claims_count == 0:
+        forbidden_claims_count = 1
 
     # ── Resolve real costs from OpenRouter ─────────────────────
     try:
@@ -551,7 +594,11 @@ def run_pipeline(
         "cost_ok": check_cost(total_cost, threshold=settings.max_cost_per_job),
         "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
         "compile_rollback_used": compile_rollback_used,
+        "truthfulness_fallback_used": truthfulness_fallback_used,
         "condense_retries": condense_retries,
+        "single_page_target_met": single_page_target_met,
+        "single_page_status": single_page_status,
+        "compile_outcome": compile_outcome,
         "llm_total_tokens": total_tokens,
         "llm_total_cost": total_cost,
         "llm_usage_breakdown": llm_usage_breakdown,
@@ -598,6 +645,10 @@ def run_pipeline(
                 condense_retries=condense_retries,
                 pdf_path=str(pack.pdf_path) if pack.pdf_path else None,
                 output_dir=str(pack.output_dir) if pack.output_dir else None,
+                single_page_target_met=single_page_target_met,
+                single_page_status=single_page_status,
+                compile_outcome=compile_outcome,
+                fit_score_details=fit_score_details,
             )
             eval_artifact = build_eval_output_artifact(
                 run_id=run_id,
@@ -637,6 +688,7 @@ def run_pipeline(
             "jd_hash": jd.jd_hash,
             "resume_base": pack.resume_base,
             "fit_score": fit_score_percent,
+            "fit_score_details": fit_score_details,
             "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
             "drive_link": pack.drive_link,
             "skip_upload": skip_upload,
@@ -644,6 +696,8 @@ def run_pipeline(
             "input_mode": input_mode,
             "error_count": len(pack.errors),
             "artifact_paths": artifact_paths,
+            "single_page_status": single_page_status,
+            "compile_outcome": compile_outcome,
         }
         pack.run_id = log_run(
             "inbox",
