@@ -30,6 +30,7 @@ class TelegramWebhookRuntime:
         self.processed_update_ids: set[int] = set()
         self.processing_update_ids: set[int] = set()
         self.update_attempts: dict[int, int] = {}
+        self.background_update_tasks: dict[int, asyncio.Task[Any]] = {}
         self.lock: asyncio.Lock | None = None
 
 
@@ -189,8 +190,43 @@ def create_webhook_app(
                     return {"ok": True}
                 runtime.processing_update_ids.add(update_id)
 
+        async def _finalize_background_update(
+            *,
+            update_id: int,
+            event_id: str,
+            update: Update,
+            task: asyncio.Task[Any],
+        ) -> None:
+            error_text: str | None = None
+            status = "processed"
+            try:
+                await task
+            except Exception as exc:
+                status = "failed"
+                error_text = str(exc)
+                await _notify_processing_failed(update)
+                logger.error(
+                    "Background update failed after webhook timeout update_id=%s error=%s",
+                    update_id,
+                    exc,
+                )
+            finally:
+                async with runtime.lock:
+                    runtime.background_update_tasks.pop(update_id, None)
+                    runtime.processing_update_ids.discard(update_id)
+                    runtime.processed_update_ids.add(update_id)
+                    runtime.update_attempts.pop(update_id, None)
+                update_webhook_event(
+                    event_id,
+                    processing_status=status,
+                    error_text=error_text,
+                    mark_processed=True,
+                    db_path=resolved_db_path,
+                )
+
         max_attempts = 3
         last_error: Exception | None = None
+        deferred_to_background = False
         try:
             update_webhook_event(
                 event_id,
@@ -202,8 +238,9 @@ def create_webhook_app(
                     if isinstance(update_id, int):
                         runtime.update_attempts[update_id] = attempt
                     logger.info("Processing update_id=%s attempt=%s/%s", update_id, attempt, max_attempts)
+                    process_task = asyncio.create_task(runtime.telegram_app.process_update(update))
                     await asyncio.wait_for(
-                        runtime.telegram_app.process_update(update),
+                        asyncio.shield(process_task),
                         timeout=resolved_settings.webhook_process_timeout_seconds,
                     )
                     last_error = None
@@ -219,8 +256,8 @@ def create_webhook_app(
                     )
                     break
                 except asyncio.TimeoutError:
-                    # process_update may continue async work (e.g. thread offload) after timeout.
-                    # Mark this update as processed to prevent duplicate redelivery execution.
+                    # Keep the in-flight task alive in background so handlers can finish
+                    # and still send Telegram replies after webhook ACK timeout.
                     logger.warning(
                         "Update processing timed out update_id=%s attempt=%s timeout_seconds=%s",
                         update_id,
@@ -230,13 +267,23 @@ def create_webhook_app(
                     last_error = None
                     if isinstance(update_id, int):
                         async with runtime.lock:
-                            runtime.processed_update_ids.add(update_id)
-                            runtime.update_attempts.pop(update_id, None)
+                            runtime.background_update_tasks[update_id] = process_task
+                        process_task.add_done_callback(
+                            lambda done, uid=update_id, eid=event_id, upd=update: asyncio.create_task(
+                                _finalize_background_update(
+                                    update_id=uid,
+                                    event_id=eid,
+                                    update=upd,
+                                    task=done,
+                                )
+                            )
+                        )
+                        deferred_to_background = True
                     update_webhook_event(
                         event_id,
-                        processing_status="processed",
-                        error_text="processing timeout",
-                        mark_processed=True,
+                        processing_status="processing",
+                        error_text="processing timeout; continuing in background",
+                        mark_processed=False,
                         db_path=resolved_db_path,
                     )
                     break
@@ -261,7 +308,8 @@ def create_webhook_app(
         finally:
             if isinstance(update_id, int):
                 async with runtime.lock:
-                    runtime.processing_update_ids.discard(update_id)
+                    if not deferred_to_background:
+                        runtime.processing_update_ids.discard(update_id)
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if last_error is None:

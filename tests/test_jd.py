@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 import pytest
 
-from agents.inbox.jd import validate_jd_schema, JDSchema
+from agents.inbox.jd import (
+    validate_jd_schema,
+    JDSchema,
+    _fill_missing_required_fields,
+    _parse_json_object_from_llm_text,
+    extract_jd_with_usage,
+)
 
 
 class TestJDSchemaValidation:
@@ -56,3 +64,101 @@ class TestJDSchemaValidation:
         }
         jd = validate_jd_schema(data)
         assert jd.location == ""
+
+    def test_fill_missing_required_fields_infers_company_and_role(self):
+        raw_text = (
+            "Acme Corp is hiring for a Senior Product Manager.\n"
+            "Location: Remote\n"
+            "Build AI products."
+        )
+        normalized = _fill_missing_required_fields(
+            {"company": "", "role": "", "skills": []},
+            raw_text,
+        )
+        assert normalized["company"] == "Acme Corp"
+        assert "Senior Product Manager" in normalized["role"]
+
+    def test_fill_missing_required_fields_uses_safe_defaults(self):
+        normalized = _fill_missing_required_fields(
+            {"company": "", "role": "", "skills": []},
+            "No obvious metadata here",
+        )
+        assert normalized["company"] == "Unknown Company"
+        assert normalized["role"] == "Unknown Role"
+
+    def test_parse_json_from_fenced_response(self):
+        parsed = _parse_json_object_from_llm_text(
+            "Here you go:\n```json\n{\"company\":\"Acme\",\"role\":\"PM\",\"skills\":[]}\n```"
+        )
+        assert parsed["company"] == "Acme"
+        assert parsed["role"] == "PM"
+
+    def test_parse_json_from_prefixed_response(self):
+        parsed = _parse_json_object_from_llm_text(
+            "Result: {\"company\":\"Acme\",\"role\":\"PM\",\"skills\":[]} -- done"
+        )
+        assert parsed["company"] == "Acme"
+        assert parsed["role"] == "PM"
+
+    def test_extract_jd_with_usage_retries_after_invalid_json(self, monkeypatch):
+        calls = {"count": 0}
+
+        def _chat_text(_system: str, _user: str, *, json_mode: bool = False):
+            assert json_mode is True
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return SimpleNamespace(
+                    text="I cannot comply right now.",
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                    total_tokens=2,
+                    cost_estimate=0.0,
+                    generation_id=None,
+                )
+            return SimpleNamespace(
+                text='{"company":"Acme Corp","role":"Senior PM","location":"Remote","experience_required":"","skills":["Python"],"description":"desc"}',
+                prompt_tokens=3,
+                completion_tokens=2,
+                total_tokens=5,
+                cost_estimate=0.01,
+                generation_id="gen-1",
+            )
+
+        fake_llm = SimpleNamespace(chat_text=_chat_text)
+        fake_prompts = SimpleNamespace(load_prompt=lambda _name, version=1: "prompt")
+        monkeypatch.setitem(sys.modules, "core.llm", fake_llm)
+        monkeypatch.setitem(sys.modules, "core.prompts", fake_prompts)
+
+        jd, usage = extract_jd_with_usage("Acme Corp is hiring Senior PM")
+
+        assert calls["count"] == 2
+        assert jd.company == "Acme Corp"
+        assert jd.role == "Senior PM"
+        assert usage["total_tokens"] == 5
+
+    def test_extract_jd_with_usage_retries_transient_error(self, monkeypatch):
+        calls = {"count": 0}
+
+        def _chat_text(_system: str, _user: str, *, json_mode: bool = False):
+            assert json_mode is True
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("Error code: 429 - Too Many Requests")
+            return SimpleNamespace(
+                text='{"company":"Acme Corp","role":"PM","location":"","experience_required":"","skills":[],"description":""}',
+                prompt_tokens=2,
+                completion_tokens=1,
+                total_tokens=3,
+                cost_estimate=0.0,
+                generation_id=None,
+            )
+
+        fake_llm = SimpleNamespace(chat_text=_chat_text)
+        fake_prompts = SimpleNamespace(load_prompt=lambda _name, version=1: "prompt")
+        monkeypatch.setitem(sys.modules, "core.llm", fake_llm)
+        monkeypatch.setitem(sys.modules, "core.prompts", fake_prompts)
+
+        jd, _usage = extract_jd_with_usage("Acme Corp is hiring PM")
+
+        assert calls["count"] == 2
+        assert jd.company == "Acme Corp"

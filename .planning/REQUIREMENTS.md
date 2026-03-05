@@ -20,9 +20,9 @@
 
 ### Collateral
 
-- [ ] **COL-01**: System asks the user which collateral they want for a job application and generates only the selected type(s), not all collateral by default
-- [ ] **COL-02**: Generated collateral is stored in a dedicated folder per job application and linked to that application context
-- [ ] **COL-03**: Generated collateral and resume artifacts are uploaded to Google Drive in a folder structure organized per job application
+- [x] **COL-01**: System asks the user which collateral they want for a job application and generates only selected collateral (no default generate-all behavior)
+- [x] **COL-02**: Resume PDF and selected collateral are stored in one dedicated local folder per job application context
+- [x] **COL-03**: Resume PDF and selected collateral are uploaded to Google Drive in a per-application folder structure keyed by application context
 
 ### Quality and Eval Gates
 
@@ -71,9 +71,9 @@
 | RES-02 | Phase 2 | Complete |
 | RES-03 | Phase 2 | Complete |
 | RES-04 | Phase 2 | Complete |
-| COL-01 | Phase 3 | Pending |
-| COL-02 | Phase 3 | Pending |
-| COL-03 | Phase 3 | Pending |
+| COL-01 | Phase 3 | Complete |
+| COL-02 | Phase 3 | Complete |
+| COL-03 | Phase 3 | Complete |
 | QAL-01 | Phase 4 | Pending |
 | QAL-02 | Phase 4 | Pending |
 | QAL-03 | Phase 4 | Pending |
@@ -90,4 +90,4 @@
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after Phase 2 execution*
+*Last updated: 2026-03-05 after Phase 3 execution*

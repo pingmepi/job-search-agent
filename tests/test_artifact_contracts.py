@@ -37,6 +37,14 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
         condense_retries=0,
         pdf_path="/tmp/r.pdf",
         output_dir="/tmp/out",
+        application_context_id="acme_pm_abc123",
+        application_output_dir="/tmp/out",
+        selected_collateral=["email"],
+        generated_collateral=["email"],
+        collateral_generation_status="generated",
+        collateral_generation_reason=None,
+        collateral_files={"email": "/tmp/out/email_draft.txt", "linkedin": None, "referral": None},
+        drive_uploads={"files": {"resume_pdf": {"status": "uploaded"}}},
         single_page_target_met=True,
         single_page_status="met",
         compile_outcome="mutated_success",
@@ -51,6 +59,9 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
     assert resume.schema_version == SCHEMA_VERSION
     assert resume.single_page_target_met is True
     assert resume.compile_outcome == "mutated_success"
+    assert resume.application_context_id == "acme_pm_abc123"
+    assert resume.collateral_files["email"] == "/tmp/out/email_draft.txt"
+    assert resume.collateral_files["linkedin"] is None
     assert resume.fit_score_details["selected_resume"] == "master_ai.tex"
     assert eval_output.schema_version == SCHEMA_VERSION
 
@@ -68,6 +79,22 @@ def test_build_resume_artifact_rejects_invalid_compile_outcome() -> None:
             pdf_path=None,
             output_dir=None,
             compile_outcome="compile_failed",
+        )
+
+
+def test_build_resume_artifact_rejects_unknown_collateral_keys() -> None:
+    with pytest.raises(ValueError):
+        build_resume_output_artifact(
+            run_id="run-1",
+            jd_hash="abc",
+            resume_base="master_ai.tex",
+            fit_score=80,
+            compile_success=True,
+            compile_rollback_used=False,
+            condense_retries=0,
+            pdf_path="/tmp/r.pdf",
+            output_dir="/tmp/out",
+            collateral_files={"cover_letter": "/tmp/out/cover_letter.txt"},
         )
 
 

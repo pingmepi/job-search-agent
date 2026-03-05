@@ -17,6 +17,7 @@ Full pipeline:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 import shutil
@@ -46,6 +47,8 @@ from evals.logger import generate_run_id, log_run
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_COLLATERAL_TYPES = ("email", "linkedin", "referral")
+
 
 @dataclass
 class ApplicationPack:
@@ -57,6 +60,13 @@ class ApplicationPack:
     pdf_path: Optional[Path] = None
     output_dir: Optional[Path] = None
     drive_link: Optional[str] = None
+    drive_uploads: dict = field(default_factory=dict)
+    application_context_id: Optional[str] = None
+    selected_collateral: list[str] = field(default_factory=list)
+    generated_collateral: list[str] = field(default_factory=list)
+    collateral_generation_status: str = "not_requested"
+    collateral_generation_reason: Optional[str] = None
+    collateral_files: dict[str, Optional[str]] = field(default_factory=dict)
     email_draft: Optional[str] = None
     linkedin_draft: Optional[str] = None
     referral_draft: Optional[str] = None
@@ -102,10 +112,155 @@ def _slugify_filename_part(value: str, fallback: str) -> str:
     return text or fallback
 
 
+def _is_transient_llm_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    transient_markers = (
+        "rate limit",
+        "too many requests",
+        "429",
+        "timeout",
+        "timed out",
+        "connection",
+        "temporarily unavailable",
+        "server error",
+        "503",
+        "502",
+        "504",
+    )
+    return any(marker in msg for marker in transient_markers)
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    start = text.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:idx + 1]
+    return None
+
+
+def _parse_json_object_from_llm_text(text: str) -> dict:
+    candidate = (text or "").strip()
+    if not candidate:
+        raise ValueError("LLM returned empty response.")
+
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE)
+    if fenced:
+        block = fenced.group(1).strip()
+        try:
+            parsed = json.loads(block)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    extracted = _extract_first_json_object(candidate)
+    if extracted:
+        parsed = json.loads(extracted)
+        if isinstance(parsed, dict):
+            return parsed
+
+    preview = candidate[:180].replace("\n", " ")
+    raise ValueError(f"LLM response did not contain parseable JSON object. Preview: {preview!r}")
+
+
+def _chat_json_with_retry(
+    *,
+    system: str,
+    user_msg: str,
+    step_name: str,
+    max_attempts: int = 3,
+) -> tuple[dict, object]:
+    from core.llm import chat_text
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = chat_text(system, user_msg, json_mode=True)
+            parsed = _parse_json_object_from_llm_text(response.text)
+            return parsed, response
+        except Exception as exc:
+            last_error = exc
+            retryable = isinstance(exc, ValueError) or _is_transient_llm_error(exc)
+            if attempt < max_attempts and retryable:
+                time.sleep(0.2 * attempt)
+                continue
+            raise RuntimeError(f"{step_name} failed after {attempt} attempts: {exc}") from exc
+
+    if last_error:
+        raise RuntimeError(f"{step_name} failed: {last_error}") from last_error
+    raise RuntimeError(f"{step_name} failed without a concrete error")
+
+
+def _normalize_collateral_selection(
+    selected_collateral: Optional[list[str] | tuple[str, ...] | set[str]],
+) -> tuple[list[str], list[str]]:
+    """Normalize selected collateral values into canonical order."""
+    if not selected_collateral:
+        return [], []
+    normalized: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for raw in selected_collateral:
+        value = str(raw or "").strip().lower()
+        if not value:
+            continue
+        if value not in SUPPORTED_COLLATERAL_TYPES:
+            invalid.append(value)
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    ordered = [item for item in SUPPORTED_COLLATERAL_TYPES if item in seen]
+    return ordered, invalid
+
+
+def _cleanup_terminal_failure_pdfs(output_dir: Path | None) -> list[str]:
+    if output_dir is None or not output_dir.exists():
+        return []
+    removed: list[str] = []
+    for pdf in output_dir.glob("*.pdf"):
+        pdf.unlink(missing_ok=True)
+        removed.append(pdf.name)
+    return removed
+
+
 def run_pipeline(
     raw_text: str,
     *,
     image_path: Optional[Path] = None,
+    selected_collateral: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     skip_upload: bool = False,
     skip_calendar: bool = False,
 ) -> ApplicationPack:
@@ -193,6 +348,28 @@ def run_pipeline(
 
     pack = ApplicationPack(jd=jd, resume_base="")
     pack.run_id = run_id
+    normalized_collateral, invalid_collateral = _normalize_collateral_selection(selected_collateral)
+    pack.selected_collateral = normalized_collateral
+    pack.collateral_files = {key: None for key in SUPPORTED_COLLATERAL_TYPES}
+    if invalid_collateral:
+        pack.collateral_generation_status = "blocked_invalid_selection"
+        pack.collateral_generation_reason = (
+            "Invalid collateral type(s): " + ", ".join(sorted(set(invalid_collateral)))
+        )
+        pack.errors.append(
+            f"Collateral generation skipped: {pack.collateral_generation_reason}"
+        )
+    elif selected_collateral is None:
+        pack.collateral_generation_status = "blocked_missing_selection"
+        pack.collateral_generation_reason = "Selection was not provided."
+        pack.errors.append(
+            "Collateral generation skipped: explicit selection not provided."
+        )
+    elif not normalized_collateral:
+        pack.collateral_generation_status = "skipped_no_selection"
+        pack.collateral_generation_reason = "User explicitly chose no collateral."
+    else:
+        pack.collateral_generation_status = "selected"
     fit_score_percent = 0
     fit_score_details: dict = {}
     compile_rollback_used = False
@@ -216,8 +393,6 @@ def run_pipeline(
 
     # ── Step 4: Mutate resume ─────────────────────────────────
     try:
-        import json
-        from core.llm import chat_text
         from core.prompts import load_prompt
 
         original_tex = base_path.read_text(encoding="utf-8")
@@ -241,7 +416,11 @@ def run_pipeline(
                 f"Bullet bank:\n{bullet_bank_text}"
             )
 
-            response = chat_text(system, user_msg, json_mode=True)
+            mutations_data, response = _chat_json_with_retry(
+                system=system,
+                user_msg=user_msg,
+                step_name="Resume mutation",
+            )
             total_tokens += response.total_tokens
             if response.generation_id:
                 generation_ids.append(("resume_mutation", response.generation_id))
@@ -252,7 +431,6 @@ def run_pipeline(
                 "cost_estimate": response.cost_estimate,
             }
 
-            mutations_data = json.loads(response.text)
             mutations = mutations_data.get("mutations", [])
 
             pack.mutated_tex = apply_mutations(original_tex, mutations)
@@ -288,8 +466,10 @@ def run_pipeline(
         company_slug = _slugify_filename_part(jd.company, "company")
         role_slug = _slugify_filename_part(jd.role, "role")
         short_hash = jd.jd_hash[:8]
-        app_output_dir = settings.runs_dir / "artifacts" / f"{company_slug}_{role_slug}_{short_hash}"
+        application_context_id = f"{company_slug}_{role_slug}_{short_hash}"
+        app_output_dir = settings.runs_dir / "artifacts" / application_context_id
         app_output_dir.mkdir(parents=True, exist_ok=True)
+        pack.application_context_id = application_context_id
         pack.output_dir = app_output_dir
 
         def _compile_and_persist(tex_content: str, artifact_suffix: str = "") -> Path:
@@ -337,10 +517,26 @@ def run_pipeline(
                         original_tex_for_fallback = base_path.read_text(encoding="utf-8")
                         pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
                         compile_rollback_used = True
-                        compile_outcome = "fallback_success"
                         fallback_pages = _safe_page_count(pack.pdf_path)
-                        single_page_target_met = fallback_pages is not None and fallback_pages <= 1
-                        single_page_status = "fallback_base_used"
+                        if fallback_pages is not None and fallback_pages <= 1:
+                            compile_outcome = "fallback_success"
+                            single_page_target_met = True
+                            single_page_status = "fallback_base_used"
+                        else:
+                            compile_outcome = None
+                            single_page_target_met = False
+                            single_page_status = "failed_multi_page_terminal"
+                            pack.errors.append(
+                                "Terminal fallback resume exceeds one page "
+                                f"({fallback_pages if fallback_pages is not None else 'unknown'} pages). "
+                                "Run marked failed; please tighten resume content and retry."
+                            )
+                            removed = _cleanup_terminal_failure_pdfs(app_output_dir)
+                            if removed:
+                                pack.errors.append(
+                                    "Removed non-compliant terminal PDF artifacts: " + ", ".join(sorted(removed))
+                                )
+                            pack.pdf_path = None
                     except Exception as fallback_error:
                         pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
                         single_page_status = "fallback_failed"
@@ -351,8 +547,6 @@ def run_pipeline(
                     page_count, condense_retries + 1, MAX_CONDENSE_RETRIES,
                 )
                 try:
-                    import json as _cjson
-                    from core.llm import chat_text as _condense_chat
                     from core.prompts import load_prompt as _condense_load
 
                     condense_system = _condense_load("resume_condense", version=1)
@@ -361,15 +555,18 @@ def run_pipeline(
                     )
                     condense_user = (
                         f"Page count: {page_count} (must be 1)\n\n"
-                        f"JD context:\n{_cjson.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills})}\n\n"
+                        f"JD context:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills})}\n\n"
                         f"Current editable content:\n{editable_content}"
                     )
-                    condense_resp = _condense_chat(condense_system, condense_user, json_mode=True)
+                    condense_data, condense_resp = _chat_json_with_retry(
+                        system=condense_system,
+                        user_msg=condense_user,
+                        step_name=f"Condense pass {condense_retries + 1}",
+                    )
                     total_tokens += condense_resp.total_tokens
                     if condense_resp.generation_id:
                         generation_ids.append((f"condense_pass_{condense_retries + 1}", condense_resp.generation_id))
 
-                    condense_data = _cjson.loads(condense_resp.text)
                     condense_mutations = condense_data.get("mutations", [])
 
                     # Handle bullet removals as mutations to empty string
@@ -396,11 +593,27 @@ def run_pipeline(
                 original_tex_for_fallback = base_path.read_text(encoding="utf-8")
                 pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
                 compile_rollback_used = True
-                compile_outcome = "fallback_success"
-                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
                 fallback_pages = _safe_page_count(pack.pdf_path)
-                single_page_target_met = fallback_pages is not None and fallback_pages <= 1
-                single_page_status = "fallback_base_used"
+                if fallback_pages is not None and fallback_pages <= 1:
+                    compile_outcome = "fallback_success"
+                    single_page_target_met = True
+                    single_page_status = "fallback_base_used"
+                    pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+                else:
+                    compile_outcome = None
+                    single_page_target_met = False
+                    single_page_status = "failed_multi_page_terminal"
+                    pack.errors.append(
+                        "LaTeX compile rollback produced a non-compliant resume "
+                        f"({fallback_pages if fallback_pages is not None else 'unknown'} pages). "
+                        "Run marked failed; please tighten resume content and retry."
+                    )
+                    removed = _cleanup_terminal_failure_pdfs(app_output_dir)
+                    if removed:
+                        pack.errors.append(
+                            "Removed non-compliant terminal PDF artifacts: " + ", ".join(sorted(removed))
+                        )
+                    pack.pdf_path = None
             except Exception as fallback_error:
                 pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
                 single_page_status = "fallback_failed"
@@ -414,17 +627,7 @@ def run_pipeline(
             condense_retries,
         )
 
-    # ── Step 6: Upload to Drive ───────────────────────────────
-    if not skip_upload and pack.pdf_path:
-        try:
-            from integrations.drive import upload_to_drive
-            pack.drive_link = upload_to_drive(
-                pack.pdf_path, jd.company, jd.role
-            )
-        except Exception as e:
-            pack.errors.append(f"Drive upload failed: {e}")
-
-    # ── Step 7: Calendar events ───────────────────────────────
+    # ── Step 6: Calendar events ───────────────────────────────
     if not skip_calendar:
         try:
             from integrations.calendar import create_application_events
@@ -432,72 +635,114 @@ def run_pipeline(
         except Exception as e:
             pack.errors.append(f"Calendar events failed: {e}")
 
-    # ── Step 8: Generate drafts ───────────────────────────────
-    try:
-        from agents.inbox.drafts import (
-            generate_email_draft,
-            generate_linkedin_dm,
-            generate_referral_template,
-        )
-        import json as _json
+    # ── Step 7: Generate drafts ───────────────────────────────
+    if pack.selected_collateral:
+        try:
+            from agents.inbox.drafts import (
+                generate_email_draft,
+                generate_linkedin_dm,
+                generate_referral_template,
+            )
+            import json as _json
 
-        profile = _json.loads(settings.profile_path.read_text(encoding="utf-8"))
-        identity = profile.get("identity", {})
-        name = identity.get("name", "Karan")
-        positioning = profile.get("positioning", {}).get("ai", "Product Manager")
+            profile = _json.loads(settings.profile_path.read_text(encoding="utf-8"))
+            identity = profile.get("identity", {})
+            name = identity.get("name", "Karan")
+            positioning = profile.get("positioning", {}).get("ai", "Product Manager")
 
-        email = generate_email_draft(name, positioning, jd.company, jd.role)
-        linkedin = generate_linkedin_dm(name, positioning, jd.company, jd.role)
-        referral = generate_referral_template(name, positioning, jd.company, jd.role)
+            if "email" in pack.selected_collateral:
+                email = generate_email_draft(name, positioning, jd.company, jd.role)
+                pack.email_draft = email.text
+                total_tokens += email.total_tokens
+                pack.generated_collateral.append("email")
+                generation_id = getattr(email, "generation_id", None)
+                if generation_id:
+                    generation_ids.append(("draft_email", generation_id))
+                llm_usage_breakdown["draft_email"] = {
+                    "prompt_tokens": email.prompt_tokens,
+                    "completion_tokens": email.completion_tokens,
+                    "total_tokens": email.total_tokens,
+                    "cost_estimate": email.cost_estimate,
+                }
 
-        pack.email_draft = email.text
-        pack.linkedin_draft = linkedin.text
-        pack.referral_draft = referral.text
+            if "linkedin" in pack.selected_collateral:
+                linkedin = generate_linkedin_dm(name, positioning, jd.company, jd.role)
+                pack.linkedin_draft = linkedin.text
+                total_tokens += linkedin.total_tokens
+                pack.generated_collateral.append("linkedin")
+                generation_id = getattr(linkedin, "generation_id", None)
+                if generation_id:
+                    generation_ids.append(("draft_linkedin", generation_id))
+                llm_usage_breakdown["draft_linkedin"] = {
+                    "prompt_tokens": linkedin.prompt_tokens,
+                    "completion_tokens": linkedin.completion_tokens,
+                    "total_tokens": linkedin.total_tokens,
+                    "cost_estimate": linkedin.cost_estimate,
+                }
 
-        total_tokens += email.total_tokens + linkedin.total_tokens + referral.total_tokens
-        for _step, _resp in [("draft_email", email), ("draft_linkedin", linkedin), ("draft_referral", referral)]:
-            generation_id = getattr(_resp, "generation_id", None)
-            if generation_id:
-                generation_ids.append((_step, generation_id))
-        llm_usage_breakdown["draft_email"] = {
-            "prompt_tokens": email.prompt_tokens,
-            "completion_tokens": email.completion_tokens,
-            "total_tokens": email.total_tokens,
-            "cost_estimate": email.cost_estimate,
-        }
-        llm_usage_breakdown["draft_linkedin"] = {
-            "prompt_tokens": linkedin.prompt_tokens,
-            "completion_tokens": linkedin.completion_tokens,
-            "total_tokens": linkedin.total_tokens,
-            "cost_estimate": linkedin.cost_estimate,
-        }
-        llm_usage_breakdown["draft_referral"] = {
-            "prompt_tokens": referral.prompt_tokens,
-            "completion_tokens": referral.completion_tokens,
-            "total_tokens": referral.total_tokens,
-            "cost_estimate": referral.cost_estimate,
-        }
-    except Exception as e:
-        pack.errors.append(f"Draft generation failed: {e}")
+            if "referral" in pack.selected_collateral:
+                referral = generate_referral_template(name, positioning, jd.company, jd.role)
+                pack.referral_draft = referral.text
+                total_tokens += referral.total_tokens
+                pack.generated_collateral.append("referral")
+                generation_id = getattr(referral, "generation_id", None)
+                if generation_id:
+                    generation_ids.append(("draft_referral", generation_id))
+                llm_usage_breakdown["draft_referral"] = {
+                    "prompt_tokens": referral.prompt_tokens,
+                    "completion_tokens": referral.completion_tokens,
+                    "total_tokens": referral.total_tokens,
+                    "cost_estimate": referral.cost_estimate,
+                }
+            pack.collateral_generation_status = "generated"
+        except Exception as e:
+            pack.collateral_generation_status = "generation_failed"
+            pack.errors.append(f"Draft generation failed: {e}")
 
-    # ── Step 8b: Persist drafts to output folder ──────────────
+    # ── Step 7b: Persist drafts to output folder ──────────────
     if pack.output_dir and pack.output_dir.exists():
         try:
             if pack.email_draft:
-                (pack.output_dir / "email_draft.txt").write_text(
+                email_path = pack.output_dir / "email_draft.txt"
+                email_path.write_text(
                     pack.email_draft, encoding="utf-8"
                 )
+                pack.collateral_files["email"] = str(email_path)
             if pack.linkedin_draft:
-                (pack.output_dir / "linkedin_dm.txt").write_text(
+                linkedin_path = pack.output_dir / "linkedin_dm.txt"
+                linkedin_path.write_text(
                     pack.linkedin_draft, encoding="utf-8"
                 )
+                pack.collateral_files["linkedin"] = str(linkedin_path)
             if pack.referral_draft:
-                (pack.output_dir / "referral.txt").write_text(
+                referral_path = pack.output_dir / "referral.txt"
+                referral_path.write_text(
                     pack.referral_draft, encoding="utf-8"
                 )
+                pack.collateral_files["referral"] = str(referral_path)
             logger.info("Drafts saved to %s", pack.output_dir)
         except Exception as e:
             pack.errors.append(f"Draft file persistence failed: {e}")
+
+    # ── Step 8: Upload to Drive ───────────────────────────────
+    if not skip_upload and pack.pdf_path:
+        try:
+            from integrations.drive import upload_application_artifacts
+            drive_files: dict[str, Path] = {"resume_pdf": pack.pdf_path}
+            for collateral_key, file_path in pack.collateral_files.items():
+                if file_path:
+                    drive_files[collateral_key] = Path(file_path)
+            pack.drive_uploads = upload_application_artifacts(
+                files=drive_files,
+                company=jd.company,
+                role=jd.role,
+                application_context_id=pack.application_context_id or run_id,
+            )
+            resume_upload = pack.drive_uploads.get("files", {}).get("resume_pdf", {})
+            if isinstance(resume_upload, dict):
+                pack.drive_link = resume_upload.get("webViewLink")
+        except Exception as e:
+            pack.errors.append(f"Drive upload failed: {e}")
 
     # ── Step 9: Log to DB ─────────────────────────────────────
     try:
@@ -599,6 +844,13 @@ def run_pipeline(
         "single_page_target_met": single_page_target_met,
         "single_page_status": single_page_status,
         "compile_outcome": compile_outcome,
+        "selected_collateral": pack.selected_collateral,
+        "generated_collateral": pack.generated_collateral,
+        "collateral_generation_status": pack.collateral_generation_status,
+        "collateral_generation_reason": pack.collateral_generation_reason,
+        "collateral_files": pack.collateral_files,
+        "application_context_id": pack.application_context_id,
+        "drive_uploads": pack.drive_uploads,
         "llm_total_tokens": total_tokens,
         "llm_total_cost": total_cost,
         "llm_usage_breakdown": llm_usage_breakdown,
@@ -645,6 +897,14 @@ def run_pipeline(
                 condense_retries=condense_retries,
                 pdf_path=str(pack.pdf_path) if pack.pdf_path else None,
                 output_dir=str(pack.output_dir) if pack.output_dir else None,
+                application_context_id=pack.application_context_id,
+                application_output_dir=str(pack.output_dir) if pack.output_dir else None,
+                selected_collateral=pack.selected_collateral,
+                generated_collateral=pack.generated_collateral,
+                collateral_generation_status=pack.collateral_generation_status,
+                collateral_generation_reason=pack.collateral_generation_reason,
+                collateral_files=pack.collateral_files,
+                drive_uploads=pack.drive_uploads,
                 single_page_target_met=single_page_target_met,
                 single_page_status=single_page_status,
                 compile_outcome=compile_outcome,
@@ -691,9 +951,16 @@ def run_pipeline(
             "fit_score_details": fit_score_details,
             "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
             "drive_link": pack.drive_link,
+            "drive_uploads": pack.drive_uploads,
+            "application_context_id": pack.application_context_id,
             "skip_upload": skip_upload,
             "skip_calendar": skip_calendar,
             "input_mode": input_mode,
+            "selected_collateral": pack.selected_collateral,
+            "generated_collateral": pack.generated_collateral,
+            "collateral_generation_status": pack.collateral_generation_status,
+            "collateral_generation_reason": pack.collateral_generation_reason,
+            "collateral_files": pack.collateral_files,
             "error_count": len(pack.errors),
             "artifact_paths": artifact_paths,
             "single_page_status": single_page_status,

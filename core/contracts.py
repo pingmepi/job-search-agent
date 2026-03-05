@@ -51,6 +51,14 @@ class ResumeOutputArtifact:
     condense_retries: int
     pdf_path: str | None
     output_dir: str | None
+    application_context_id: str | None
+    application_output_dir: str | None
+    selected_collateral: list[str]
+    generated_collateral: list[str]
+    collateral_generation_status: str
+    collateral_generation_reason: str | None
+    collateral_files: dict[str, str | None]
+    drive_uploads: dict[str, Any]
     single_page_target_met: bool
     single_page_status: str
     compile_outcome: str | None
@@ -99,6 +107,14 @@ def build_resume_output_artifact(
     condense_retries: int,
     pdf_path: str | None,
     output_dir: str | None,
+    application_context_id: str | None = None,
+    application_output_dir: str | None = None,
+    selected_collateral: list[str] | None = None,
+    generated_collateral: list[str] | None = None,
+    collateral_generation_status: str = "not_requested",
+    collateral_generation_reason: str | None = None,
+    collateral_files: dict[str, str | None] | None = None,
+    drive_uploads: dict[str, Any] | None = None,
     single_page_target_met: bool = False,
     single_page_status: str = "unknown",
     compile_outcome: str | None = None,
@@ -106,6 +122,11 @@ def build_resume_output_artifact(
 ) -> ResumeOutputArtifact:
     if compile_outcome is not None and compile_outcome not in {"mutated_success", "fallback_success"}:
         raise ValueError("compile_outcome must be one of mutated_success, fallback_success, or None")
+    allowed_keys = {"email", "linkedin", "referral"}
+    normalized_collateral_files = collateral_files or {}
+    unknown_keys = set(normalized_collateral_files) - allowed_keys
+    if unknown_keys:
+        raise ValueError("collateral_files contains unknown keys")
     return ResumeOutputArtifact(
         run_id=_ensure_non_empty(run_id, "run_id"),
         schema_version=SCHEMA_VERSION,
@@ -118,6 +139,20 @@ def build_resume_output_artifact(
         condense_retries=int(condense_retries),
         pdf_path=pdf_path,
         output_dir=output_dir,
+        application_context_id=application_context_id,
+        application_output_dir=application_output_dir or output_dir,
+        selected_collateral=selected_collateral or [],
+        generated_collateral=generated_collateral or [],
+        collateral_generation_status=_ensure_non_empty(
+            collateral_generation_status, "collateral_generation_status"
+        ),
+        collateral_generation_reason=collateral_generation_reason,
+        collateral_files={
+            "email": normalized_collateral_files.get("email"),
+            "linkedin": normalized_collateral_files.get("linkedin"),
+            "referral": normalized_collateral_files.get("referral"),
+        },
+        drive_uploads=drive_uploads or {},
         single_page_target_met=bool(single_page_target_met),
         single_page_status=_ensure_non_empty(single_page_status, "single_page_status"),
         compile_outcome=compile_outcome,
