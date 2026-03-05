@@ -31,6 +31,11 @@ from agents.inbox.url_ingest import extract_first_url, fetch_url_text
 
 logger = logging.getLogger(__name__)
 
+URL_FALLBACK_PROMPT = (
+    "⚠️ I couldn't reliably extract the job description from that URL. "
+    "Please send a screenshot of the job posting so I can continue."
+)
+
 
 # ── Handlers ──────────────────────────────────────────────────────
 
@@ -151,6 +156,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = update.message.text
     logger.info("Handling text message via router path")
     result = route(text)
+    input_mode = "url" if extract_first_url(text or "") else "text"
     preview = (text or "").replace("\n", " ").strip()
     if len(preview) > 80:
         preview = preview[:80] + "..."
@@ -160,6 +166,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result.target.value,
         result.reason,
         preview,
+    )
+    logger.info(
+        "Router telemetry update_id=%s route_target=%s route_reason_code=%s input_mode=%s",
+        getattr(update, "update_id", None),
+        result.target.value,
+        result.reason_code,
+        input_mode,
     )
 
     if result.target == AgentTarget.INBOX:
@@ -183,10 +196,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         "🔗 Fetched job URL successfully. Processing extracted content..."
                     )
                 else:
-                    await update.message.reply_text(
-                        "⚠️ I couldn't reliably extract the job description from that URL. "
-                        "Please send a screenshot of the job posting so I can continue."
-                    )
+                    await update.message.reply_text(URL_FALLBACK_PROMPT)
                     return
 
             pack = await asyncio.to_thread(
@@ -238,6 +248,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     elif result.target == AgentTarget.FOLLOWUP:
         await status_handler(update, context)
+
+    elif result.target == AgentTarget.ARTICLE:
+        await update.message.reply_text(
+            "📰 This looks like article content, not a job description. "
+            "Please send a JD URL, raw JD text, or screenshot so I can process an application pack."
+        )
+
+    elif result.target == AgentTarget.AMBIGUOUS_NON_JOB:
+        await update.message.reply_text(
+            "🤔 I need a job description input to proceed. "
+            "Send a JD URL, a screenshot, or paste the JD text."
+        )
 
     elif result.target == AgentTarget.CLARIFY:
         await update.message.reply_text(

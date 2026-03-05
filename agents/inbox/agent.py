@@ -42,7 +42,7 @@ from evals.hard import (
     check_draft_length,
     check_cost,
 )
-from evals.logger import log_run
+from evals.logger import generate_run_id, log_run
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,7 @@ def run_pipeline(
     skip_calendar : Skip Google Calendar event creation
     """
     settings = get_settings()
+    run_id = generate_run_id()
     start_time = time.time()
     total_tokens = 0
     total_cost = 0.0
@@ -191,6 +192,7 @@ def run_pipeline(
         logger.info(f"JD cache hit: {jd.jd_hash}")
 
     pack = ApplicationPack(jd=jd, resume_base="")
+    pack.run_id = run_id
     fit_score_percent = 0
     compile_rollback_used = False
 
@@ -413,8 +415,9 @@ def run_pipeline(
 
         total_tokens += email.total_tokens + linkedin.total_tokens + referral.total_tokens
         for _step, _resp in [("draft_email", email), ("draft_linkedin", linkedin), ("draft_referral", referral)]:
-            if _resp.generation_id:
-                generation_ids.append((_step, _resp.generation_id))
+            generation_id = getattr(_resp, "generation_id", None)
+            if generation_id:
+                generation_ids.append((_step, generation_id))
         llm_usage_breakdown["draft_email"] = {
             "prompt_tokens": email.prompt_tokens,
             "completion_tokens": email.completion_tokens,
@@ -563,6 +566,71 @@ def run_pipeline(
     pack.eval_results = eval_results
 
     try:
+        artifact_paths: dict[str, str] = {}
+        try:
+            from core.artifacts import write_json_artifact
+            from core.contracts import (
+                build_eval_output_artifact,
+                build_job_extraction_artifact,
+                build_resume_output_artifact,
+            )
+
+            job_artifact = build_job_extraction_artifact(
+                run_id=run_id,
+                input_mode=input_mode,
+                jd_hash=jd.jd_hash,
+                jd={
+                    "company": jd.company,
+                    "role": jd.role,
+                    "location": jd.location,
+                    "experience_required": jd.experience_required,
+                    "skills": jd.skills,
+                    "description": jd.description,
+                },
+            )
+            resume_artifact = build_resume_output_artifact(
+                run_id=run_id,
+                jd_hash=jd.jd_hash,
+                resume_base=pack.resume_base,
+                fit_score=fit_score_percent,
+                compile_success=bool(pack.pdf_path and pack.pdf_path.exists()),
+                compile_rollback_used=compile_rollback_used,
+                condense_retries=condense_retries,
+                pdf_path=str(pack.pdf_path) if pack.pdf_path else None,
+                output_dir=str(pack.output_dir) if pack.output_dir else None,
+            )
+            eval_artifact = build_eval_output_artifact(
+                run_id=run_id,
+                jd_hash=jd.jd_hash,
+                eval_results=eval_results,
+            )
+            artifact_paths["job_extraction"] = str(
+                write_json_artifact(
+                    run_id,
+                    "job_extraction.json",
+                    job_artifact.to_dict(),
+                    base_dir=settings.runs_dir / "artifacts",
+                )
+            )
+            artifact_paths["resume_output"] = str(
+                write_json_artifact(
+                    run_id,
+                    "resume_output.json",
+                    resume_artifact.to_dict(),
+                    base_dir=settings.runs_dir / "artifacts",
+                )
+            )
+            artifact_paths["eval_output"] = str(
+                write_json_artifact(
+                    run_id,
+                    "eval_output.json",
+                    eval_artifact.to_dict(),
+                    base_dir=settings.runs_dir / "artifacts",
+                )
+            )
+        except Exception as artifact_err:
+            pack.errors.append(f"Artifact persistence failed: {artifact_err}")
+
         run_context = {
             "company": jd.company,
             "role": jd.role,
@@ -575,10 +643,12 @@ def run_pipeline(
             "skip_calendar": skip_calendar,
             "input_mode": input_mode,
             "error_count": len(pack.errors),
+            "artifact_paths": artifact_paths,
         }
         pack.run_id = log_run(
             "inbox",
             eval_results,
+            run_id=run_id,
             job_id=pack.job_id,
             tokens_used=total_tokens,
             cost_estimate=total_cost,

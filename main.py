@@ -7,6 +7,7 @@ Usage:
     python main.py ci-gate                       # Run CI eval gate
     python main.py db-stats                      # Show DB summary for debugging
     python main.py followup-runner [options]     # Run scheduled follow-up detection
+    python main.py replay-webhook [options]      # Replay persisted webhook event
 """
 
 from __future__ import annotations
@@ -18,6 +19,74 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+
+
+def _parse_replay_webhook_args(args: list[str]) -> dict[str, object]:
+    opts: dict[str, object] = {
+        "event_id": None,
+        "update_id": None,
+    }
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token == "--event-id":
+            if i + 1 >= len(args):
+                raise ValueError("--event-id requires a value")
+            opts["event_id"] = args[i + 1]
+            i += 1
+        elif token == "--update-id":
+            if i + 1 >= len(args):
+                raise ValueError("--update-id requires a value")
+            opts["update_id"] = int(args[i + 1])
+            i += 1
+        else:
+            raise ValueError(f"Unknown replay-webhook argument: {token}")
+        i += 1
+
+    if bool(opts["event_id"]) == bool(opts["update_id"]):
+        raise ValueError("Provide exactly one of --event-id or --update-id")
+    return opts
+
+
+def _run_replay_webhook(args: list[str]) -> None:
+    import asyncio
+
+    from telegram import Update
+
+    from agents.inbox.adapter import create_bot
+    from core.db import get_webhook_event
+
+    opts = _parse_replay_webhook_args(args)
+    event = get_webhook_event(
+        event_id=opts["event_id"],  # type: ignore[arg-type]
+        update_id=opts["update_id"],  # type: ignore[arg-type]
+    )
+    if event is None:
+        raise ValueError("Webhook event not found")
+
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Stored webhook payload is missing or invalid")
+
+    async def _replay() -> None:
+        tg_app = create_bot()
+        await tg_app.initialize()
+        await tg_app.start()
+        try:
+            update = Update.de_json(payload, tg_app.bot)
+            if update is None:
+                raise ValueError("Stored payload cannot be parsed as Telegram Update")
+            await tg_app.process_update(update)
+        finally:
+            await tg_app.stop()
+            await tg_app.shutdown()
+
+    asyncio.run(_replay())
+    print(
+        "Webhook replay completed:"
+        f" event_id={event.get('event_id')}"
+        f" update_id={event.get('update_id')}"
+    )
 
 
 def _parse_followup_runner_args(args: list[str]) -> dict:
@@ -139,9 +208,18 @@ def main() -> None:
             f" success={stats['compile'].get('compile_successes', 0)}"
             f" failure={stats['compile'].get('compile_failures', 0)}"
         )
+        print(
+            "Webhook events:"
+            f" total={stats['webhook_events'].get('total_events', 0)}"
+            f" processed={stats['webhook_events'].get('processed_events', 0)}"
+            f" failed={stats['webhook_events'].get('failed_events', 0)}"
+        )
 
     elif command == "followup-runner":
         _run_followup_runner(sys.argv[2:])
+
+    elif command == "replay-webhook":
+        _run_replay_webhook(sys.argv[2:])
 
     else:
         print(f"Unknown command: {command}")

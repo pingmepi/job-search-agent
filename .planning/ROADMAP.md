@@ -10,7 +10,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Intake Reliability and Contracts** - Stabilize input routing, replayability, and canonical artifact contracts.
+- [x] **Phase 1: Intake Reliability and Contracts** - Stabilize input routing, replayability, and canonical artifact contracts. (completed 2026-03-05)
 - [ ] **Phase 2: Resume Tailoring Safety** - Deliver grounded, compile-safe, one-page resume tailoring with reliable fallback.
 - [ ] **Phase 3: Collateral Selection and Delivery** - Generate only requested collateral and persist outputs in local and Drive application folders.
 - [ ] **Phase 4: Eval Gates and Release Quality** - Enforce CI quality thresholds with representative eval coverage and ATS signaling.
@@ -76,7 +76,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Intake Reliability and Contracts | 0/TBD | Not started | - |
+| 1. Intake Reliability and Contracts | 3/3 | Complete    | 2026-03-05 |
 | 2. Resume Tailoring Safety | 0/TBD | Not started | - |
 | 3. Collateral Selection and Delivery | 0/TBD | Not started | - |
 | 4. Eval Gates and Release Quality | 0/TBD | Not started | - |

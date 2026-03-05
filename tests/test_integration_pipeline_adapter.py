@@ -107,12 +107,15 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     assert pack.eval_results["llm_total_tokens"] > 0
     assert "llm_usage_breakdown" in pack.eval_results
     assert "keyword_coverage" in pack.eval_results
+    assert (runs_dir / "artifacts" / pack.run_id / "job_extraction.json").exists()
+    assert (runs_dir / "artifacts" / pack.run_id / "resume_output.json").exists()
+    assert (runs_dir / "artifacts" / pack.run_id / "eval_output.json").exists()
 
     with sqlite3.connect(str(db_path)) as conn:
         jobs_count = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
         fit_score = conn.execute("SELECT fit_score FROM jobs LIMIT 1").fetchone()[0]
         run_row = conn.execute(
-            "SELECT job_id, status, eval_results FROM runs WHERE run_id = ?",
+            "SELECT job_id, status, eval_results, context_json FROM runs WHERE run_id = ?",
             (pack.run_id,),
         ).fetchone()
 
@@ -122,6 +125,9 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     assert run_row[0] == pack.job_id
     assert run_row[1] == "completed"
     assert json.loads(run_row[2])["compile_success"] is True
+    context = json.loads(run_row[3])
+    assert "artifact_paths" in context
+    assert "job_extraction" in context["artifact_paths"]
 
 
 def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
@@ -444,3 +450,43 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
     assert captured["raw_text"] == "plain jd text"
     assert captured["skip_upload"] is False
     assert captured["skip_calendar"] is False
+
+
+@pytest.mark.asyncio
+async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(AgentTarget.ARTICLE, "article route", "article_signal"),
+    )
+    update = _FakeUpdate("long article text")
+    context = SimpleNamespace()
+
+    await adapter.text_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    assert "article content" in update.message.replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_text_handler_ambiguous_non_job_route_returns_guidance(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(
+            AgentTarget.AMBIGUOUS_NON_JOB,
+            "ambiguous route",
+            "ambiguous_non_job",
+        ),
+    )
+    update = _FakeUpdate("random note")
+    context = SimpleNamespace()
+
+    await adapter.text_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    assert "need a job description input" in update.message.replies[0][0]
