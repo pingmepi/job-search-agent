@@ -49,7 +49,7 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
   1. User is asked which collateral type(s) to generate and only selected type(s) are produced.
   2. Generated collateral and resume artifacts are stored in a dedicated folder for each application context.
   3. Generated collateral and resume artifacts are uploaded to a per-application Google Drive folder structure.
-**Plans**: TBD
+**Plans**: 3 planned (`03-01`, `03-02`, `03-03`)
 
 ### Phase 4: Eval Gates and Release Quality
 **Goal**: Release decisions are consistently blocked or passed by measurable quality gates across representative job-processing scenarios.
@@ -78,6 +78,6 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
 |-------|----------------|--------|-----------|
 | 1. Intake Reliability and Contracts | 3/3 | Complete    | 2026-03-05 |
 | 2. Resume Tailoring Safety | 3/3 | Complete    | 2026-03-05 |
-| 3. Collateral Selection and Delivery | 0/TBD | Not started | - |
+| 3. Collateral Selection and Delivery | 0/3 | Planned | - |
 | 4. Eval Gates and Release Quality | 0/TBD | Not started | - |
 | 5. Workflow State and Linear Sync | 0/TBD | Not started | - |
