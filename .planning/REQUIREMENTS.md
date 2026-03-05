@@ -64,30 +64,30 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ING-01 | TBD | Pending |
-| ING-02 | TBD | Pending |
-| ING-03 | TBD | Pending |
-| RES-01 | TBD | Pending |
-| RES-02 | TBD | Pending |
-| RES-03 | TBD | Pending |
-| RES-04 | TBD | Pending |
-| COL-01 | TBD | Pending |
-| COL-02 | TBD | Pending |
-| COL-03 | TBD | Pending |
-| QAL-01 | TBD | Pending |
-| QAL-02 | TBD | Pending |
-| QAL-03 | TBD | Pending |
-| QAL-04 | TBD | Pending |
-| OPS-01 | TBD | Pending |
-| OPS-02 | TBD | Pending |
-| OPS-03 | TBD | Pending |
-| OPS-04 | TBD | Pending |
+| ING-01 | Phase 1 | Pending |
+| ING-02 | Phase 1 | Pending |
+| ING-03 | Phase 1 | Pending |
+| RES-01 | Phase 2 | Pending |
+| RES-02 | Phase 2 | Pending |
+| RES-03 | Phase 2 | Pending |
+| RES-04 | Phase 2 | Pending |
+| COL-01 | Phase 3 | Pending |
+| COL-02 | Phase 3 | Pending |
+| COL-03 | Phase 3 | Pending |
+| QAL-01 | Phase 4 | Pending |
+| QAL-02 | Phase 4 | Pending |
+| QAL-03 | Phase 4 | Pending |
+| QAL-04 | Phase 4 | Pending |
+| OPS-01 | Phase 5 | Pending |
+| OPS-02 | Phase 5 | Pending |
+| OPS-03 | Phase 1 | Pending |
+| OPS-04 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18 ⚠️
+- Mapped to phases: 18
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after initial definition*
+*Last updated: 2026-03-05 after roadmap mapping*
