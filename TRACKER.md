@@ -11,18 +11,18 @@ Last updated: 2026-02-24
 
 ## Current Status
 - Phase: Core pipeline hardening + feature enhancements.
-- Test status: `173 passed` (`.venv/bin/pytest -q` on 2026-03-16; 1 pre-existing failure in compile-fallback integration test).
+- Test status: `222 passed` (`.venv/bin/pytest -q` on 2026-03-16; 1 pre-existing failure in compile-fallback integration test).
 - CI gate status: `PASSED` (`.venv/bin/python main.py ci-gate` on 2026-03-16; fixture-based gating, all 5 thresholds green).
-- Active issue: `KAR-61` (Pending).
+- Active issue: `KAR-62` (Pending).
 
 ## Latest Progress (2026-03-16)
+- Implemented `KAR-61` planner/executor separation.
+- Decoupled tool planning from LLM context - `agents/inbox/planner.py` added for deterministic routing logic without any LLM calls.
+- Migrated 12 execution step handlers with resilient retry logic and graceful degradation to `agents/inbox/executor.py`.
+- Refactored `agents/inbox/agent.py` to be a thin adapter.
+- Added comprehensive unit tests for planner and executor (49 new tests).
+- Fixed monkeypatch issues in integration tests due to refactoring. Test baseline expanded to `222 passed`.
 - Implemented `KAR-60` success criteria gates + CI threshold enforcement.
-- Added `evals/dataset.py` — 12 curated eval fixture cases covering compile, forbidden claims, edit scope, cost, latency.
-- Overhauled `evals/ci_gate.py` — primary gate now fixture-based (deterministic, independent of live DB history).
-- Added cost (≤ $0.15 avg) and latency (≤ 60 s avg) threshold checks to CI gate.
-- Live DB output demoted to informational-only (⚠️ warnings, non-blocking).
-- Added `tests/test_ci_gate.py` with 23 unit tests covering all threshold failure modes, passing baselines, edge cases.
-- Test baseline expanded to `173 passed`.
 - CI gate now exits 0: compile 100%, forbidden 0, edit violations 0, avg cost $0.07, avg latency 33s.
 - Removed 3-mutation cap — model can now make unlimited edits within editable regions.
 - Added bullet density rules to resume mutation prompt (max 5/role, min 1, density by relevance).
@@ -82,10 +82,10 @@ Last updated: 2026-02-24
 - [x] KAR-52 FR-IA-2 OCR hardening and failure handling
 - [x] KAR-58 FR-FU-1 Scheduled follow-up detection runner
 - [x] KAR-77 Webhook API E2E realistic payload integration tests
+- [x] KAR-60 Success criteria gates + CI thresholds (compile ≥ 95%, forbidden claims = 0, edit violations = 0, cost/latency reporting)
+- [x] KAR-61 Phase 2 planner/executor separation
 
 ## Pending Work
-- [x] KAR-60 Success criteria gates + CI thresholds (compile ≥ 95%, forbidden claims = 0, edit violations = 0, cost/latency reporting)
-- [ ] KAR-61 Phase 2 planner/executor separation
 - [ ] KAR-62 Phase 3 SaaS readiness scoping
 - [ ] KAR-72 Persist raw Telegram webhook events to `data/raw_events/`
 - [ ] KAR-73 Add `ArticleAgent` routing and handler flow
@@ -112,9 +112,8 @@ Last updated: 2026-02-24
 - Phase 3 - SaaS Readiness (target: 2026-04-30)
 
 ## Execution Order
-1. KAR-61
-2. KAR-62
-3. KAR-72
+1. KAR-62
+2. KAR-72
 
 ## Notes
 - Telegram ingestion now runs through webhook service endpoint `/telegram/webhook` (no polling runtime).

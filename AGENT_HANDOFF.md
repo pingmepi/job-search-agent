@@ -9,9 +9,9 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Pipeline enhancements + feature completion
-- Current test baseline: `173 passed` with `.venv/bin/pytest -q` (2026-03-16); 1 pre-existing failure in compile-rollback integration test
+- Current test baseline: `222 passed` with `.venv/bin/pytest -q` (2026-03-16); 1 pre-existing failure in compile-rollback integration test
 - Current CI gate: `PASSED` with `.venv/bin/python main.py ci-gate` (fixture-based; all 5 thresholds green)
-- Active execution ticket: `KAR-61` (Pending)
+- Active execution ticket: `KAR-62` (Pending)
 - Milestone targets:
   - Phase 0 (2026-03-01) — overdue
   - Phase 1 (2026-03-15) — overdue
@@ -19,18 +19,13 @@ This file is the short-lived operational handoff between sessions/windows when c
   - Phase 3 (2026-04-30)
 
 ## What Was Just Completed
+- **KAR-61: Planner/Executor separation.** Split monolithic `run_pipeline` into `planner.py` (deterministic tool plan creation) and `executor.py` (resilient execution loop with retries and graceful degradation). Added 49 new unit tests. 222 tests now passing.
 - **KAR-60: Success Criteria Gates.** CI gate overhauled with fixture-based primary gating.
-  - `evals/dataset.py` — 12 curated deterministic eval fixtures (compile, cost, latency, forbidden claims, edit scope).
-  - `evals/ci_gate.py` — primary gate uses fixture dataset; live DB demoted to informational-only ⚠️ warnings.
-  - Added cost (≤ $0.15 avg) and latency (≤ 60 s avg) thresholds per PRD §12.
-  - `tests/test_ci_gate.py` — 23 unit tests, all passing.
-  - CI gate exits 0: compile 100%, forbidden 0, violations 0, avg cost $0.07, avg latency 33 s.
-- Test suite expanded from 114 → **173 passed**.
 
 ## What Is Next
-1. KAR-61: Planner/executor separation.
-2. KAR-62: Phase 3 SaaS readiness scoping.
-3. KAR-72: Persist raw Telegram webhook events.
+1. KAR-62: Phase 3 SaaS readiness scoping.
+2. KAR-72: Persist raw Telegram webhook events.
+3. KAR-73: Add ArticleAgent routing.
 
 ## Known Risks / Gaps
 - Pre-existing test failure: `test_run_pipeline_compile_fallback_rolls_back_to_base_resume` — PDF byte content from mock doesn't satisfy pypdf page-count check. Not introduced by KAR-60 (confirmed via git stash).
