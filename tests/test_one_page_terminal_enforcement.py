@@ -46,14 +46,14 @@ def test_run_pipeline_fails_when_fallback_pdf_is_multi_page(tmp_path: Path, monk
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (
             base_resume,
             0.8,
@@ -71,8 +71,8 @@ def test_run_pipeline_fails_when_fallback_pdf_is_multi_page(tmp_path: Path, monk
         pdf_path.write_bytes(b"%PDF-1.4\n%fallback\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile_first_fails_then_fallback)
-    monkeypatch.setattr("agents.inbox.agent.get_pdf_page_count", lambda _pdf: 2)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_first_fails_then_fallback)
+    monkeypatch.setattr("agents.inbox.executor.get_pdf_page_count", lambda _pdf: 2)
 
     llm_stub = ModuleType("core.llm")
     llm_stub.chat_text = lambda *_a, **_k: SimpleNamespace(

@@ -68,7 +68,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {
@@ -80,7 +80,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (
             base_resume,
             0.75,
@@ -93,7 +93,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         pdf_path.write_bytes(b"%PDF-1.4\n%fake\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _fake_compile)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _fake_compile)
 
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
@@ -188,7 +188,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {
@@ -200,7 +200,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (
             base_resume,
             0.9,
@@ -218,7 +218,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         pdf_path.write_bytes(b"%PDF-1.4\n%fallback\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile_with_first_failure)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_with_first_failure)
 
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
@@ -284,14 +284,14 @@ def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (
             base_resume,
             0.8,
@@ -309,8 +309,8 @@ def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
         pdf_path.write_bytes(b"%PDF-1.4\n%fallback\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile_first_fails_then_fallback)
-    monkeypatch.setattr("agents.inbox.agent.get_pdf_page_count", lambda _pdf: 2)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_first_fails_then_fallback)
+    monkeypatch.setattr("agents.inbox.executor.get_pdf_page_count", lambda _pdf: 2)
     monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.7)
     monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.8)
 
@@ -370,14 +370,14 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
         description="Ship products.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (base_resume, 0.7, {"selected_resume": base_resume.name}),
     )
     def _compile(_tex_path: Path, out_dir: Path) -> Path:
@@ -385,7 +385,7 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
         pdf.write_bytes(b"%PDF-1.4\n")
         return pdf
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
 
     called = {"email": 0, "linkedin": 0, "referral": 0}
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: called.__setitem__("email", called["email"] + 1))
@@ -445,14 +445,14 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
         description="Ship products.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (base_resume, 0.7, {"selected_resume": base_resume.name}),
     )
 
@@ -461,7 +461,7 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
         pdf.write_bytes(b"%PDF-1.4\n")
         return pdf
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: _response("email"))
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: _response("linkedin"))
     monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: _response("referral"))

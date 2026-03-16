@@ -49,14 +49,14 @@ def test_run_pipeline_recovers_from_non_json_mutation_and_condense_responses(
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_details",
+        "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (
             base_resume,
             0.8,
@@ -65,7 +65,7 @@ def test_run_pipeline_recovers_from_non_json_mutation_and_condense_responses(
     )
 
     monkeypatch.setattr(
-        "agents.inbox.agent.parse_editable_regions",
+        "agents.inbox.executor.parse_editable_regions",
         lambda _text: [SimpleNamespace(content="\\item Base bullet")],
     )
 
@@ -77,10 +77,10 @@ def test_run_pipeline_recovers_from_non_json_mutation_and_condense_responses(
         pdf.write_bytes(b"%PDF-1.4\n")
         return pdf
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile_ok)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_ok)
 
     page_counts = [2, 1]
-    monkeypatch.setattr("agents.inbox.agent.get_pdf_page_count", lambda _pdf: page_counts.pop(0))
+    monkeypatch.setattr("agents.inbox.executor.get_pdf_page_count", lambda _pdf: page_counts.pop(0))
 
     llm_calls = {"count": 0}
 
