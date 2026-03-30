@@ -131,13 +131,15 @@ Router (Rules)
     ↓
 Core Agent Engine
     ↓
-Tool Executor
+Planner (ToolPlan generation - Deterministic)
     ↓
-Artifact Layer
+Executor (Resilient tool execution & retries)
+    ↓
+Artifact Layer (Per-application folders)
     ↓
 Drive / Calendar
     ↓
-Eval Logger
+Eval Logger (Fixture-backed CI Gating)
 ```
 
 Shared Storage:
@@ -484,11 +486,11 @@ runs/
 
 # 12. Success Criteria
 
-System is production-ready when:
+System is production-ready and CI gates enforce:
 
-* 10+ eval cases pass
+* 10+ fixture-based eval cases pass (`evals/dataset.py`)
 * Compile success ≥ 95%
-* No forbidden claims across test suite
+* No forbidden claims across test suite (0 tolerance)
 * Avg cost per job < $0.15
 * End-to-end latency < 60 sec
 
@@ -524,8 +526,8 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 | --- | --- | --- |
 | Hard eval constraints implementation | KAR-48 | Done |
 | Soft eval constraints | KAR-59 | Todo |
-| CI thresholds + 10+ eval cases | KAR-60, KAR-51 | Todo |
-| Cost/latency target instrumentation | KAR-57, KAR-60 | Todo |
+| CI thresholds + 10+ eval cases | KAR-60, KAR-51 | Done |
+| Cost/latency target instrumentation | KAR-57, KAR-60 | Done |
 
 ## 13.3 Phase Mapping
 
@@ -533,7 +535,7 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 | --- | --- | --- |
 | Phase 0 Core Executor hardening | KAR-42..KAR-60 | In progress |
 | Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | In progress |
-| Phase 2 Planner Mode | KAR-61 | Todo |
+| Phase 2 Planner Mode | KAR-61 | Done |
 | Phase 3 SaaS Readiness | KAR-62 | Todo |
 
 ## 13.4 Sync Rule

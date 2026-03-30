@@ -23,6 +23,7 @@ def log_run(
     agent: str,
     eval_results: dict[str, Any],
     *,
+    run_id: str | None = None,
     job_id: int | None = None,
     tokens_used: int = 0,
     cost_estimate: float = 0.0,
@@ -38,7 +39,7 @@ def log_run(
 
     Returns the run_id.
     """
-    run_id = generate_run_id()
+    run_id = run_id or generate_run_id()
     settings = get_settings()
 
     # ── SQLite ─────────────────────────────────────────

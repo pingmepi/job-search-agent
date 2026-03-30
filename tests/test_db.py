@@ -17,6 +17,9 @@ from core.db import (
     insert_run,
     complete_run,
     get_run,
+    insert_webhook_event,
+    update_webhook_event,
+    get_webhook_event,
 )
 
 
@@ -45,6 +48,9 @@ class TestSchema:
             columns = {
                 row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
             }
+            webhook_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(webhook_events)").fetchall()
+            }
         assert "last_follow_up_at" in job_columns
         assert "input_mode" in columns
         assert "skip_upload" in columns
@@ -52,6 +58,9 @@ class TestSchema:
         assert "error_count" in columns
         assert "errors_json" in columns
         assert "context_json" in columns
+        assert "event_id" in webhook_columns
+        assert "payload_json" in webhook_columns
+        assert "processing_status" in webhook_columns
 
 
 class TestJobsCRUD:
@@ -133,3 +142,25 @@ class TestRunsCRUD:
 
     def test_get_nonexistent_run(self, db_path: Path):
         assert get_run("nope", db_path=db_path) is None
+
+
+class TestWebhookEventsCRUD:
+    def test_insert_update_and_get(self, db_path: Path):
+        insert_webhook_event(
+            "evt-1",
+            update_id=123,
+            payload={"update_id": 123, "message": {"text": "hello"}},
+            headers={"x-test": "1"},
+            db_path=db_path,
+        )
+        update_webhook_event(
+            "evt-1",
+            processing_status="processed",
+            mark_processed=True,
+            db_path=db_path,
+        )
+        event = get_webhook_event(event_id="evt-1", db_path=db_path)
+        assert event is not None
+        assert event["update_id"] == 123
+        assert event["processing_status"] == "processed"
+        assert event["payload"]["message"]["text"] == "hello"

@@ -4,6 +4,7 @@ SQLite database layer for inbox-agent.
 Tables:
   - jobs   : tracks every job application (PRD §5.3)
   - runs   : telemetry per agent invocation
+  - webhook_events : raw webhook envelopes and processing lifecycle
 """
 
 from __future__ import annotations
@@ -52,6 +53,22 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 
+WEBHOOK_EVENTS_DDL = """\
+CREATE TABLE IF NOT EXISTS webhook_events (
+    event_id          TEXT PRIMARY KEY,
+    update_id         INTEGER,
+    received_at       TEXT NOT NULL,
+    headers_json      TEXT,
+    payload_json      TEXT NOT NULL,
+    secret_valid      INTEGER NOT NULL DEFAULT 0,
+    processing_status TEXT NOT NULL DEFAULT 'received',
+    run_id            TEXT,
+    route_target      TEXT,
+    error_text        TEXT,
+    processed_at      TEXT
+);
+"""
+
 RUNS_MIGRATIONS: dict[str, str] = {
     "input_mode": "TEXT",
     "skip_upload": "INTEGER",
@@ -96,6 +113,7 @@ def init_db(db_path: Path | None = None) -> Path:
     with sqlite3.connect(str(path)) as conn:
         conn.execute(JOBS_DDL)
         conn.execute(RUNS_DDL)
+        conn.execute(WEBHOOK_EVENTS_DDL)
         _apply_migrations(conn)
     return path
 
@@ -273,13 +291,134 @@ def get_db_stats(*, db_path: Path | None = None) -> dict[str, Any]:
                FROM runs
                WHERE eval_results IS NOT NULL"""
         ).fetchone()
+        webhook_row = conn.execute(
+            """SELECT
+                   COUNT(*) AS total_events,
+                   SUM(CASE WHEN processing_status = 'processed' THEN 1 ELSE 0 END) AS processed_events,
+                   SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_events
+               FROM webhook_events"""
+        ).fetchone()
 
     jobs = dict(jobs_row) if jobs_row else {}
     runs = dict(runs_row) if runs_row else {}
     compile_stats = dict(compile_row) if compile_row else {}
+    webhook_stats = dict(webhook_row) if webhook_row else {}
     return {
         "db_path": str(db_path or get_settings().db_path),
         "jobs": jobs,
         "runs": runs,
         "compile": compile_stats,
+        "webhook_events": webhook_stats,
     }
+
+
+# ── Webhook Event CRUD ───────────────────────────────────────────
+
+def insert_webhook_event(
+    event_id: str,
+    *,
+    update_id: int | None,
+    payload: dict[str, Any],
+    headers: dict[str, Any] | None = None,
+    secret_valid: bool = True,
+    processing_status: str = "received",
+    db_path: Path | None = None,
+) -> None:
+    """Persist an inbound webhook envelope."""
+    now = _now_iso()
+    with get_conn(db_path) as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO webhook_events
+               (event_id, update_id, received_at, headers_json, payload_json, secret_valid, processing_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                update_id,
+                now,
+                json.dumps(headers or {}),
+                json.dumps(payload),
+                int(secret_valid),
+                processing_status,
+            ),
+        )
+
+
+def update_webhook_event(
+    event_id: str,
+    *,
+    processing_status: str | None = None,
+    run_id: str | None = None,
+    route_target: str | None = None,
+    error_text: str | None = None,
+    mark_processed: bool = False,
+    db_path: Path | None = None,
+) -> None:
+    """Update lifecycle fields for a persisted webhook event."""
+    fields: dict[str, Any] = {}
+    if processing_status is not None:
+        fields["processing_status"] = processing_status
+    if run_id is not None:
+        fields["run_id"] = run_id
+    if route_target is not None:
+        fields["route_target"] = route_target
+    if error_text is not None:
+        fields["error_text"] = error_text
+    if mark_processed:
+        fields["processed_at"] = _now_iso()
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [event_id]
+    with get_conn(db_path) as conn:
+        conn.execute(
+            f"UPDATE webhook_events SET {set_clause} WHERE event_id = ?",
+            values,
+        )
+
+
+def get_webhook_event(
+    *,
+    event_id: str | None = None,
+    update_id: int | None = None,
+    db_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Fetch one webhook event by event_id or latest by update_id."""
+    if event_id is None and update_id is None:
+        raise ValueError("Provide event_id or update_id")
+    with get_conn(db_path) as conn:
+        if event_id is not None:
+            row = conn.execute(
+                "SELECT * FROM webhook_events WHERE event_id = ?",
+                (event_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM webhook_events WHERE update_id = ? ORDER BY received_at DESC LIMIT 1",
+                (update_id,),
+            ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        if data.get("headers_json"):
+            data["headers"] = json.loads(data["headers_json"])
+        if data.get("payload_json"):
+            data["payload"] = json.loads(data["payload_json"])
+        return data
+
+
+def list_webhook_events(*, limit: int = 50, db_path: Path | None = None) -> list[dict[str, Any]]:
+    """List recent webhook events."""
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM webhook_events ORDER BY received_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        if item.get("headers_json"):
+            item["headers"] = json.loads(item["headers_json"])
+        if item.get("payload_json"):
+            item["payload"] = json.loads(item["payload_json"])
+        events.append(item)
+    return events

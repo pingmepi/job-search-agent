@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app import create_webhook_app
@@ -11,6 +13,7 @@ class _DummySettings:
     telegram_webhook_secret = "test-secret"
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 1.0
+    db_path = Path("/tmp/job-search-agent-test-health.db")
 
 
 class _DummyTelegramApp:

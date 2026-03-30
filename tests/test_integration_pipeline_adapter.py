@@ -68,7 +68,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {
@@ -80,8 +80,12 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_score",
-        lambda *_args, **_kwargs: (base_resume, 0.75),
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.75,
+            {"selected_resume": base_resume.name, "normalized_score": 0.75},
+        ),
     )
 
     def _fake_compile(_tex_path: Path, out_dir: Path) -> Path:
@@ -89,7 +93,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
         pdf_path.write_bytes(b"%PDF-1.4\n%fake\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _fake_compile)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _fake_compile)
 
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
@@ -98,21 +102,31 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
     monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
 
-    pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email", "linkedin", "referral"],
+        skip_upload=True,
+        skip_calendar=True,
+    )
 
     assert pack.job_id is not None
     assert pack.run_id is not None
     assert pack.pdf_path is not None and pack.pdf_path.exists()
     assert pack.eval_results["compile_success"] is True
+    assert pack.eval_results["selected_collateral"] == ["email", "linkedin", "referral"]
+    assert set(pack.eval_results["generated_collateral"]) == {"email", "linkedin", "referral"}
     assert pack.eval_results["llm_total_tokens"] > 0
     assert "llm_usage_breakdown" in pack.eval_results
     assert "keyword_coverage" in pack.eval_results
+    assert (runs_dir / "artifacts" / pack.run_id / "job_extraction.json").exists()
+    assert (runs_dir / "artifacts" / pack.run_id / "resume_output.json").exists()
+    assert (runs_dir / "artifacts" / pack.run_id / "eval_output.json").exists()
 
     with sqlite3.connect(str(db_path)) as conn:
         jobs_count = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
         fit_score = conn.execute("SELECT fit_score FROM jobs LIMIT 1").fetchone()[0]
         run_row = conn.execute(
-            "SELECT job_id, status, eval_results FROM runs WHERE run_id = ?",
+            "SELECT job_id, status, eval_results, context_json FROM runs WHERE run_id = ?",
             (pack.run_id,),
         ).fetchone()
 
@@ -122,6 +136,9 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     assert run_row[0] == pack.job_id
     assert run_row[1] == "completed"
     assert json.loads(run_row[2])["compile_success"] is True
+    context = json.loads(run_row[3])
+    assert "artifact_paths" in context
+    assert "job_extraction" in context["artifact_paths"]
 
 
 def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
@@ -171,7 +188,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         description="Own AI product roadmap.",
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.extract_jd_with_usage",
+        "agents.inbox.executor.extract_jd_with_usage",
         lambda _text: (
             jd,
             {
@@ -183,8 +200,12 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         ),
     )
     monkeypatch.setattr(
-        "agents.inbox.agent.select_base_resume_with_score",
-        lambda *_args, **_kwargs: (base_resume, 0.9),
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.9,
+            {"selected_resume": base_resume.name, "normalized_score": 0.9},
+        ),
     )
 
     call_counter = {"count": 0}
@@ -197,7 +218,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
         pdf_path.write_bytes(b"%PDF-1.4\n%fallback\n")
         return pdf_path
 
-    monkeypatch.setattr("agents.inbox.agent.compile_latex", _compile_with_first_failure)
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_with_first_failure)
 
     monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
     monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
@@ -206,12 +227,274 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
     monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
     monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
 
-    pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email", "linkedin", "referral"],
+        skip_upload=True,
+        skip_calendar=True,
+    )
 
     assert call_counter["count"] == 2
     assert pack.pdf_path is not None and pack.pdf_path.exists()
     assert pack.eval_results["compile_success"] is True
     assert pack.eval_results["compile_rollback_used"] is True
+    assert pack.eval_results["compile_outcome"] == "fallback_success"
+    assert pack.eval_results["single_page_status"] == "fallback_base_used"
+
+
+def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "integration.db"
+    runs_dir = tmp_path / "runs"
+    profile_path = tmp_path / "profile.json"
+    bullet_bank_path = tmp_path / "bullet_bank.json"
+    base_resume = tmp_path / "master_ai.tex"
+
+    profile_path.write_text(
+        json.dumps({"identity": {"name": "Karan"}, "positioning": {"ai": "Product Manager"}}),
+        encoding="utf-8",
+    )
+    bullet_bank_path.write_text("[]", encoding="utf-8")
+    base_resume.write_text(
+        "\\documentclass{article}\n\\begin{document}\nBase resume\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    fake_settings = SimpleNamespace(
+        db_path=db_path,
+        runs_dir=runs_dir,
+        resumes_dir=tmp_path,
+        profile_path=profile_path,
+        bullet_bank_path=bullet_bank_path,
+        max_cost_per_job=1.0,
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("core.db.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.logger.get_settings", lambda: fake_settings)
+
+    jd = JDSchema(
+        company="TwoPageCo",
+        role="AI PM",
+        location="Remote",
+        experience_required="5 years",
+        skills=["python"],
+        description="Own AI product roadmap.",
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.extract_jd_with_usage",
+        lambda _text: (
+            jd,
+            {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
+        ),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.8,
+            {"selected_resume": base_resume.name, "normalized_score": 0.8},
+        ),
+    )
+
+    calls = {"count": 0}
+
+    def _compile_first_fails_then_fallback(_tex_path: Path, out_dir: Path) -> Path:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("mutated compile failed")
+        pdf_path = out_dir / "fallback.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n%fallback\n")
+        return pdf_path
+
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_first_fails_then_fallback)
+    monkeypatch.setattr("agents.inbox.executor.get_pdf_page_count", lambda _pdf: 2)
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.7)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.8)
+
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email"],
+        skip_upload=True,
+        skip_calendar=True,
+    )
+
+    assert calls["count"] == 2
+    assert pack.pdf_path is None
+    assert pack.eval_results["compile_success"] is False
+    assert pack.eval_results["single_page_status"] == "failed_multi_page_terminal"
+    assert pack.eval_results["compile_outcome"] is None
+    assert any("non-compliant" in err or "exceeds one page" in err for err in pack.errors)
+
+
+def test_run_pipeline_skips_collateral_when_selection_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "integration.db"
+    runs_dir = tmp_path / "runs"
+    profile_path = tmp_path / "profile.json"
+    bullet_bank_path = tmp_path / "bullet_bank.json"
+    base_resume = tmp_path / "master_ai.tex"
+
+    profile_path.write_text(json.dumps({"identity": {"name": "Karan"}}), encoding="utf-8")
+    bullet_bank_path.write_text("[]", encoding="utf-8")
+    base_resume.write_text(
+        "\\documentclass{article}\n\\begin{document}\nBase resume\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    fake_settings = SimpleNamespace(
+        db_path=db_path,
+        runs_dir=runs_dir,
+        resumes_dir=tmp_path,
+        profile_path=profile_path,
+        bullet_bank_path=bullet_bank_path,
+        max_cost_per_job=1.0,
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("core.db.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.logger.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
+    jd = JDSchema(
+        company="NoDraft Inc",
+        role="PM",
+        location="Remote",
+        experience_required="3 years",
+        skills=["python"],
+        description="Ship products.",
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.extract_jd_with_usage",
+        lambda _text: (
+            jd,
+            {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
+        ),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (base_resume, 0.7, {"selected_resume": base_resume.name}),
+    )
+    def _compile(_tex_path: Path, out_dir: Path) -> Path:
+        pdf = out_dir / "resume.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        return pdf
+
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
+
+    called = {"email": 0, "linkedin": 0, "referral": 0}
+    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: called.__setitem__("email", called["email"] + 1))
+    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: called.__setitem__("linkedin", called["linkedin"] + 1))
+    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: called.__setitem__("referral", called["referral"] + 1))
+
+    pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
+
+    assert called == {"email": 0, "linkedin": 0, "referral": 0}
+    assert pack.eval_results["collateral_generation_status"] == "blocked_missing_selection"
+    assert pack.email_draft is None
+    assert pack.linkedin_draft is None
+    assert pack.referral_draft is None
+
+
+def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "integration.db"
+    runs_dir = tmp_path / "runs"
+    profile_path = tmp_path / "profile.json"
+    bullet_bank_path = tmp_path / "bullet_bank.json"
+    base_resume = tmp_path / "master_ai.tex"
+
+    profile_path.write_text(
+        json.dumps({"identity": {"name": "Karan"}, "positioning": {"ai": "PM"}}),
+        encoding="utf-8",
+    )
+    bullet_bank_path.write_text("[]", encoding="utf-8")
+    base_resume.write_text(
+        "\\documentclass{article}\n\\begin{document}\nBase resume\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    fake_settings = SimpleNamespace(
+        db_path=db_path,
+        runs_dir=runs_dir,
+        resumes_dir=tmp_path,
+        profile_path=profile_path,
+        bullet_bank_path=bullet_bank_path,
+        max_cost_per_job=1.0,
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("core.db.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.logger.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
+    jd = JDSchema(
+        company="DriveCo",
+        role="PM",
+        location="Remote",
+        experience_required="3 years",
+        skills=["python"],
+        description="Ship products.",
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.extract_jd_with_usage",
+        lambda _text: (
+            jd,
+            {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost_estimate": 0.0},
+        ),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (base_resume, 0.7, {"selected_resume": base_resume.name}),
+    )
+
+    def _compile(_tex_path: Path, out_dir: Path) -> Path:
+        pdf = out_dir / "resume.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        return pdf
+
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
+    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: _response("email"))
+    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: _response("linkedin"))
+    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: _response("referral"))
+
+    captured: dict[str, object] = {}
+
+    def _upload_artifacts(*, files, company, role, application_context_id):
+        captured["files"] = {k: str(v) for k, v in files.items()}
+        captured["company"] = company
+        captured["role"] = role
+        captured["application_context_id"] = application_context_id
+        return {
+            "folder": {"id": "folder-1", "path": "Jobs/DriveCo/PM/context"},
+            "files": {
+                "resume_pdf": {"status": "uploaded", "webViewLink": "https://drive/resume"},
+                "email": {"status": "uploaded", "webViewLink": "https://drive/email"},
+            },
+        }
+
+    monkeypatch.setattr("integrations.drive.upload_application_artifacts", _upload_artifacts)
+
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email"],
+        skip_upload=False,
+        skip_calendar=True,
+    )
+
+    assert set(captured["files"]) == {"resume_pdf", "email"}
+    assert "linkedin" not in captured["files"]
+    assert "referral" not in captured["files"]
+    assert pack.drive_link == "https://drive/resume"
+    assert pack.eval_results["drive_uploads"]["files"]["email"]["status"] == "uploaded"
 
 
 class _FakeMessage:
@@ -260,10 +543,20 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         pdf_path=Path("/tmp/fake.pdf"),
         run_id="run-test",
         errors=[],
+        selected_collateral=["email", "linkedin"],
+        generated_collateral=["email", "linkedin"],
     )
 
-    def _fake_run_pipeline(raw_text: str, *, skip_upload: bool, skip_calendar: bool):
+    def _fake_run_pipeline(
+        raw_text: str,
+        *,
+        image_path=None,
+        selected_collateral: list[str],
+        skip_upload: bool,
+        skip_calendar: bool,
+    ):
         captured["raw_text"] = raw_text
+        captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
         return fake_pack
@@ -276,19 +569,75 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
     monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
 
     update = _FakeUpdate("here is a jd")
-    context = SimpleNamespace()
+    context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
+    assert "raw_text" not in captured
+    assert "Which collateral should I generate" in update.message.replies[1][0]
+
+    update2 = _FakeUpdate("Email, LinkedIn")
+    await adapter.text_handler(update2, context)
 
     assert captured["raw_text"] == "here is a jd"
+    assert captured["selected_collateral"] == ["email", "linkedin"]
     assert captured["skip_upload"] is True
     assert captured["skip_calendar"] is True
 
-    replies = update.message.replies
-    assert len(replies) == 2
+    replies = update.message.replies + update2.message.replies
+    assert len(replies) == 4
     assert "Routing to Inbox Agent" in replies[0][0]
-    assert "JD Extracted" in replies[1][0]
-    assert "run-test" in replies[1][0]
+    assert "Which collateral should I generate" in replies[1][0]
+    assert "Process started" in replies[2][0]
+    assert "JD Extracted" in replies[3][0]
+    assert "run-test" in replies[3][0]
+
+
+@pytest.mark.asyncio
+async def test_text_handler_reports_failure_when_no_valid_pdf(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(AgentTarget.INBOX, "test route"),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(
+            telegram_enable_drive_upload=False,
+            telegram_enable_calendar_events=False,
+        ),
+    )
+
+    fake_pack = SimpleNamespace(
+        jd=SimpleNamespace(company="Acme Corp", role="AI PM", location="Remote", skills=["python"]),
+        resume_base="base.tex",
+        pdf_path=None,
+        run_id="run-fail",
+        errors=["Terminal fallback resume exceeds one page (2 pages)."],
+        selected_collateral=["email"],
+        generated_collateral=["email"],
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.run_pipeline", lambda *_a, **_k: fake_pack)
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
+
+    update = _FakeUpdate("here is a jd")
+    context = SimpleNamespace(user_data={})
+
+    await adapter.text_handler(update, context)
+    assert "Which collateral should I generate" in update.message.replies[1][0]
+
+    update2 = _FakeUpdate("email")
+    await adapter.text_handler(update2, context)
+    final_text = update2.message.replies[-1][0]
+    assert "Process failed" in final_text
+    assert "run-fail" in final_text
 
 
 @pytest.mark.asyncio
@@ -320,10 +669,20 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
         pdf_path=Path("/tmp/fake.pdf"),
         run_id="run-url",
         errors=[],
+        selected_collateral=["referral"],
+        generated_collateral=["referral"],
     )
 
-    def _fake_run_pipeline(raw_text: str, *, skip_upload: bool, skip_calendar: bool):
+    def _fake_run_pipeline(
+        raw_text: str,
+        *,
+        image_path=None,
+        selected_collateral: list[str],
+        skip_upload: bool,
+        skip_calendar: bool,
+    ):
         captured["raw_text"] = raw_text
+        captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
         return fake_pack
@@ -336,16 +695,22 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
     monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
 
     update = _FakeUpdate("check this https://example.com/job")
-    context = SimpleNamespace()
+    context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
+    assert "raw_text" not in captured
+
+    update2 = _FakeUpdate("ref")
+    await adapter.text_handler(update2, context)
 
     assert captured["raw_text"] == "structured jd text"
-    replies = update.message.replies
-    assert len(replies) == 3
+    assert captured["selected_collateral"] == ["referral"]
+    replies = update.message.replies + update2.message.replies
+    assert len(replies) == 5
     assert "Routing to Inbox Agent" in replies[0][0]
     assert "Fetched job URL successfully" in replies[1][0]
-    assert "run-url" in replies[2][0]
+    assert "Which collateral should I generate" in replies[2][0]
+    assert "run-url" in replies[4][0]
 
 
 @pytest.mark.asyncio
@@ -378,7 +743,7 @@ async def test_text_handler_url_fetch_failure_requests_screenshot(monkeypatch) -
     monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
 
     update = _FakeUpdate("check this https://example.com/job")
-    context = SimpleNamespace()
+    context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
 
@@ -421,10 +786,20 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
         pdf_path=Path("/tmp/fake.pdf"),
         run_id="run-flags",
         errors=[],
+        selected_collateral=[],
+        generated_collateral=[],
     )
 
-    def _fake_run_pipeline(raw_text: str, *, skip_upload: bool, skip_calendar: bool):
+    def _fake_run_pipeline(
+        raw_text: str,
+        *,
+        image_path=None,
+        selected_collateral: list[str],
+        skip_upload: bool,
+        skip_calendar: bool,
+    ):
         captured["raw_text"] = raw_text
+        captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
         return fake_pack
@@ -437,10 +812,102 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
     monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
 
     update = _FakeUpdate("plain jd text")
-    context = SimpleNamespace()
+    context = SimpleNamespace(user_data={})
+
+    await adapter.text_handler(update, context)
+    update2 = _FakeUpdate("none")
+    await adapter.text_handler(update2, context)
+
+    assert captured["raw_text"] == "plain jd text"
+    assert captured["selected_collateral"] == []
+    assert captured["skip_upload"] is False
+    assert captured["skip_calendar"] is False
+
+
+@pytest.mark.asyncio
+async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(AgentTarget.ARTICLE, "article route", "article_signal"),
+    )
+    update = _FakeUpdate("long article text")
+    context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
 
-    assert captured["raw_text"] == "plain jd text"
-    assert captured["skip_upload"] is False
-    assert captured["skip_calendar"] is False
+    assert len(update.message.replies) == 1
+    assert "article content" in update.message.replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_text_handler_ambiguous_non_job_route_returns_guidance(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(
+            AgentTarget.AMBIGUOUS_NON_JOB,
+            "ambiguous route",
+            "ambiguous_non_job",
+        ),
+    )
+    update = _FakeUpdate("random note")
+    context = SimpleNamespace(user_data={})
+
+    await adapter.text_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    assert "need a job description input" in update.message.replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_text_handler_reprompts_on_invalid_collateral_selection(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    called = {"run_pipeline": 0}
+
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(AgentTarget.INBOX, "test route"),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(
+            telegram_enable_drive_upload=False,
+            telegram_enable_calendar_events=False,
+        ),
+    )
+    monkeypatch.setattr(adapter, "extract_first_url", lambda _text: None)
+
+    def _fake_run_pipeline(*_args, **_kwargs):
+        called["run_pipeline"] += 1
+        return SimpleNamespace(
+            jd=SimpleNamespace(company="C", role="R", location="L", skills=[]),
+            resume_base="base.tex",
+            pdf_path=Path("/tmp/fake.pdf"),
+            run_id="run-x",
+            errors=[],
+            selected_collateral=[],
+            generated_collateral=[],
+        )
+
+    monkeypatch.setattr("agents.inbox.agent.run_pipeline", _fake_run_pipeline)
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(adapter.asyncio, "to_thread", _fake_to_thread)
+
+    context = SimpleNamespace(user_data={})
+    await adapter.text_handler(_FakeUpdate("new jd"), context)
+    invalid = _FakeUpdate("please decide")
+    await adapter.text_handler(invalid, context)
+
+    assert called["run_pipeline"] == 0
+    assert "couldn't parse" in invalid.message.replies[0][0]

@@ -11,6 +11,7 @@ class TestImageRouting:
     def test_image_routes_to_inbox(self):
         result = route(text=None, has_image=True)
         assert result.target == AgentTarget.INBOX
+        assert result.reason_code == "image_input"
 
     def test_image_with_text_still_routes_to_inbox(self):
         result = route(text="Here's a JD", has_image=True)
@@ -25,6 +26,7 @@ class TestURLRouting:
     def test_http_url(self):
         result = route("http://example.com/job")
         assert result.target == AgentTarget.INBOX
+        assert result.reason_code == "url_input"
 
 
 class TestProfileRouting:
@@ -61,6 +63,7 @@ class TestJDRouting:
         """
         result = route(jd_text)
         assert result.target == AgentTarget.INBOX
+        assert result.reason_code == "jd_signal"
 
     def test_minimal_jd_indicators(self):
         result = route("Responsibilities: manage team. Requirements: 5 years")
@@ -82,7 +85,7 @@ class TestJDRouting:
 class TestAmbiguousRouting:
     def test_random_text(self):
         result = route("Hello, how are you?")
-        assert result.target == AgentTarget.CLARIFY
+        assert result.target == AgentTarget.AMBIGUOUS_NON_JOB
 
     def test_empty_text(self):
         result = route("")
@@ -91,3 +94,13 @@ class TestAmbiguousRouting:
     def test_no_input(self):
         result = route(text=None, has_image=False)
         assert result.target == AgentTarget.CLARIFY
+
+
+class TestArticleRouting:
+    def test_article_signal_routes_to_article(self):
+        result = route(
+            "Published by the author in newsletter format. "
+            "Read more and subscribe on medium.com for the full opinion."
+        )
+        assert result.target == AgentTarget.ARTICLE
+        assert result.reason_code == "article_signal"

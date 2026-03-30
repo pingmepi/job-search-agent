@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -130,12 +129,23 @@ def select_base_resume_with_score(
     resumes_dir: Path,
 ) -> tuple[Path, float]:
     """Select the best-matching base resume and return overlap score."""
+    best_path, best_score, _details = select_base_resume_with_details(jd_skills, resumes_dir)
+    return best_path, best_score
+
+
+def select_base_resume_with_details(
+    jd_skills: list[str],
+    resumes_dir: Path,
+) -> tuple[Path, float, dict[str, Any]]:
+    """Select best resume with deterministic tie-breaking and provenance details."""
     best_path: Optional[Path] = None
     best_score = -1.0
+    candidate_scores: list[tuple[Path, float]] = []
 
     for tex_file in sorted(resumes_dir.glob("master_*.tex")):
         content = tex_file.read_text(encoding="utf-8")
         score = compute_keyword_overlap(jd_skills, content)
+        candidate_scores.append((tex_file, score))
         if score > best_score:
             best_score = score
             best_path = tex_file
@@ -143,7 +153,35 @@ def select_base_resume_with_score(
     if best_path is None:
         raise FileNotFoundError(f"No master_*.tex files found in {resumes_dir}")
 
-    return best_path, best_score
+    jd_skills_normalized = [s.strip().lower() for s in jd_skills if s and s.strip()]
+    chosen_text = best_path.read_text(encoding="utf-8").lower()
+    matched_skills = sorted([s for s in jd_skills_normalized if s in chosen_text])
+    missing_skills = sorted([s for s in jd_skills_normalized if s not in chosen_text])
+
+    top_candidates = [
+        path.name
+        for path, score in candidate_scores
+        if score == best_score
+    ]
+    tie_break_reason = (
+        "highest_score_unique"
+        if len(top_candidates) == 1
+        else "highest_score_lexicographic_tie_break"
+    )
+
+    details: dict[str, Any] = {
+        "selected_resume": best_path.name,
+        "candidate_count": len(candidate_scores),
+        "normalized_score": round(float(best_score), 6),
+        "matched_skills": matched_skills,
+        "missing_skills": missing_skills,
+        "tie_break_reason": tie_break_reason,
+        "candidate_scores": [
+            {"resume": path.name, "score": round(float(score), 6)}
+            for path, score in sorted(candidate_scores, key=lambda x: x[0].name)
+        ],
+    }
+    return best_path, best_score, details
 
 
 # ── Compilation ───────────────────────────────────────────────────

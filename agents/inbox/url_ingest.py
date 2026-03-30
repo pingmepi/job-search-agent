@@ -23,6 +23,7 @@ class URLIngestResult:
     ok: bool
     extracted_text: str = ""
     error: str | None = None
+    error_type: str | None = None
 
 
 def extract_first_url(text: str) -> str | None:
@@ -43,9 +44,14 @@ def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult
     """Fetch URL content and return extracted plain text."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
-        return URLIngestResult(url=url, ok=False, error="Unsupported URL scheme")
+        return URLIngestResult(
+            url=url,
+            ok=False,
+            error="Unsupported URL scheme",
+            error_type="unsupported_scheme",
+        )
     if not parsed.netloc:
-        return URLIngestResult(url=url, ok=False, error="Invalid URL")
+        return URLIngestResult(url=url, ok=False, error="Invalid URL", error_type="invalid_url")
 
     req = Request(
         url,
@@ -62,11 +68,16 @@ def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult
             charset = resp.headers.get_content_charset() or "utf-8"
             body = resp.read().decode(charset, errors="replace")
     except HTTPError as e:
-        return URLIngestResult(url=url, ok=False, error=f"HTTP {e.code}")
+        return URLIngestResult(url=url, ok=False, error=f"HTTP {e.code}", error_type="http_error")
     except URLError as e:
-        return URLIngestResult(url=url, ok=False, error=f"Network error: {e.reason}")
+        return URLIngestResult(
+            url=url,
+            ok=False,
+            error=f"Network error: {e.reason}",
+            error_type="network_error",
+        )
     except Exception as e:  # pragma: no cover - defensive
-        return URLIngestResult(url=url, ok=False, error=str(e))
+        return URLIngestResult(url=url, ok=False, error=str(e), error_type="unexpected_error")
 
     extracted_text = _html_to_text(body)
     if len(extracted_text) < 120:
@@ -75,5 +86,6 @@ def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult
             ok=False,
             extracted_text=extracted_text,
             error="Insufficient extracted text",
+            error_type="insufficient_text",
         )
     return URLIngestResult(url=url, ok=True, extracted_text=extracted_text)

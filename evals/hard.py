@@ -70,16 +70,22 @@ def check_forbidden_claims(
 
     # Build the "allowed" corpus
     allowed_text = " ".join(original_bullets + bullet_bank).lower()
+    suspicious_claims: set[str] = set()
 
-    forbidden_count = 0
     for bullet in mutated_bullets:
+        # Numeric claim drift detector (e.g., new percentages/metrics).
+        numeric_tokens = re.findall(r"\b\d+(?:\.\d+)?%?\b", bullet)
+        for token in numeric_tokens:
+            if token.lower() not in allowed_text:
+                suspicious_claims.add(f"num:{token.lower()}")
+
         # Extract capitalized words (simple proper-noun heuristic)
         proper_nouns = re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b", bullet)
         for noun in proper_nouns:
             if noun.lower() not in allowed_text:
-                forbidden_count += 1
+                suspicious_claims.add(f"ent:{noun.lower()}")
 
-    return forbidden_count
+    return len(suspicious_claims)
 
 
 def check_draft_length(draft: str, *, max_chars: int = 300) -> bool:

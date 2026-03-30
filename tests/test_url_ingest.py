@@ -18,6 +18,7 @@ def test_fetch_url_text_invalid_scheme() -> None:
     result = fetch_url_text("ftp://example.com/file")
     assert result.ok is False
     assert "Unsupported URL scheme" in (result.error or "")
+    assert result.error_type == "unsupported_scheme"
 
 
 def test_fetch_url_text_success(monkeypatch) -> None:
@@ -48,3 +49,4 @@ def test_fetch_url_text_success(monkeypatch) -> None:
     result = fetch_url_text("https://example.com/job")
     assert result.ok is True
     assert "job description" in result.extracted_text.lower()
+    assert result.error_type is None

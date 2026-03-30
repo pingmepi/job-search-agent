@@ -1,7 +1,7 @@
 """
 Google Drive integration — upload artifacts to structured folders.
 
-Folder structure: Jobs/{Company}/{Role}/
+Folder structure: Jobs/{Company}/{Role}/{application_context_id}/
 """
 
 from __future__ import annotations
@@ -81,10 +81,36 @@ def _find_or_create_folder(service, name: str, parent_id: Optional[str] = None) 
 
 
 def upload_to_drive(pdf_path: Path, company: str, role: str) -> str:
-    """
-    Upload a PDF to Google Drive under Jobs/{Company}/{Role}/.
+    """Backward-compatible single-file upload helper."""
+    result = upload_application_artifacts(
+        files={"resume_pdf": pdf_path},
+        company=company,
+        role=role,
+        application_context_id="legacy",
+    )
+    resume_upload = result.get("files", {}).get("resume_pdf", {})
+    if isinstance(resume_upload, dict):
+        return resume_upload.get("webViewLink", "")
+    return ""
 
-    Returns the shareable link.
+
+def _mime_for_file(path: Path) -> str:
+    if path.suffix.lower() == ".pdf":
+        return "application/pdf"
+    return "text/plain"
+
+
+def upload_application_artifacts(
+    *,
+    files: dict[str, Path],
+    company: str,
+    role: str,
+    application_context_id: str,
+) -> dict:
+    """
+    Upload selected application artifacts to Google Drive.
+
+    Files are uploaded under Jobs/{Company}/{Role}/{application_context_id}/.
     """
     service = _get_drive_service()
 
@@ -92,19 +118,39 @@ def upload_to_drive(pdf_path: Path, company: str, role: str) -> str:
     jobs_id = _find_or_create_folder(service, "Jobs")
     company_id = _find_or_create_folder(service, company, jobs_id)
     role_id = _find_or_create_folder(service, role, company_id)
+    app_id = _find_or_create_folder(service, application_context_id, role_id)
 
-    # Upload file
     from googleapiclient.http import MediaFileUpload
 
-    file_metadata = {
-        "name": pdf_path.name,
-        "parents": [role_id],
-    }
-    media = MediaFileUpload(str(pdf_path), mimetype="application/pdf")
-    file = service.files().create(
-        body=file_metadata, media_body=media, fields="id,webViewLink"
-    ).execute()
+    uploads: dict[str, dict[str, str]] = {}
+    for logical_name, path in files.items():
+        file_metadata = {
+            "name": path.name,
+            "parents": [app_id],
+        }
+        try:
+            media = MediaFileUpload(str(path), mimetype=_mime_for_file(path))
+            file = service.files().create(
+                body=file_metadata, media_body=media, fields="id,webViewLink,name"
+            ).execute()
+            uploads[logical_name] = {
+                "status": "uploaded",
+                "id": file["id"],
+                "name": file["name"],
+                "webViewLink": file.get("webViewLink", f"https://drive.google.com/file/d/{file['id']}"),
+            }
+            logger.info("Uploaded %s (%s) to Drive", path.name, logical_name)
+        except Exception as upload_err:
+            uploads[logical_name] = {
+                "status": "failed",
+                "error": str(upload_err),
+                "name": path.name,
+            }
 
-    link = file.get("webViewLink", f"https://drive.google.com/file/d/{file['id']}")
-    logger.info(f"Uploaded {pdf_path.name} → {link}")
-    return link
+    return {
+        "folder": {
+            "id": app_id,
+            "path": f"Jobs/{company}/{role}/{application_context_id}",
+        },
+        "files": uploads,
+    }

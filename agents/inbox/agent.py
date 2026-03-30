@@ -1,62 +1,44 @@
 """
-Inbox Agent — main orchestrator for the job application pipeline.
+Inbox Agent — orchestrates the job application pipeline (KAR-61, PRD Phase 2).
 
-Full pipeline:
-1. Ingest (image / URL / text)
-2. OCR (if image)
-3. Extract & validate JD
-4. Select resume base
-5. Mutate resume
-6. Compile LaTeX
-7. Upload to Drive
-8. Create Calendar events
-9. Generate outreach drafts
-10. Log evals & telemetry
+This module is now a thin adapter: it builds a ToolPlan via the planner,
+then delegates execution to the executor.  All step logic lives in executor.py.
+
+Public API (unchanged):
+    pack = run_pipeline(raw_text, image_path=..., selected_collateral=...,
+                        skip_upload=..., skip_calendar=...)
 """
 
 from __future__ import annotations
 
-import hashlib
-import logging
-import re
-import shutil
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from core.config import get_settings
-from core.db import init_db, insert_job
-from agents.inbox.jd import JDSchema, extract_jd_with_usage, get_cached_jd
-from agents.inbox.resume import (
-    parse_editable_regions,
-    select_base_resume_with_score,
-    apply_mutations,
-    compile_latex,
-    get_pdf_page_count,
-)
-from evals.hard import (
-    check_jd_schema,
-    check_edit_scope,
-    check_forbidden_claims,
-    check_draft_length,
-    check_cost,
-)
-from evals.logger import log_run
+from agents.inbox.planner import build_tool_plan
+from agents.inbox.executor import execute_plan
 
-logger = logging.getLogger(__name__)
+SUPPORTED_COLLATERAL_TYPES = ("email", "linkedin", "referral")
 
 
 @dataclass
 class ApplicationPack:
     """Result of a full pipeline run."""
 
-    jd: JDSchema
+    jd: object  # JDSchema — typed in executor via TYPE_CHECKING
     resume_base: str
     mutated_tex: Optional[str] = None
     pdf_path: Optional[Path] = None
     output_dir: Optional[Path] = None
     drive_link: Optional[str] = None
+    drive_uploads: dict = field(default_factory=dict)
+    application_context_id: Optional[str] = None
+    selected_collateral: list[str] = field(default_factory=list)
+    generated_collateral: list[str] = field(default_factory=list)
+    collateral_generation_status: str = "not_requested"
+    collateral_generation_reason: Optional[str] = None
+    collateral_files: dict[str, Optional[str]] = field(default_factory=dict)
     email_draft: Optional[str] = None
     linkedin_draft: Optional[str] = None
     referral_draft: Optional[str] = None
@@ -66,537 +48,91 @@ class ApplicationPack:
     errors: list[str] = field(default_factory=list)
 
 
-def _extract_bullets(text: str) -> list[str]:
-    """Extract LaTeX item bullets for forbidden-claim checks."""
-    bullets: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(r"\item "):
-            bullets.append(stripped.replace(r"\item ", "", 1).strip())
-    return bullets
-
-
-def _outside_editable_content_changed(original_tex: str, mutated_tex: str) -> bool:
-    """Detect whether content outside editable markers changed."""
-    pattern = re.compile(r"(%%BEGIN_EDITABLE)(.*?)(%%END_EDITABLE)", re.DOTALL)
-    original_masked = pattern.sub(r"\1\n__EDITABLE_REGION__\n\3", original_tex)
-    mutated_masked = pattern.sub(r"\1\n__EDITABLE_REGION__\n\3", mutated_tex)
-    return original_masked != mutated_masked
-
-
-def _keyword_coverage(skills: list[str], text: str) -> float:
-    """Compute simple keyword coverage ratio for JD skills in resume text."""
-    normalized_skills = [s.strip().lower() for s in skills if isinstance(s, str) and s.strip()]
-    if not normalized_skills:
-        return 1.0
-    haystack = text.lower()
-    matched = sum(1 for s in normalized_skills if s in haystack)
-    return matched / len(normalized_skills)
-
-
-def _slugify_filename_part(value: str, fallback: str) -> str:
-    """Normalize free text into a filesystem-safe filename segment."""
-    text = (value or "").strip().lower()
-    text = re.sub(r"[^a-z0-9]+", "_", text)
-    text = text.strip("_")
-    return text or fallback
-
-
 def run_pipeline(
     raw_text: str,
     *,
     image_path: Optional[Path] = None,
+    selected_collateral: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     skip_upload: bool = False,
     skip_calendar: bool = False,
 ) -> ApplicationPack:
     """
     Execute the full job application pipeline.
 
+    Builds a deterministic ToolPlan with the planner, then delegates
+    execution to the executor which runs each step with retry logic.
+
     Parameters
     ----------
     raw_text : Raw JD text (or cleaned OCR output)
     image_path : If provided, run OCR first
+    selected_collateral : Which outreach drafts to generate
     skip_upload : Skip Google Drive upload
     skip_calendar : Skip Google Calendar event creation
     """
     settings = get_settings()
-    start_time = time.time()
-    total_tokens = 0
-    total_cost = 0.0
-    generation_ids: list[tuple[str, str]] = []  # (step_name, gen_id)
-    is_url_input = bool(re.search(r"https?://", raw_text)) if raw_text else False
-    input_mode = "image" if image_path else ("url" if is_url_input else "text")
-    llm_usage_breakdown: dict[str, dict[str, float | int]] = {
-        "ocr_cleanup": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-        "jd_extract": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-        "resume_mutation": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-        "draft_email": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-        "draft_linkedin": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-        "draft_referral": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cost_estimate": 0.0,
-        },
-    }
 
-    # Ensure DB exists
-    init_db()
+    # ── Normalise collateral selection ────────────────────────────
+    # Mirror existing validation so pack.errors is populated correctly
+    # before handing off — collateral gating happens inside the executor
+    # handler on draft steps; here we just surface invalid types early.
+    normalised: list[str] = []
+    invalid: list[str] = []
+    collateral_status = "not_requested"
+    collateral_reason: Optional[str] = None
 
-    # ── Step 1: OCR if needed ─────────────────────────────────
-    if image_path:
-        from agents.inbox.ocr import ocr_pipeline_with_usage
-
-        raw_text, ocr_usage = ocr_pipeline_with_usage(image_path)
-        llm_usage_breakdown["ocr_cleanup"] = ocr_usage
-        total_tokens += int(ocr_usage.get("total_tokens", 0))
-        if ocr_usage.get("generation_id"):
-            generation_ids.append(("ocr_cleanup", ocr_usage["generation_id"]))
-
-    # ── Step 2: Extract & validate JD ─────────────────────────
-    jd, jd_usage = extract_jd_with_usage(raw_text)
-    llm_usage_breakdown["jd_extract"] = jd_usage
-    total_tokens += int(jd_usage.get("total_tokens", 0))
-    if jd_usage.get("generation_id"):
-        generation_ids.append(("jd_extract", jd_usage["generation_id"]))
-
-    # Check cache
-    cached = get_cached_jd(jd.jd_hash)
-    if cached:
-        logger.info(f"JD cache hit: {jd.jd_hash}")
-
-    pack = ApplicationPack(jd=jd, resume_base="")
-    fit_score_percent = 0
-    compile_rollback_used = False
-
-    # ── Step 3: Select resume base ────────────────────────────
-    try:
-        base_path, fit_score = select_base_resume_with_score(jd.skills, settings.resumes_dir)
-        fit_score_percent = int(round(fit_score * 100))
-        pack.resume_base = base_path.name
-        logger.info(f"Selected resume: {base_path.name}")
-    except FileNotFoundError as e:
-        pack.errors.append(f"Resume selection failed: {e}")
-        return pack
-
-    # ── Step 4: Mutate resume ─────────────────────────────────
-    try:
-        import json
-        from core.llm import chat_text
-        from core.prompts import load_prompt
-
-        original_tex = base_path.read_text(encoding="utf-8")
-        regions = parse_editable_regions(original_tex)
-
-        if regions:
-            # Build bullets from editable regions
-            editable_content = "\n".join(r.content for r in regions)
-
-            # Load bullet bank
-            bullet_bank = json.loads(
-                settings.bullet_bank_path.read_text(encoding="utf-8")
-            )
-            bullet_bank_text = "\n".join(b["bullet"] for b in bullet_bank)
-
-            system = load_prompt("resume_mutate", version=1)
-            user_msg = (
-                f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
-                f"Current editable bullets:\n{editable_content}\n\n"
-                f"Bullet bank:\n{bullet_bank_text}"
-            )
-
-            response = chat_text(system, user_msg, json_mode=True)
-            total_tokens += response.total_tokens
-            if response.generation_id:
-                generation_ids.append(("resume_mutation", response.generation_id))
-            llm_usage_breakdown["resume_mutation"] = {
-                "prompt_tokens": response.prompt_tokens,
-                "completion_tokens": response.completion_tokens,
-                "total_tokens": response.total_tokens,
-                "cost_estimate": response.cost_estimate,
-            }
-
-            mutations_data = json.loads(response.text)
-            mutations = mutations_data.get("mutations", [])
-
-            pack.mutated_tex = apply_mutations(original_tex, mutations)
+    if selected_collateral is None:
+        collateral_status = "blocked_missing_selection"
+        collateral_reason = "Selection was not provided."
+    else:
+        seen: set[str] = set()
+        for raw in selected_collateral:
+            v = str(raw or "").strip().lower()
+            if not v:
+                continue
+            if v not in SUPPORTED_COLLATERAL_TYPES:
+                invalid.append(v)
+            elif v not in seen:
+                seen.add(v)
+        normalised = [c for c in SUPPORTED_COLLATERAL_TYPES if c in seen]
+        if invalid:
+            collateral_status = "blocked_invalid_selection"
+            collateral_reason = "Invalid collateral type(s): " + ", ".join(sorted(set(invalid)))
+        elif not normalised:
+            collateral_status = "skipped_no_selection"
+            collateral_reason = "User explicitly chose no collateral."
         else:
-            pack.mutated_tex = original_tex
+            collateral_status = "selected"
 
-    except Exception as e:
-        pack.errors.append(f"Resume mutation failed: {e}")
-        pack.mutated_tex = original_tex if 'original_tex' in dir() else None
+    # ── Build plan ────────────────────────────────────────────────
+    plan = build_tool_plan(
+        raw_text,
+        image_path=image_path,
+        selected_collateral=normalised if not invalid else [],
+        skip_upload=skip_upload,
+        skip_calendar=skip_calendar,
+    )
 
-    # ── Step 5: Compile LaTeX + single-page enforcement ────────
-    condense_retries = 0
-    if pack.mutated_tex:
-        import tempfile
+    # Placeholder JD filled in by jd_extract step
+    from agents.inbox.jd import JDSchema
+    placeholder_jd = JDSchema(
+        company="", role="", location="",
+        experience_required="", skills=[], description="",
+    )
 
-        # Create per-application output folder
-        company_slug = _slugify_filename_part(jd.company, "company")
-        role_slug = _slugify_filename_part(jd.role, "role")
-        short_hash = jd.jd_hash[:8]
-        app_output_dir = settings.runs_dir / "artifacts" / f"{company_slug}_{role_slug}_{short_hash}"
-        app_output_dir.mkdir(parents=True, exist_ok=True)
-        pack.output_dir = app_output_dir
+    pack = ApplicationPack(jd=placeholder_jd, resume_base="")
+    pack.selected_collateral = normalised
+    pack.collateral_files = {k: None for k in SUPPORTED_COLLATERAL_TYPES}
+    pack.collateral_generation_status = collateral_status
+    pack.collateral_generation_reason = collateral_reason
 
-        def _compile_and_persist(tex_content: str, artifact_suffix: str = "") -> Path:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tmp_tex = Path(tmp_dir) / base_path.name
-                tmp_tex.write_text(tex_content, encoding="utf-8")
-                compiled_pdf = compile_latex(tmp_tex, Path(tmp_dir))
-
-                persisted_pdf = app_output_dir / (
-                    f"{base_path.stem}{artifact_suffix}.pdf"
-                )
-                shutil.copy2(compiled_pdf, persisted_pdf)
-                return persisted_pdf
-
-        try:
-            pack.pdf_path = _compile_and_persist(pack.mutated_tex)
-
-            # ── Single-page enforcement loop ──────────────────
-            MAX_CONDENSE_RETRIES = 2
-            current_tex = pack.mutated_tex
-            while pack.pdf_path and pack.pdf_path.exists():
-                page_count = get_pdf_page_count(pack.pdf_path)
-                if page_count <= 1:
-                    break
-                if condense_retries >= MAX_CONDENSE_RETRIES:
-                    pack.errors.append(
-                        f"Resume is {page_count} pages after {condense_retries} condense retries. "
-                        "Minor margin adjustments applied as fallback."
-                    )
-                    # Last-resort: tighten margins slightly
-                    if r"\usepackage[" in current_tex and "geometry" in current_tex:
-                        current_tex = current_tex.replace(
-                            "margin=", "margin=0.4in, margin=", 1
-                        ).replace("margin=0.4in, margin=", "margin=0.4in", 1)
-                    elif r"\usepackage{geometry}" in current_tex:
-                        current_tex = current_tex.replace(
-                            r"\usepackage{geometry}",
-                            r"\usepackage[margin=0.4in]{geometry}",
-                        )
-                    try:
-                        pack.pdf_path = _compile_and_persist(current_tex, "_tight")
-                    except Exception:
-                        pass
-                    break
-
-                logger.info(
-                    "PDF is %d pages, running condense pass %d/%d",
-                    page_count, condense_retries + 1, MAX_CONDENSE_RETRIES,
-                )
-                try:
-                    import json as _cjson
-                    from core.llm import chat_text as _condense_chat
-                    from core.prompts import load_prompt as _condense_load
-
-                    condense_system = _condense_load("resume_condense", version=1)
-                    editable_content = "\n".join(
-                        r.content for r in parse_editable_regions(current_tex)
-                    )
-                    condense_user = (
-                        f"Page count: {page_count} (must be 1)\n\n"
-                        f"JD context:\n{_cjson.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills})}\n\n"
-                        f"Current editable content:\n{editable_content}"
-                    )
-                    condense_resp = _condense_chat(condense_system, condense_user, json_mode=True)
-                    total_tokens += condense_resp.total_tokens
-                    if condense_resp.generation_id:
-                        generation_ids.append((f"condense_pass_{condense_retries + 1}", condense_resp.generation_id))
-
-                    condense_data = _cjson.loads(condense_resp.text)
-                    condense_mutations = condense_data.get("mutations", [])
-
-                    # Handle bullet removals as mutations to empty string
-                    for removed in condense_data.get("bullets_removed", []):
-                        original = removed.get("original", "")
-                        if original:
-                            condense_mutations.append(
-                                {"original": original, "replacement": ""}
-                            )
-
-                    if condense_mutations:
-                        current_tex = apply_mutations(current_tex, condense_mutations)
-                        pack.mutated_tex = current_tex
-                        pack.pdf_path = _compile_and_persist(current_tex, f"_v{condense_retries + 2}")
-
-                    condense_retries += 1
-                except Exception as ce:
-                    pack.errors.append(f"Condense pass {condense_retries + 1} failed: {ce}")
-                    condense_retries += 1
-
-        except Exception as e:
-            pack.errors.append(f"LaTeX compile failed: {e}")
-            try:
-                original_tex_for_fallback = base_path.read_text(encoding="utf-8")
-                pack.pdf_path = _compile_and_persist(original_tex_for_fallback, "_fallback")
-                compile_rollback_used = True
-                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
-            except Exception as fallback_error:
-                pack.errors.append(f"LaTeX compile fallback failed: {fallback_error}")
-
-        logger.info(
-            "Compile result jd_hash=%s success=%s pdf_path=%s rollback_used=%s condense_retries=%d",
-            jd.jd_hash,
-            bool(pack.pdf_path),
-            str(pack.pdf_path) if pack.pdf_path else None,
-            compile_rollback_used,
-            condense_retries,
+    if invalid:
+        pack.errors.append(
+            f"Collateral generation skipped: Invalid collateral type(s): "
+            + ", ".join(sorted(set(invalid)))
         )
+    elif selected_collateral is None:
+        pack.errors.append("Collateral generation skipped: explicit selection not provided.")
 
-    # ── Step 6: Upload to Drive ───────────────────────────────
-    if not skip_upload and pack.pdf_path:
-        try:
-            from integrations.drive import upload_to_drive
-            pack.drive_link = upload_to_drive(
-                pack.pdf_path, jd.company, jd.role
-            )
-        except Exception as e:
-            pack.errors.append(f"Drive upload failed: {e}")
-
-    # ── Step 7: Calendar events ───────────────────────────────
-    if not skip_calendar:
-        try:
-            from integrations.calendar import create_application_events
-            create_application_events(jd.company, jd.role)
-        except Exception as e:
-            pack.errors.append(f"Calendar events failed: {e}")
-
-    # ── Step 8: Generate drafts ───────────────────────────────
-    try:
-        from agents.inbox.drafts import (
-            generate_email_draft,
-            generate_linkedin_dm,
-            generate_referral_template,
-        )
-        import json as _json
-
-        profile = _json.loads(settings.profile_path.read_text(encoding="utf-8"))
-        identity = profile.get("identity", {})
-        name = identity.get("name", "Karan")
-        positioning = profile.get("positioning", {}).get("ai", "Product Manager")
-
-        email = generate_email_draft(name, positioning, jd.company, jd.role)
-        linkedin = generate_linkedin_dm(name, positioning, jd.company, jd.role)
-        referral = generate_referral_template(name, positioning, jd.company, jd.role)
-
-        pack.email_draft = email.text
-        pack.linkedin_draft = linkedin.text
-        pack.referral_draft = referral.text
-
-        total_tokens += email.total_tokens + linkedin.total_tokens + referral.total_tokens
-        for _step, _resp in [("draft_email", email), ("draft_linkedin", linkedin), ("draft_referral", referral)]:
-            if _resp.generation_id:
-                generation_ids.append((_step, _resp.generation_id))
-        llm_usage_breakdown["draft_email"] = {
-            "prompt_tokens": email.prompt_tokens,
-            "completion_tokens": email.completion_tokens,
-            "total_tokens": email.total_tokens,
-            "cost_estimate": email.cost_estimate,
-        }
-        llm_usage_breakdown["draft_linkedin"] = {
-            "prompt_tokens": linkedin.prompt_tokens,
-            "completion_tokens": linkedin.completion_tokens,
-            "total_tokens": linkedin.total_tokens,
-            "cost_estimate": linkedin.cost_estimate,
-        }
-        llm_usage_breakdown["draft_referral"] = {
-            "prompt_tokens": referral.prompt_tokens,
-            "completion_tokens": referral.completion_tokens,
-            "total_tokens": referral.total_tokens,
-            "cost_estimate": referral.cost_estimate,
-        }
-    except Exception as e:
-        pack.errors.append(f"Draft generation failed: {e}")
-
-    # ── Step 8b: Persist drafts to output folder ──────────────
-    if pack.output_dir and pack.output_dir.exists():
-        try:
-            if pack.email_draft:
-                (pack.output_dir / "email_draft.txt").write_text(
-                    pack.email_draft, encoding="utf-8"
-                )
-            if pack.linkedin_draft:
-                (pack.output_dir / "linkedin_dm.txt").write_text(
-                    pack.linkedin_draft, encoding="utf-8"
-                )
-            if pack.referral_draft:
-                (pack.output_dir / "referral.txt").write_text(
-                    pack.referral_draft, encoding="utf-8"
-                )
-            logger.info("Drafts saved to %s", pack.output_dir)
-        except Exception as e:
-            pack.errors.append(f"Draft file persistence failed: {e}")
-
-    # ── Step 9: Log to DB ─────────────────────────────────────
-    try:
-        job_id = insert_job(
-            jd.company, jd.role, jd.jd_hash,
-            fit_score=fit_score_percent,
-            resume_used=pack.resume_base,
-            drive_link=pack.drive_link,
-        )
-        pack.job_id = job_id
-    except Exception as e:
-        pack.errors.append(f"DB insert failed: {e}")
-
-    # ── Step 10: Eval logging ─────────────────────────────────
-    latency_ms = int((time.time() - start_time) * 1000)
-
-    original_bullets: list[str] = []
-    mutated_bullets: list[str] = []
-    forbidden_claims_count = 0
-    edit_scope_violations = 0
-
-    if 'original_tex' in locals() and pack.mutated_tex:
-        outside_changed = _outside_editable_content_changed(original_tex, pack.mutated_tex)
-        edit_scope_ok = check_edit_scope(
-            original_tex,
-            pack.mutated_tex,
-            outside_changed=outside_changed,
-        )
-        edit_scope_violations = 0 if edit_scope_ok else 1
-
-        original_bullets = _extract_bullets(original_tex)
-        mutated_bullets = _extract_bullets(pack.mutated_tex)
-        try:
-            import json as _json
-            bullet_bank_data = _json.loads(settings.bullet_bank_path.read_text(encoding="utf-8"))
-            bullet_bank = [b.get("bullet", "") for b in bullet_bank_data if isinstance(b, dict)]
-        except Exception:
-            bullet_bank = []
-        forbidden_claims_count = check_forbidden_claims(
-            original_bullets,
-            mutated_bullets,
-            bullet_bank,
-        )
-
-    # ── Resolve real costs from OpenRouter ─────────────────────
-    try:
-        from core.llm import resolve_costs_batch
-
-        gen_id_list = [gid for _, gid in generation_ids]
-        resolved = resolve_costs_batch(gen_id_list)
-
-        # Backfill per-step costs and compute total
-        for step_name, gen_id in generation_ids:
-            cost = resolved.get(gen_id, 0.0)
-            total_cost += cost
-            if step_name in llm_usage_breakdown:
-                llm_usage_breakdown[step_name]["cost_estimate"] = cost
-    except Exception as cost_err:
-        pack.errors.append(f"Cost resolution failed: {cost_err}")
-
-    # ── Soft evals (LLM-judged quality signals) ────────────────
-    soft_resume_relevance: float | None = None
-    soft_jd_accuracy: float | None = None
-
-    try:
-        from evals.soft import score_resume_relevance, score_jd_accuracy
-
-        if pack.mutated_tex:
-            soft_resume_relevance = score_resume_relevance(
-                jd.description, pack.mutated_tex,
-            )
-
-        soft_jd_accuracy = score_jd_accuracy(
-            raw_text,
-            {
-                "company": jd.company,
-                "role": jd.role,
-                "location": jd.location,
-                "experience_required": jd.experience_required,
-                "skills": jd.skills,
-                "description": jd.description,
-            },
-        )
-    except Exception as soft_err:
-        pack.errors.append(f"Soft eval failed: {soft_err}")
-
-    eval_results = {
-        "compile_success": bool(pack.pdf_path and pack.pdf_path.exists()),
-        "forbidden_claims_count": forbidden_claims_count,
-        "edit_scope_violations": edit_scope_violations,
-        "draft_length_ok": check_draft_length(pack.linkedin_draft or "", max_chars=300),
-        "cost_ok": check_cost(total_cost, threshold=settings.max_cost_per_job),
-        "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
-        "compile_rollback_used": compile_rollback_used,
-        "condense_retries": condense_retries,
-        "llm_total_tokens": total_tokens,
-        "llm_total_cost": total_cost,
-        "llm_usage_breakdown": llm_usage_breakdown,
-        "jd_schema_valid": check_jd_schema(
-            {"company": jd.company, "role": jd.role, "location": jd.location,
-             "experience_required": jd.experience_required, "skills": jd.skills,
-             "description": jd.description}
-        ),
-        "soft_resume_relevance": soft_resume_relevance,
-        "soft_jd_accuracy": soft_jd_accuracy,
-    }
-    pack.eval_results = eval_results
-
-    try:
-        run_context = {
-            "company": jd.company,
-            "role": jd.role,
-            "jd_hash": jd.jd_hash,
-            "resume_base": pack.resume_base,
-            "fit_score": fit_score_percent,
-            "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
-            "drive_link": pack.drive_link,
-            "skip_upload": skip_upload,
-            "skip_calendar": skip_calendar,
-            "input_mode": input_mode,
-            "error_count": len(pack.errors),
-        }
-        pack.run_id = log_run(
-            "inbox",
-            eval_results,
-            job_id=pack.job_id,
-            tokens_used=total_tokens,
-            cost_estimate=total_cost,
-            latency_ms=latency_ms,
-            input_mode=input_mode,
-            skip_upload=skip_upload,
-            skip_calendar=skip_calendar,
-            errors=pack.errors,
-            context=run_context,
-        )
-        logger.info(
-            "Run logged run_id=%s jd_hash=%s pdf_path=%s errors=%s",
-            pack.run_id,
-            jd.jd_hash,
-            str(pack.pdf_path) if pack.pdf_path else None,
-            len(pack.errors),
-        )
-    except Exception as e:
-        pack.errors.append(f"Eval logging failed: {e}")
-
-    return pack
+    # ── Execute plan ──────────────────────────────────────────────
+    return execute_plan(plan, pack, settings)

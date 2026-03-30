@@ -10,6 +10,7 @@ from agents.inbox.resume import (
     EditableRegion,
     apply_mutations,
     select_base_resume_with_score,
+    select_base_resume_with_details,
     compute_keyword_overlap,
 )
 
@@ -127,3 +128,16 @@ class TestResumeSelection:
         best_path, score = select_base_resume_with_score(["python", "sql"], tmp_path)
         assert best_path.name == "master_a.tex"
         assert score == pytest.approx(1.0)
+
+    def test_select_base_resume_with_details_is_deterministic_on_tie(self, tmp_path: Path):
+        a = tmp_path / "master_a.tex"
+        b = tmp_path / "master_b.tex"
+        a.write_text("python", encoding="utf-8")
+        b.write_text("python", encoding="utf-8")
+
+        best_path, score, details = select_base_resume_with_details(["python"], tmp_path)
+        assert best_path.name == "master_a.tex"
+        assert score == pytest.approx(1.0)
+        assert details["tie_break_reason"] == "highest_score_lexicographic_tie_break"
+        assert details["selected_resume"] == "master_a.tex"
+        assert details["matched_skills"] == ["python"]

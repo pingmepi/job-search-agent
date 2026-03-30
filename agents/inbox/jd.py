@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,6 +40,153 @@ class JDSchema:
 
 # ── In-memory cache (hash → JDSchema) ────────────────────────────
 _jd_cache: dict[str, JDSchema] = {}
+
+
+def _is_transient_llm_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    transient_markers = (
+        "rate limit",
+        "too many requests",
+        "429",
+        "timeout",
+        "timed out",
+        "connection",
+        "temporarily unavailable",
+        "server error",
+        "503",
+        "502",
+        "504",
+    )
+    return any(marker in msg for marker in transient_markers)
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    """
+    Extract the first balanced JSON object from mixed text.
+
+    Handles prefixes/suffixes and ignores braces within quoted strings.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:idx + 1]
+    return None
+
+
+def _parse_json_object_from_llm_text(text: str) -> dict[str, Any]:
+    """
+    Parse a JSON object from common LLM response formats.
+
+    Supported forms:
+    - pure JSON object
+    - fenced JSON block
+    - prefixed/suffixed text containing one JSON object
+    """
+    candidate = (text or "").strip()
+    if not candidate:
+        raise ValueError("LLM returned empty response.")
+
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", candidate, flags=re.IGNORECASE)
+    if fenced:
+        block = fenced.group(1).strip()
+        try:
+            parsed = json.loads(block)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    extracted = _extract_first_json_object(candidate)
+    if extracted:
+        try:
+            parsed = json.loads(extracted)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM returned invalid JSON object: {exc}") from exc
+
+    snippet = candidate[:180].replace("\n", " ")
+    raise ValueError(f"LLM response did not contain a parseable JSON object. Preview: {snippet!r}")
+
+
+def _extract_by_patterns(text: str, patterns: list[str]) -> str:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        if not match:
+            continue
+        value = (match.group(1) or "").strip(" -:\t")
+        if value:
+            return value
+    return ""
+
+
+def _fill_missing_required_fields(data: dict[str, Any], raw_text: str) -> dict[str, Any]:
+    """
+    Backfill required JD fields when LLM output leaves them blank.
+
+    Keeps strict schema validation but tries deterministic extraction first.
+    """
+    normalized = dict(data or {})
+    text = raw_text or ""
+
+    company = str(normalized.get("company", "") or "").strip()
+    role = str(normalized.get("role", "") or "").strip()
+
+    if not company:
+        company = _extract_by_patterns(
+            text,
+            [
+                r"^\s*(?:company|organization|employer)\s*[:\-]\s*(.+)$",
+                r"\b([A-Z][A-Za-z0-9&.\-]*(?:\s+(?!is\b)[A-Z][A-Za-z0-9&.\-]*){0,5})\s+is\s+hiring\b",
+                r"\b([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,5})\s+hiring\b",
+                r"\bat\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,5})\b",
+            ],
+        )
+
+    if not role:
+        role = _extract_by_patterns(
+            text,
+            [
+                r"^\s*(?:job title|title|role|position)\s*[:\-]\s*(.+)$",
+                r"^\s*([A-Z][A-Za-z0-9/\-+&() ]{3,80}(?:Engineer|Developer|Manager|Analyst|Scientist|Designer|Lead|Specialist|Consultant|Director|Architect))\s*$",
+                r"hiring\s+(?:for\s+)?(?:an?\s+)?([A-Z][A-Za-z0-9/\-+&() ]{3,80})",
+            ],
+        )
+
+    normalized["company"] = company or "Unknown Company"
+    normalized["role"] = role or "Unknown Role"
+    return normalized
 
 
 def validate_jd_schema(data: dict[str, Any]) -> JDSchema:
@@ -87,13 +236,9 @@ def extract_jd_from_text(raw_text: str) -> JDSchema:
     system_prompt = load_prompt("jd_extract", version=1)
 
     response = chat_text(system_prompt, raw_text, json_mode=True)
-
-    try:
-        data = json.loads(response.text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM returned invalid JSON: {e}") from e
-
-    return validate_jd_schema(data)
+    data = _parse_json_object_from_llm_text(response.text)
+    normalized = _fill_missing_required_fields(data, raw_text)
+    return validate_jd_schema(normalized)
 
 
 def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | int]]:
@@ -108,14 +253,28 @@ def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | in
     from core.prompts import load_prompt
 
     system_prompt = load_prompt("jd_extract", version=1)
-    response = chat_text(system_prompt, raw_text, json_mode=True)
+    response = None
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            response = chat_text(system_prompt, raw_text, json_mode=True)
+            data = _parse_json_object_from_llm_text(response.text)
+            normalized = _fill_missing_required_fields(data, raw_text)
+            jd = validate_jd_schema(normalized)
+            break
+        except Exception as exc:
+            last_error = exc
+            is_retryable = _is_transient_llm_error(exc) or isinstance(exc, ValueError)
+            if attempt < 3 and is_retryable:
+                time.sleep(0.2 * attempt)
+                continue
+            raise
+    else:
+        if last_error:
+            raise last_error
+        raise RuntimeError("JD extraction failed without a concrete error.")
 
-    try:
-        data = json.loads(response.text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM returned invalid JSON: {e}") from e
-
-    jd = validate_jd_schema(data)
+    assert response is not None
     usage = {
         "prompt_tokens": response.prompt_tokens,
         "completion_tokens": response.completion_tokens,

@@ -6,6 +6,8 @@ CONSTRAINTS — these are NON-NEGOTIABLE:
 3. You must NOT invent companies, roles, metrics, or achievements that are not in the original resume or bullet bank.
 4. You must NOT change dates, company names, or job titles.
 5. Rewritten bullets should incorporate relevant keywords from the job description while remaining truthful.
+6. Do NOT introduce any new numeric values (%, $, counts, multipliers) unless the exact value already exists in the original bullet text or bullet bank.
+7. Do NOT introduce any new named entities (company names, products, programs, teams) not present in the original bullet text or bullet bank.
 
 DENSITY RULES — the final resume MUST fit on a single page:
 1. Maximum 5 bullet points per role, minimum 1.
@@ -24,7 +26,8 @@ Return a JSON object with:
     {
       "original": "the original bullet text",
       "replacement": "the rewritten bullet text",
-      "reason": "brief explanation of why this change improves JD alignment"
+      "reason": "brief explanation of why this change improves JD alignment",
+      "source": "which original/bullet-bank phrase this rewrite is grounded in"
     }
   ]
 }
