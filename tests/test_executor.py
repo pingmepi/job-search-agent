@@ -52,8 +52,9 @@ def _make_pack():
 
 
 def _make_settings(tmp_path: Path):
+    import os
     return SimpleNamespace(
-        db_path=tmp_path / "test.db",
+        database_url=os.environ.get("DATABASE_URL", ""),
         runs_dir=tmp_path / "runs",
         resumes_dir=tmp_path,
         profile_path=tmp_path / "profile.json",

@@ -77,7 +77,7 @@ WEBHOOK_PROCESS_TIMEOUT_SECONDS=10
 
 GOOGLE_CREDENTIALS_PATH=credentials/google_oauth.json
 MAX_COST_PER_JOB=0.15
-DB_PATH=data/inbox_agent.db
+DATABASE_URL=postgresql://user:password@host:5432/inbox_agent
 ```
 
 Notes:

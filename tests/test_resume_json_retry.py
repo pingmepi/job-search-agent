@@ -14,8 +14,8 @@ from agents.inbox.jd import JDSchema
 def test_run_pipeline_recovers_from_non_json_mutation_and_condense_responses(
     tmp_path: Path,
     monkeypatch,
+    db,
 ) -> None:
-    db_path = tmp_path / "integration.db"
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -29,7 +29,7 @@ def test_run_pipeline_recovers_from_non_json_mutation_and_condense_responses(
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,

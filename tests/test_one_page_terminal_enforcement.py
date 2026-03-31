@@ -11,8 +11,7 @@ from agents.inbox.agent import run_pipeline
 from agents.inbox.jd import JDSchema
 
 
-def test_run_pipeline_fails_when_fallback_pdf_is_multi_page(tmp_path: Path, monkeypatch) -> None:
-    db_path = tmp_path / "integration.db"
+def test_run_pipeline_fails_when_fallback_pdf_is_multi_page(tmp_path: Path, monkeypatch, db) -> None:
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -26,7 +25,7 @@ def test_run_pipeline_fails_when_fallback_pdf_is_multi_page(tmp_path: Path, monk
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,

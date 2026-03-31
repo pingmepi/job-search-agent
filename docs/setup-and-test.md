@@ -44,6 +44,7 @@ Minimum required for webhook runtime:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `PUBLIC_BASE_URL`
+- `DATABASE_URL` — PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/inbox_agent`). Railway injects this automatically when the PostgreSQL plugin is attached.
 
 Notes:
 
@@ -53,6 +54,8 @@ Notes:
 
 ## Stage 3: Initialize Database
 
+Requires `DATABASE_URL` to be set in `.env`. On Railway, this is injected automatically; locally, point it at a running Postgres instance.
+
 ```bash
 ./.venv/bin/python main.py init-db
 ```
@@ -60,27 +63,26 @@ Notes:
 Expected output:
 
 ```text
-✅ Database initialized at /Users/karan/Desktop/job-search-agent/data/inbox_agent.db
+✅ Database initialized
 ```
 
 ## Stage 4: Baseline Test Suite (Fast Signal)
 
+Tests that exercise the database (webhook, followup, integration) require `DATABASE_URL`. They are skipped automatically when it is not set.
+
 ```bash
-./.venv/bin/pytest -q tests/test_health.py tests/test_webhook_retries.py tests/test_followup_runner.py
+# Without a database — runs only DB-free tests:
+./.venv/bin/pytest -q tests/test_health.py
+
+# With a local Postgres database — runs the full suite:
+DATABASE_URL=postgresql://localhost/inbox_agent_test ./.venv/bin/pytest -q
 ```
 
-Expected output pattern:
+Expected output pattern (with DATABASE_URL):
 
 ```text
-........                                                                 [100%]
-8 passed in <time>s
-```
-
-Sample run from current branch:
-
-```text
-........                                                                 [100%]
-8 passed in 1.16s
+...                                                                      [100%]
+222+ passed in <time>s
 ```
 
 ## Stage 5: Runtime Data Sanity Check
@@ -92,7 +94,6 @@ Sample run from current branch:
 Expected output pattern:
 
 ```text
-DB: <absolute-db-path>
 Jobs: total=<n> applied=<n> follow_up_zero=<n> fit_score_nulls=<n> drive_link_empty=<n>
 Runs: total=<n> completed=<n> tokens_nulls=<n> latency_nulls=<n> with_errors=<n>
 Compile: success=<n> failure=<n>

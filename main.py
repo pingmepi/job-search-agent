@@ -175,8 +175,8 @@ def main() -> None:
 
     elif command == "init-db":
         from core.db import init_db
-        path = init_db()
-        print(f"✅ Database initialized at {path}")
+        init_db()
+        print("✅ Database initialized")
 
     elif command == "ci-gate":
         from evals.ci_gate import main as run_gate
@@ -186,7 +186,6 @@ def main() -> None:
         from core.db import get_db_stats
 
         stats = get_db_stats()
-        print(f"DB: {stats['db_path']}")
         print(
             "Jobs:"
             f" total={stats['jobs'].get('total_jobs', 0)}"

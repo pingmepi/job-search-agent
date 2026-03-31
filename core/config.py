@@ -98,12 +98,13 @@ class Settings:
         default_factory=lambda: _env_bool("OCR_REQUIRE_JD_INDICATOR", default=True)
     )
 
+    # ── Database ──────────────────────────────────────────────────
+    database_url: str = field(
+        default_factory=lambda: os.environ.get("DATABASE_URL", "")
+    )
+
     # ── Paths ─────────────────────────────────────────────────────
     project_root: Path = PROJECT_ROOT
-    db_path: Path = field(
-        default_factory=lambda: PROJECT_ROOT
-        / os.environ.get("DB_PATH", "data/inbox_agent.db")
-    )
     prompts_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "core" / "prompts")
     profile_path: Path = field(
         default_factory=lambda: PROJECT_ROOT / "profile" / "profile.json"

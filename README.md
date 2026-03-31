@@ -2,14 +2,16 @@
 
 Webhook-first multi-agent system for job application automation.
 
-## Current Runtime Mode
+## Deployment
 
-Telegram ingestion runs via **webhook service** (FastAPI). Polling is not used.
+Runs on **Railway** (Docker + managed PostgreSQL). The service is always-on — no local machine required.
 
+- Platform: [railway.app](https://railway.app) — Docker container with Tesseract + minimal TexLive
+- Database: Railway-managed PostgreSQL (`DATABASE_URL` auto-injected)
 - Health endpoint: `GET /health`
 - Webhook endpoint: `POST /telegram/webhook`
 
-## Quick Start
+## Quick Start (local dev)
 
 1. Create environment and install dependencies:
 
@@ -32,6 +34,7 @@ Set at minimum:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `PUBLIC_BASE_URL`
+- `DATABASE_URL` — PostgreSQL connection string (e.g. `postgresql://localhost/inbox_agent`)
 
 3. Initialize DB:
 
@@ -53,15 +56,17 @@ python main.py webhook
 
 ## Commands
 
-- `python main.py webhook` -> start Telegram webhook service
-- `python main.py init-db` -> initialize SQLite DB
-- `python main.py ci-gate` -> run CI eval gate
-- `python main.py followup-runner --once` -> execute one follow-up detection/generation cycle
-- `.venv/bin/pytest -q` -> run tests
+- `python main.py webhook` — start Telegram webhook service
+- `python main.py init-db` — create/migrate PostgreSQL tables
+- `python main.py ci-gate` — run CI eval gate
+- `python main.py db-stats` — show table counts and health
+- `python main.py followup-runner --once` — execute one follow-up detection/generation cycle
+- `pytest -q` — run tests (DB tests skip automatically if `DATABASE_URL` not set)
 
 ## Documentation
 
 - Full runbook: `docs/README.md`
+- Setup and test guide: `docs/setup-and-test.md`
 - Webhook spec/status: `docs/webhook-service.md`
 - Product requirements: `PRD.md`
 - Current tracker: `TRACKER.md`

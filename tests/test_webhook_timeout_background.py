@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import sys
 import time
-from pathlib import Path
 from types import ModuleType
 
 from fastapi.testclient import TestClient
@@ -34,7 +33,7 @@ class _DummySettings:
     telegram_webhook_secret = "test-secret"
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 0.05
-    db_path = Path("/tmp/job-search-agent-test-webhook-timeout.db")
+    database_url = ""
 
 
 class _DummyChat:
@@ -85,12 +84,14 @@ class _SlowTelegramApp:
             raise
 
 
-def test_webhook_timeout_runs_handler_in_background_without_duplicate_processing(monkeypatch) -> None:
+def test_webhook_timeout_runs_handler_in_background_without_duplicate_processing(monkeypatch, db) -> None:
     app_module = _load_app_module_with_stubs()
     tg_app = _SlowTelegramApp()
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(77))
-    web_app = app_module.create_webhook_app(settings=_DummySettings(), telegram_app=tg_app)
+    settings = _DummySettings()
+    settings.database_url = db
+    web_app = app_module.create_webhook_app(settings=settings, telegram_app=tg_app)
 
     with TestClient(web_app) as client:
         first = client.post(
