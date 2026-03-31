@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -14,14 +13,14 @@ class _DummySettings:
     telegram_webhook_secret = "test-secret"
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 0.5
-    db_path = Path("/tmp/job-search-agent-test-webhook-retries.db")
+    database_url = ""
 
 
 class _ShortTimeoutSettings:
     telegram_webhook_secret = "test-secret"
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 0.05
-    db_path = Path("/tmp/job-search-agent-test-webhook-retries-timeout.db")
+    database_url = ""
 
 
 class _DummyChat:
@@ -121,11 +120,13 @@ async def time_async_sleep(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
-def test_webhook_retries_three_times_then_notifies(monkeypatch) -> None:
+def test_webhook_retries_three_times_then_notifies(monkeypatch, db) -> None:
     tg_app = _AlwaysFailTelegramApp()
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(42))
-    web_app = app_module.create_webhook_app(settings=_DummySettings(), telegram_app=tg_app)
+    settings = _DummySettings()
+    settings.database_url = db
+    web_app = app_module.create_webhook_app(settings=settings, telegram_app=tg_app)
     client = TestClient(web_app)
 
     response = client.post(
@@ -141,11 +142,13 @@ def test_webhook_retries_three_times_then_notifies(monkeypatch) -> None:
     assert tg_app.bot.sent_messages[0][0] == 42
 
 
-def test_duplicate_update_id_is_not_reprocessed(monkeypatch) -> None:
+def test_duplicate_update_id_is_not_reprocessed(monkeypatch, db) -> None:
     tg_app = _SuccessTelegramApp()
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(55))
-    web_app = app_module.create_webhook_app(settings=_DummySettings(), telegram_app=tg_app)
+    settings = _DummySettings()
+    settings.database_url = db
+    web_app = app_module.create_webhook_app(settings=settings, telegram_app=tg_app)
     client = TestClient(web_app)
 
     first = client.post(
@@ -164,11 +167,13 @@ def test_duplicate_update_id_is_not_reprocessed(monkeypatch) -> None:
     assert tg_app.process_calls == 1
 
 
-def test_timeout_does_not_cancel_inflight_handler_and_preserves_dedupe(monkeypatch) -> None:
+def test_timeout_does_not_cancel_inflight_handler_and_preserves_dedupe(monkeypatch, db) -> None:
     tg_app = _SlowTelegramApp()
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(77))
-    web_app = app_module.create_webhook_app(settings=_ShortTimeoutSettings(), telegram_app=tg_app)
+    settings = _ShortTimeoutSettings()
+    settings.database_url = db
+    web_app = app_module.create_webhook_app(settings=settings, telegram_app=tg_app)
 
     with TestClient(web_app) as client:
         first = client.post(

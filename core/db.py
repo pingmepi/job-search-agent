@@ -1,20 +1,21 @@
 """
-SQLite database layer for inbox-agent.
+PostgreSQL database layer for inbox-agent.
 
 Tables:
-  - jobs   : tracks every job application (PRD §5.3)
-  - runs   : telemetry per agent invocation
+  - jobs           : tracks every job application (PRD §5.3)
+  - runs           : telemetry per agent invocation
   - webhook_events : raw webhook envelopes and processing lifecycle
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Generator
+
+import psycopg2
+import psycopg2.extras
 
 from core.config import get_settings
 
@@ -22,7 +23,7 @@ from core.config import get_settings
 
 JOBS_DDL = """\
 CREATE TABLE IF NOT EXISTS jobs (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              SERIAL PRIMARY KEY,
     company         TEXT    NOT NULL,
     role            TEXT    NOT NULL,
     jd_hash         TEXT    NOT NULL,
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 RUNS_DDL = """\
 CREATE TABLE IF NOT EXISTS runs (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              SERIAL PRIMARY KEY,
     run_id          TEXT    NOT NULL UNIQUE,
     agent           TEXT    NOT NULL,
     job_id          INTEGER REFERENCES jobs(id),
@@ -48,6 +49,12 @@ CREATE TABLE IF NOT EXISTS runs (
     tokens_used     INTEGER,
     cost_estimate   REAL,
     latency_ms      INTEGER,
+    input_mode      TEXT,
+    skip_upload     INTEGER,
+    skip_calendar   INTEGER,
+    error_count     INTEGER,
+    errors_json     TEXT,
+    context_json    TEXT,
     created_at      TEXT    NOT NULL,
     completed_at    TEXT
 );
@@ -69,19 +76,6 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 """
 
-RUNS_MIGRATIONS: dict[str, str] = {
-    "input_mode": "TEXT",
-    "skip_upload": "INTEGER",
-    "skip_calendar": "INTEGER",
-    "error_count": "INTEGER",
-    "errors_json": "TEXT",
-    "context_json": "TEXT",
-}
-
-JOBS_MIGRATIONS: dict[str, str] = {
-    "last_follow_up_at": "TEXT",
-}
-
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -89,45 +83,59 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return {row[1] for row in rows}
+def _table_columns(cur: Any, table_name: str) -> set[str]:
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table_name,),
+    )
+    return {row["column_name"] for row in cur.fetchall()}
 
 
-def _apply_migrations(conn: sqlite3.Connection) -> None:
-    jobs_columns = _table_columns(conn, "jobs")
-    for column, sql_type in JOBS_MIGRATIONS.items():
-        if column not in jobs_columns:
-            conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {sql_type}")
+def _apply_migrations(cur: Any) -> None:
+    """Add columns that were introduced after initial schema creation."""
+    jobs_cols = _table_columns(cur, "jobs")
+    if "last_follow_up_at" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_follow_up_at TEXT")
 
-    runs_columns = _table_columns(conn, "runs")
-    for column, sql_type in RUNS_MIGRATIONS.items():
-        if column not in runs_columns:
-            conn.execute(f"ALTER TABLE runs ADD COLUMN {column} {sql_type}")
+    runs_cols = _table_columns(cur, "runs")
+    for col, col_type in {
+        "input_mode": "TEXT",
+        "skip_upload": "INTEGER",
+        "skip_calendar": "INTEGER",
+        "error_count": "INTEGER",
+        "errors_json": "TEXT",
+        "context_json": "TEXT",
+    }.items():
+        if col not in runs_cols:
+            cur.execute(f"ALTER TABLE runs ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
 
-def init_db(db_path: Path | None = None) -> Path:
-    """Create the database file + tables if they don't exist.  Returns the path."""
-    path = db_path or get_settings().db_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(path)) as conn:
-        conn.execute(JOBS_DDL)
-        conn.execute(RUNS_DDL)
-        conn.execute(WEBHOOK_EVENTS_DDL)
-        _apply_migrations(conn)
-    return path
+def init_db() -> None:
+    """Create tables if they don't exist."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(JOBS_DDL)
+        cur.execute(RUNS_DDL)
+        cur.execute(WEBHOOK_EVENTS_DDL)
+        _apply_migrations(cur)
 
 
 @contextmanager
-def get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None, None]:
-    """Yield a connection with row_factory set to sqlite3.Row."""
-    path = db_path or get_settings().db_path
-    init_db(path)
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+def get_conn() -> Generator[Any, None, None]:
+    """Yield an auto-committing psycopg2 connection with RealDictCursor as default."""
+    database_url = get_settings().database_url
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is not set")
+    conn = psycopg2.connect(
+        database_url,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -142,48 +150,55 @@ def insert_job(
     fit_score: int | None = None,
     resume_used: str | None = None,
     drive_link: str | None = None,
-    db_path: Path | None = None,
+    db_path: Any = None,  # ignored, kept for call-site compatibility during transition
 ) -> int:
     """Insert a new job row and return its id."""
     now = _now_iso()
-    with get_conn(db_path) as conn:
-        cur = conn.execute(
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
             """INSERT INTO jobs
                (company, role, jd_hash, fit_score, resume_used, drive_link, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id""",
             (company, role, jd_hash, fit_score, resume_used, drive_link, now, now),
         )
-        return cur.lastrowid  # type: ignore[return-value]
+        row = cur.fetchone()
+        return row["id"]
 
 
-def get_job(job_id: int, *, db_path: Path | None = None) -> dict[str, Any] | None:
+def get_job(job_id: int, *, db_path: Any = None) -> dict[str, Any] | None:
     """Fetch a single job by id."""
-    with get_conn(db_path) as conn:
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE id = %s", (job_id,))
+        row = cur.fetchone()
         return dict(row) if row else None
 
 
-def get_jobs_needing_followup(*, db_path: Path | None = None) -> list[dict[str, Any]]:
+def get_jobs_needing_followup(*, db_path: Any = None) -> list[dict[str, Any]]:
     """Return jobs where status='applied' and created_at is > 7 days ago."""
-    with get_conn(db_path) as conn:
-        rows = conn.execute(
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
             """SELECT * FROM jobs
                WHERE status = 'applied'
-                 AND datetime(created_at) <= datetime('now', '-7 days')
+                 AND created_at::timestamptz <= NOW() - INTERVAL '7 days'
                ORDER BY created_at ASC"""
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
-def update_job(job_id: int, *, db_path: Path | None = None, **fields: Any) -> None:
+def update_job(job_id: int, *, db_path: Any = None, **fields: Any) -> None:
     """Update arbitrary columns on a job row."""
     if not fields:
         return
     fields["updated_at"] = _now_iso()
-    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    set_clause = ", ".join(f"{k} = %s" for k in fields)
     values = list(fields.values()) + [job_id]
-    with get_conn(db_path) as conn:
-        conn.execute(f"UPDATE jobs SET {set_clause} WHERE id = ?", values)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE jobs SET {set_clause} WHERE id = %s", values)
 
 
 # ── Run CRUD ──────────────────────────────────────────────────────
@@ -193,13 +208,14 @@ def insert_run(
     agent: str,
     *,
     job_id: int | None = None,
-    db_path: Path | None = None,
+    db_path: Any = None,
 ) -> None:
     """Start a new run record."""
-    with get_conn(db_path) as conn:
-        conn.execute(
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
             """INSERT INTO runs (run_id, agent, job_id, status, created_at)
-               VALUES (?, ?, ?, 'started', ?)""",
+               VALUES (%s, %s, %s, 'started', %s)""",
             (run_id, agent, job_id, _now_iso()),
         )
 
@@ -217,18 +233,19 @@ def complete_run(
     skip_calendar: bool | None = None,
     errors: list[str] | None = None,
     context: dict[str, Any] | None = None,
-    db_path: Path | None = None,
+    db_path: Any = None,
 ) -> None:
     """Mark a run as completed with eval results."""
     error_count = len(errors) if errors else 0
-    with get_conn(db_path) as conn:
-        conn.execute(
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
             """UPDATE runs
-               SET status = ?, eval_results = ?, tokens_used = ?,
-                   cost_estimate = ?, latency_ms = ?, input_mode = ?,
-                   skip_upload = ?, skip_calendar = ?, error_count = ?,
-                   errors_json = ?, context_json = ?, completed_at = ?
-               WHERE run_id = ?""",
+               SET status = %s, eval_results = %s, tokens_used = %s,
+                   cost_estimate = %s, latency_ms = %s, input_mode = %s,
+                   skip_upload = %s, skip_calendar = %s, error_count = %s,
+                   errors_json = %s, context_json = %s, completed_at = %s
+               WHERE run_id = %s""",
             (
                 status,
                 json.dumps(eval_results) if eval_results else None,
@@ -247,10 +264,12 @@ def complete_run(
         )
 
 
-def get_run(run_id: str, *, db_path: Path | None = None) -> dict[str, Any] | None:
+def get_run(run_id: str, *, db_path: Any = None) -> dict[str, Any] | None:
     """Fetch a single run by run_id."""
-    with get_conn(db_path) as conn:
-        row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM runs WHERE run_id = %s", (run_id,))
+        row = cur.fetchone()
         if row:
             d = dict(row)
             if d.get("eval_results"):
@@ -263,10 +282,11 @@ def get_run(run_id: str, *, db_path: Path | None = None) -> dict[str, Any] | Non
         return None
 
 
-def get_db_stats(*, db_path: Path | None = None) -> dict[str, Any]:
+def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
     """Return a lightweight summary of persisted jobs/runs for quick debugging."""
-    with get_conn(db_path) as conn:
-        jobs_row = conn.execute(
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
             """SELECT
                    COUNT(*) AS total_jobs,
                    SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_jobs,
@@ -274,8 +294,10 @@ def get_db_stats(*, db_path: Path | None = None) -> dict[str, Any]:
                    SUM(CASE WHEN fit_score IS NULL THEN 1 ELSE 0 END) AS fit_score_nulls,
                    SUM(CASE WHEN drive_link IS NULL OR drive_link = '' THEN 1 ELSE 0 END) AS drive_link_empty
                FROM jobs"""
-        ).fetchone()
-        runs_row = conn.execute(
+        )
+        jobs_row = cur.fetchone()
+
+        cur.execute(
             """SELECT
                    COUNT(*) AS total_runs,
                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_runs,
@@ -283,32 +305,32 @@ def get_db_stats(*, db_path: Path | None = None) -> dict[str, Any]:
                    SUM(CASE WHEN latency_ms IS NULL THEN 1 ELSE 0 END) AS latency_nulls,
                    SUM(CASE WHEN error_count > 0 THEN 1 ELSE 0 END) AS runs_with_errors
                FROM runs"""
-        ).fetchone()
-        compile_row = conn.execute(
+        )
+        runs_row = cur.fetchone()
+
+        cur.execute(
             """SELECT
-                   SUM(CASE WHEN json_extract(eval_results, '$.compile_success') = 1 THEN 1 ELSE 0 END) AS compile_successes,
-                   SUM(CASE WHEN json_extract(eval_results, '$.compile_success') = 0 THEN 1 ELSE 0 END) AS compile_failures
+                   SUM(CASE WHEN eval_results::jsonb->>'compile_success' = 'true' THEN 1 ELSE 0 END) AS compile_successes,
+                   SUM(CASE WHEN eval_results::jsonb->>'compile_success' = 'false' THEN 1 ELSE 0 END) AS compile_failures
                FROM runs
                WHERE eval_results IS NOT NULL"""
-        ).fetchone()
-        webhook_row = conn.execute(
+        )
+        compile_row = cur.fetchone()
+
+        cur.execute(
             """SELECT
                    COUNT(*) AS total_events,
                    SUM(CASE WHEN processing_status = 'processed' THEN 1 ELSE 0 END) AS processed_events,
                    SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_events
                FROM webhook_events"""
-        ).fetchone()
+        )
+        webhook_row = cur.fetchone()
 
-    jobs = dict(jobs_row) if jobs_row else {}
-    runs = dict(runs_row) if runs_row else {}
-    compile_stats = dict(compile_row) if compile_row else {}
-    webhook_stats = dict(webhook_row) if webhook_row else {}
     return {
-        "db_path": str(db_path or get_settings().db_path),
-        "jobs": jobs,
-        "runs": runs,
-        "compile": compile_stats,
-        "webhook_events": webhook_stats,
+        "jobs": dict(jobs_row) if jobs_row else {},
+        "runs": dict(runs_row) if runs_row else {},
+        "compile": dict(compile_row) if compile_row else {},
+        "webhook_events": dict(webhook_row) if webhook_row else {},
     }
 
 
@@ -322,15 +344,17 @@ def insert_webhook_event(
     headers: dict[str, Any] | None = None,
     secret_valid: bool = True,
     processing_status: str = "received",
-    db_path: Path | None = None,
+    db_path: Any = None,
 ) -> None:
     """Persist an inbound webhook envelope."""
     now = _now_iso()
-    with get_conn(db_path) as conn:
-        conn.execute(
-            """INSERT OR IGNORE INTO webhook_events
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO webhook_events
                (event_id, update_id, received_at, headers_json, payload_json, secret_valid, processing_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (event_id) DO NOTHING""",
             (
                 event_id,
                 update_id,
@@ -351,7 +375,7 @@ def update_webhook_event(
     route_target: str | None = None,
     error_text: str | None = None,
     mark_processed: bool = False,
-    db_path: Path | None = None,
+    db_path: Any = None,
 ) -> None:
     """Update lifecycle fields for a persisted webhook event."""
     fields: dict[str, Any] = {}
@@ -367,11 +391,12 @@ def update_webhook_event(
         fields["processed_at"] = _now_iso()
     if not fields:
         return
-    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    set_clause = ", ".join(f"{k} = %s" for k in fields)
     values = list(fields.values()) + [event_id]
-    with get_conn(db_path) as conn:
-        conn.execute(
-            f"UPDATE webhook_events SET {set_clause} WHERE event_id = ?",
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE webhook_events SET {set_clause} WHERE event_id = %s",
             values,
         )
 
@@ -380,22 +405,24 @@ def get_webhook_event(
     *,
     event_id: str | None = None,
     update_id: int | None = None,
-    db_path: Path | None = None,
+    db_path: Any = None,
 ) -> dict[str, Any] | None:
     """Fetch one webhook event by event_id or latest by update_id."""
     if event_id is None and update_id is None:
         raise ValueError("Provide event_id or update_id")
-    with get_conn(db_path) as conn:
+    with get_conn() as conn:
+        cur = conn.cursor()
         if event_id is not None:
-            row = conn.execute(
-                "SELECT * FROM webhook_events WHERE event_id = ?",
+            cur.execute(
+                "SELECT * FROM webhook_events WHERE event_id = %s",
                 (event_id,),
-            ).fetchone()
+            )
         else:
-            row = conn.execute(
-                "SELECT * FROM webhook_events WHERE update_id = ? ORDER BY received_at DESC LIMIT 1",
+            cur.execute(
+                "SELECT * FROM webhook_events WHERE update_id = %s ORDER BY received_at DESC LIMIT 1",
                 (update_id,),
-            ).fetchone()
+            )
+        row = cur.fetchone()
         if not row:
             return None
         data = dict(row)
@@ -406,13 +433,15 @@ def get_webhook_event(
         return data
 
 
-def list_webhook_events(*, limit: int = 50, db_path: Path | None = None) -> list[dict[str, Any]]:
+def list_webhook_events(*, limit: int = 50, db_path: Any = None) -> list[dict[str, Any]]:
     """List recent webhook events."""
-    with get_conn(db_path) as conn:
-        rows = conn.execute(
-            "SELECT * FROM webhook_events ORDER BY received_at DESC LIMIT ?",
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM webhook_events ORDER BY received_at DESC LIMIT %s",
             (limit,),
-        ).fetchall()
+        )
+        rows = cur.fetchall()
     events: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)

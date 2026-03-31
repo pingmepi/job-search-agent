@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 
 import app as app_module
@@ -15,8 +13,8 @@ class _DummySettings:
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 0.5
 
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
 
 
 class _DummyChat:
@@ -59,9 +57,8 @@ class _FailTelegramApp(_SuccessTelegramApp):
         raise RuntimeError("boom")
 
 
-def test_webhook_persists_processed_event(tmp_path: Path, monkeypatch) -> None:
-    db_path = tmp_path / "events.db"
-    settings = _DummySettings(db_path)
+def test_webhook_persists_processed_event(monkeypatch, db) -> None:
+    settings = _DummySettings(db)
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(42))
     web_app = app_module.create_webhook_app(settings=settings, telegram_app=_SuccessTelegramApp())
@@ -75,15 +72,14 @@ def test_webhook_persists_processed_event(tmp_path: Path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    event = get_webhook_event(update_id=991, db_path=db_path)
+    event = get_webhook_event(update_id=991)
     assert event is not None
     assert event["processing_status"] == "processed"
     assert event["payload"]["update_id"] == 991
 
 
-def test_webhook_persists_failed_event_after_retries(tmp_path: Path, monkeypatch) -> None:
-    db_path = tmp_path / "events.db"
-    settings = _DummySettings(db_path)
+def test_webhook_persists_failed_event_after_retries(monkeypatch, db) -> None:
+    settings = _DummySettings(db)
 
     monkeypatch.setattr(app_module.Update, "de_json", lambda payload, bot: _DummyUpdate(42))
     web_app = app_module.create_webhook_app(settings=settings, telegram_app=_FailTelegramApp())
@@ -97,7 +93,7 @@ def test_webhook_persists_failed_event_after_retries(tmp_path: Path, monkeypatch
     )
 
     assert response.status_code == 200
-    event = get_webhook_event(update_id=992, db_path=db_path)
+    event = get_webhook_event(update_id=992)
     assert event is not None
     assert event["processing_status"] == "failed"
     assert event["error_text"] is not None

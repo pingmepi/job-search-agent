@@ -1,116 +1,119 @@
-"""Tests for core/db.py — SQLite schema + CRUD."""
+"""Tests for core/db.py — PostgreSQL schema + CRUD."""
 
 from __future__ import annotations
 
-import tempfile
-import sqlite3
-from pathlib import Path
+import os
+from datetime import datetime, timedelta, timezone
 
+import psycopg2
+import psycopg2.extras
 import pytest
 
 from core.db import (
-    init_db,
-    insert_job,
+    complete_run,
     get_job,
     get_jobs_needing_followup,
-    update_job,
-    insert_run,
-    complete_run,
     get_run,
-    insert_webhook_event,
-    update_webhook_event,
     get_webhook_event,
+    init_db,
+    insert_job,
+    insert_run,
+    insert_webhook_event,
+    update_job,
+    update_webhook_event,
 )
 
 
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a fresh in-memory-like DB in a temp directory."""
-    path = tmp_path / "test.db"
-    init_db(path)
-    return path
-
-
 class TestSchema:
-    def test_init_creates_db(self, db_path: Path):
-        assert db_path.exists()
-
-    def test_init_idempotent(self, db_path: Path):
+    def test_init_idempotent(self, db):
         # Calling init again should not raise
-        init_db(db_path)
-        assert db_path.exists()
+        init_db()
 
-    def test_init_applies_run_migrations(self, db_path: Path):
-        with sqlite3.connect(str(db_path)) as conn:
-            job_columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
-            }
-            columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
-            }
-            webhook_columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(webhook_events)").fetchall()
-            }
+    def test_init_applies_migrations(self, db):
+        database_url = db
+        conn = psycopg2.connect(database_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'jobs'"
+            )
+            job_columns = {row["column_name"] for row in cur.fetchall()}
+
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'runs'"
+            )
+            run_columns = {row["column_name"] for row in cur.fetchall()}
+
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'webhook_events'"
+            )
+            webhook_columns = {row["column_name"] for row in cur.fetchall()}
+        finally:
+            conn.close()
+
         assert "last_follow_up_at" in job_columns
-        assert "input_mode" in columns
-        assert "skip_upload" in columns
-        assert "skip_calendar" in columns
-        assert "error_count" in columns
-        assert "errors_json" in columns
-        assert "context_json" in columns
+        assert "input_mode" in run_columns
+        assert "skip_upload" in run_columns
+        assert "skip_calendar" in run_columns
+        assert "error_count" in run_columns
+        assert "errors_json" in run_columns
+        assert "context_json" in run_columns
         assert "event_id" in webhook_columns
         assert "payload_json" in webhook_columns
         assert "processing_status" in webhook_columns
 
 
 class TestJobsCRUD:
-    def test_insert_and_get(self, db_path: Path):
+    def test_insert_and_get(self, db):
         job_id = insert_job(
             "Acme Corp", "AI PM", "abc123",
             fit_score=85, resume_used="master_ai.tex",
-            db_path=db_path,
         )
         assert job_id is not None
         assert job_id > 0
 
-        job = get_job(job_id, db_path=db_path)
+        job = get_job(job_id)
         assert job is not None
         assert job["company"] == "Acme Corp"
         assert job["role"] == "AI PM"
         assert job["jd_hash"] == "abc123"
         assert job["fit_score"] == 85
 
-    def test_get_nonexistent(self, db_path: Path):
-        assert get_job(9999, db_path=db_path) is None
+    def test_get_nonexistent(self, db):
+        assert get_job(9999999) is None
 
-    def test_update_job(self, db_path: Path):
-        job_id = insert_job("TestCo", "PM", "hash1", db_path=db_path)
-        update_job(job_id, status="interviewing", fit_score=90, db_path=db_path)
-        job = get_job(job_id, db_path=db_path)
+    def test_update_job(self, db):
+        job_id = insert_job("TestCo", "PM", "hash1")
+        update_job(job_id, status="interviewing", fit_score=90)
+        job = get_job(job_id)
         assert job["status"] == "interviewing"
         assert job["fit_score"] == 90
 
-    def test_followup_detection(self, db_path: Path):
-        import sqlite3
-        # Insert a job with created_at 10 days ago
-        from datetime import datetime, timedelta, timezone
+    def test_followup_detection(self, db):
+        database_url = db
         old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
-        with sqlite3.connect(str(db_path)) as conn:
-            conn.execute(
+        conn = psycopg2.connect(database_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cur = conn.cursor()
+            cur.execute(
                 """INSERT INTO jobs
                    (company, role, jd_hash, status, created_at, updated_at)
-                   VALUES (?, ?, ?, 'applied', ?, ?)""",
+                   VALUES (%s, %s, %s, 'applied', %s, %s)""",
                 ("OldCo", "PM", "hash_old", old_date, old_date),
             )
-        results = get_jobs_needing_followup(db_path=db_path)
+            conn.commit()
+        finally:
+            conn.close()
+
+        results = get_jobs_needing_followup()
         assert len(results) >= 1
         assert results[0]["company"] == "OldCo"
 
 
 class TestRunsCRUD:
-    def test_insert_and_complete(self, db_path: Path):
-        insert_run("run-001", "inbox", db_path=db_path)
-        run = get_run("run-001", db_path=db_path)
+    def test_insert_and_complete(self, db):
+        insert_run("run-001", "inbox")
+        run = get_run("run-001")
         assert run is not None
         assert run["status"] == "started"
         assert run["eval_results"] is None
@@ -127,9 +130,8 @@ class TestRunsCRUD:
             skip_calendar=False,
             errors=["example error"],
             context={"company": "Acme", "jd_hash": "abc123"},
-            db_path=db_path,
         )
-        run = get_run("run-001", db_path=db_path)
+        run = get_run("run-001")
         assert run["status"] == "completed"
         assert run["eval_results"]["compile_success"] is True
         assert run["tokens_used"] == 1500
@@ -140,26 +142,24 @@ class TestRunsCRUD:
         assert run["errors"] == ["example error"]
         assert run["context"]["company"] == "Acme"
 
-    def test_get_nonexistent_run(self, db_path: Path):
-        assert get_run("nope", db_path=db_path) is None
+    def test_get_nonexistent_run(self, db):
+        assert get_run("nope") is None
 
 
 class TestWebhookEventsCRUD:
-    def test_insert_update_and_get(self, db_path: Path):
+    def test_insert_update_and_get(self, db):
         insert_webhook_event(
             "evt-1",
             update_id=123,
             payload={"update_id": 123, "message": {"text": "hello"}},
             headers={"x-test": "1"},
-            db_path=db_path,
         )
         update_webhook_event(
             "evt-1",
             processing_status="processed",
             mark_processed=True,
-            db_path=db_path,
         )
-        event = get_webhook_event(event_id="evt-1", db_path=db_path)
+        event = get_webhook_event(event_id="evt-1")
         assert event is not None
         assert event["update_id"] == 123
         assert event["processing_status"] == "processed"

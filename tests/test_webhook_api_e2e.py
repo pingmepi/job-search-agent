@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 
 from app import create_webhook_app
@@ -13,7 +11,7 @@ class _DummySettings:
     telegram_webhook_secret = "test-secret"
     telegram_webhook_path = "/telegram/webhook"
     webhook_process_timeout_seconds = 1.0
-    db_path = Path("/tmp/job-search-agent-test-webhook-e2e.db")
+    database_url = ""
 
 
 class _DummyBot:
@@ -47,9 +45,11 @@ class _CaptureTelegramApp:
             self.received_chat_ids.append(update.message.chat.id)
 
 
-def test_webhook_e2e_processes_realistic_text_update() -> None:
+def test_webhook_e2e_processes_realistic_text_update(db) -> None:
     tg_app = _CaptureTelegramApp()
-    web_app = create_webhook_app(settings=_DummySettings(), telegram_app=tg_app)
+    settings = _DummySettings()
+    settings.database_url = db
+    web_app = create_webhook_app(settings=settings, telegram_app=tg_app)
     client = TestClient(web_app)
 
     payload = {
@@ -87,9 +87,11 @@ def test_webhook_e2e_processes_realistic_text_update() -> None:
     assert tg_app.received_chat_ids == [777]
 
 
-def test_webhook_e2e_rejects_invalid_update_payload() -> None:
+def test_webhook_e2e_rejects_invalid_update_payload(db) -> None:
     tg_app = _CaptureTelegramApp()
-    web_app = create_webhook_app(settings=_DummySettings(), telegram_app=tg_app)
+    settings = _DummySettings()
+    settings.database_url = db
+    web_app = create_webhook_app(settings=settings, telegram_app=tg_app)
     client = TestClient(web_app)
 
     response = client.post(

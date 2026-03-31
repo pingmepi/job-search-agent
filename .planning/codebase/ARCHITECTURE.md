@@ -7,7 +7,7 @@ This repository is a webhook-first, multi-agent Python system for job applicatio
 - Pattern: Layered modular monolith (single deployable service + internal modules)
 - Orchestration style: Agent-oriented workflow with explicit function boundaries
 - Runtime mode: FastAPI webhook service hosting a python-telegram-bot `Application`
-- Persistence: SQLite via hand-written data access helpers
+- Persistence: PostgreSQL via `psycopg2-binary` and hand-written data access helpers in `core/db.py`
 - External integration model: Adapter modules under `integrations/` and message ingress adapter in `agents/inbox/adapter.py`
 
 ## Core Layers
@@ -99,7 +99,7 @@ Responsibilities:
 6. Optional integrations: upload PDF to Drive, create Calendar events.
 7. Draft generation: email/linkedin/referral text.
 8. Evaluation gates + telemetry logging.
-9. Persistence: job/run records in SQLite.
+9. Persistence: job/run records in PostgreSQL.
 
 ## Main Abstractions
 - `Settings` dataclass (`core/config.py`): immutable runtime configuration contract
@@ -138,7 +138,7 @@ This mostly preserves one-way dependencies and supports incremental modularizati
 
 ## Architectural Constraints and Tradeoffs
 - Single-process in-memory webhook dedupe state is not durable across restarts
-- SQLite and local filesystem artifacts suit single-node deployment but limit horizontal scale
+- PostgreSQL handles concurrent writes; `runs/` artifacts remain ephemeral (single-node) — PDFs sent to Telegram before the process exits, so this is acceptable until object storage is added
 - Domain pipeline in `agents/inbox/agent.py` is feature-rich and comparatively heavy, increasing coupling
 - No explicit interface/protocol classes for integrations, so adapters are concrete-function based
 

@@ -17,7 +17,7 @@ from telegram import Update
 
 from agents.inbox.adapter import create_bot
 from core.config import Settings, get_settings
-from core.db import insert_webhook_event, update_webhook_event
+from core.db import init_db, insert_webhook_event, update_webhook_event
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,8 @@ def create_webhook_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("Initializing Telegram webhook runtime")
+        if get_settings().database_url:
+            await asyncio.to_thread(init_db)
         await _start_telegram_app(runtime)
         try:
             yield
@@ -135,7 +137,8 @@ def create_webhook_app(
             "user_agent": request.headers.get("user-agent"),
             "client_host": client_host,
         }
-        insert_webhook_event(
+        await asyncio.to_thread(
+            insert_webhook_event,
             event_id,
             update_id=update_id if isinstance(update_id, int) else None,
             payload=payload,
@@ -155,7 +158,8 @@ def create_webhook_app(
             update = Update.de_json(payload, runtime.telegram_app.bot)
         except Exception as exc:
             logger.warning("Invalid Telegram update payload parse error=%s", exc)
-            update_webhook_event(
+            await asyncio.to_thread(
+                update_webhook_event,
                 event_id,
                 processing_status="failed",
                 error_text=f"payload-parse-error: {exc}",
@@ -164,7 +168,8 @@ def create_webhook_app(
             )
             raise HTTPException(status_code=400, detail="Invalid Telegram update payload") from exc
         if update is None:
-            update_webhook_event(
+            await asyncio.to_thread(
+                update_webhook_event,
                 event_id,
                 processing_status="failed",
                 error_text="payload-parse-error: update is None",
@@ -178,7 +183,8 @@ def create_webhook_app(
             async with runtime.lock:
                 if update_id in runtime.processed_update_ids:
                     logger.info("Skipping already-processed update_id=%s", update_id)
-                    update_webhook_event(
+                    await asyncio.to_thread(
+                        update_webhook_event,
                         event_id,
                         processing_status="processed",
                         mark_processed=True,
@@ -216,7 +222,8 @@ def create_webhook_app(
                     runtime.processing_update_ids.discard(update_id)
                     runtime.processed_update_ids.add(update_id)
                     runtime.update_attempts.pop(update_id, None)
-                update_webhook_event(
+                await asyncio.to_thread(
+                    update_webhook_event,
                     event_id,
                     processing_status=status,
                     error_text=error_text,
@@ -228,7 +235,8 @@ def create_webhook_app(
         last_error: Exception | None = None
         deferred_to_background = False
         try:
-            update_webhook_event(
+            await asyncio.to_thread(
+                update_webhook_event,
                 event_id,
                 processing_status="processing",
                 db_path=resolved_db_path,
@@ -248,7 +256,8 @@ def create_webhook_app(
                         async with runtime.lock:
                             runtime.processed_update_ids.add(update_id)
                             runtime.update_attempts.pop(update_id, None)
-                    update_webhook_event(
+                    await asyncio.to_thread(
+                        update_webhook_event,
                         event_id,
                         processing_status="processed",
                         mark_processed=True,
@@ -279,7 +288,8 @@ def create_webhook_app(
                             )
                         )
                         deferred_to_background = True
-                    update_webhook_event(
+                    await asyncio.to_thread(
+                        update_webhook_event,
                         event_id,
                         processing_status="processing",
                         error_text="processing timeout; continuing in background",
@@ -296,7 +306,8 @@ def create_webhook_app(
                             async with runtime.lock:
                                 runtime.processed_update_ids.add(update_id)
                                 runtime.update_attempts.pop(update_id, None)
-                        update_webhook_event(
+                        await asyncio.to_thread(
+                            update_webhook_event,
                             event_id,
                             processing_status="failed",
                             error_text=str(exc),

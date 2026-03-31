@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 from pathlib import Path
 from types import SimpleNamespace
+
+import psycopg2
+import psycopg2.extras
 
 import pytest
 
@@ -24,8 +27,7 @@ def _response(text: str) -> SimpleNamespace:
     )
 
 
-def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatch) -> None:
-    db_path = tmp_path / "integration.db"
+def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkeypatch) -> None:
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -47,7 +49,7 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,
@@ -122,30 +124,37 @@ def test_run_pipeline_persists_job_and_run_with_mocks(tmp_path: Path, monkeypatc
     assert (runs_dir / "artifacts" / pack.run_id / "resume_output.json").exists()
     assert (runs_dir / "artifacts" / pack.run_id / "eval_output.json").exists()
 
-    with sqlite3.connect(str(db_path)) as conn:
-        jobs_count = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        fit_score = conn.execute("SELECT fit_score FROM jobs LIMIT 1").fetchone()[0]
-        run_row = conn.execute(
-            "SELECT job_id, status, eval_results, context_json FROM runs WHERE run_id = ?",
+    conn = psycopg2.connect(db, cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS cnt FROM jobs")
+        jobs_count = cur.fetchone()["cnt"]
+        cur.execute("SELECT fit_score FROM jobs LIMIT 1")
+        fit_score = cur.fetchone()["fit_score"]
+        cur.execute(
+            "SELECT job_id, status, eval_results, context_json FROM runs WHERE run_id = %s",
             (pack.run_id,),
-        ).fetchone()
+        )
+        run_row = cur.fetchone()
+    finally:
+        conn.close()
 
     assert jobs_count == 1
     assert fit_score == 75
     assert run_row is not None
-    assert run_row[0] == pack.job_id
-    assert run_row[1] == "completed"
-    assert json.loads(run_row[2])["compile_success"] is True
-    context = json.loads(run_row[3])
+    assert run_row["job_id"] == pack.job_id
+    assert run_row["status"] == "completed"
+    assert json.loads(run_row["eval_results"])["compile_success"] is True
+    context = json.loads(run_row["context_json"])
     assert "artifact_paths" in context
     assert "job_extraction" in context["artifact_paths"]
 
 
 def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
+    db,
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    db_path = tmp_path / "integration.db"
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -167,7 +176,7 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,
@@ -243,10 +252,10 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
 
 
 def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
+    db,
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    db_path = tmp_path / "integration.db"
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -263,7 +272,7 @@ def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,
@@ -330,10 +339,10 @@ def test_run_pipeline_fails_when_terminal_fallback_is_still_multi_page(
 
 
 def test_run_pipeline_skips_collateral_when_selection_missing(
+    db,
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    db_path = tmp_path / "integration.db"
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -347,7 +356,7 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,
@@ -402,10 +411,10 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
 
 
 def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
+    db,
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    db_path = tmp_path / "integration.db"
     runs_dir = tmp_path / "runs"
     profile_path = tmp_path / "profile.json"
     bullet_bank_path = tmp_path / "bullet_bank.json"
@@ -422,7 +431,7 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
     )
 
     fake_settings = SimpleNamespace(
-        db_path=db_path,
+        database_url=db,
         runs_dir=runs_dir,
         resumes_dir=tmp_path,
         profile_path=profile_path,
