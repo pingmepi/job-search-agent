@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 
@@ -214,6 +215,30 @@ def main() -> None:
             f" processed={stats['webhook_events'].get('processed_events', 0)}"
             f" failed={stats['webhook_events'].get('failed_events', 0)}"
         )
+
+    elif command == "runs":
+        from core.db import list_runs, get_run
+
+        args = sys.argv[2:]
+        if args and not args[0].startswith("--"):
+            # Specific run: python main.py runs run-d594ddf9109e
+            run = get_run(args[0])
+            if run:
+                print(json.dumps(run, indent=2, default=str))
+            else:
+                print(f"Run not found: {args[0]}")
+        else:
+            # List recent: python main.py runs [--limit 10]
+            limit = 20
+            for i, a in enumerate(args):
+                if a == "--limit" and i + 1 < len(args):
+                    limit = int(args[i + 1])
+            runs = list_runs(limit=limit)
+            for r in runs:
+                status = "✅" if not r.get("errors") else f"⚠️ ({len(r['errors'])} errors)"
+                company = r.get("company", "?")
+                role = r.get("role", "?")
+                print(f"{r['run_id']}  {company} / {role}  {status}  tokens={r.get('tokens_used', 0)}  latency={r.get('latency_ms', 0)}ms  {r.get('created_at', '')}")
 
     elif command == "followup-runner":
         _run_followup_runner(sys.argv[2:])

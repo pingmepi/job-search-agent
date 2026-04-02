@@ -57,19 +57,22 @@ def check_forbidden_claims(
     original_bullets: list[str],
     mutated_bullets: list[str],
     bullet_bank: list[str],
+    jd_text: str = "",
 ) -> int:
     """
     Count the number of potentially fabricated claims in mutated bullets.
 
     A "forbidden claim" is any proper noun or named entity that appears in
-    the mutated text but NOT in the original bullets or the bullet bank.
+    the mutated text but NOT in the original bullets, the bullet bank, or
+    the JD text (since JD terms are expected to appear in tailored resumes).
 
     Returns the count of suspicious claims (0 = clean).
     """
     import re
 
-    # Build the "allowed" corpus
-    allowed_text = " ".join(original_bullets + bullet_bank).lower()
+    # Build the "allowed" corpus — includes JD text since tailoring
+    # naturally introduces terms from the job description.
+    allowed_text = " ".join(original_bullets + bullet_bank).lower() + " " + jd_text.lower()
     suspicious_claims: set[str] = set()
 
     for bullet in mutated_bullets:

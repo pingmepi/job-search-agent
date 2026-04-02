@@ -282,6 +282,31 @@ def get_run(run_id: str, *, db_path: Any = None) -> dict[str, Any] | None:
         return None
 
 
+def list_runs(*, limit: int = 20, db_path: Any = None) -> list[dict[str, Any]]:
+    """List recent runs with full audit data, newest first."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT r.*, j.company, j.role
+               FROM runs r
+               LEFT JOIN jobs j ON r.job_id = j.id
+               ORDER BY r.created_at DESC
+               LIMIT %s""",
+            (limit,),
+        )
+        results = []
+        for row in cur.fetchall():
+            d = dict(row)
+            if d.get("eval_results"):
+                d["eval_results"] = json.loads(d["eval_results"])
+            if d.get("errors_json"):
+                d["errors"] = json.loads(d["errors_json"])
+            if d.get("context_json"):
+                d["context"] = json.loads(d["context_json"])
+            results.append(d)
+        return results
+
+
 def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
     """Return a lightweight summary of persisted jobs/runs for quick debugging."""
     with get_conn() as conn:

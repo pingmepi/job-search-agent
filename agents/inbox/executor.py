@@ -338,9 +338,14 @@ def _handle_resume_mutate(
     # Truthfulness safeguard
     original_bullets = _extract_bullets(original_tex)
     mutated_bullets = _extract_bullets(mutated_tex)
-    forbidden_pre = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank_values)
+    jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
+    forbidden_pre = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank_values, jd_text=jd_text)
     if forbidden_pre > 0:
         ctx.truthfulness_fallback_used = True
+        logger.warning(
+            "Truthfulness safeguard: %d suspected fabricated claims detected (not in original, bullet bank, or JD)",
+            forbidden_pre,
+        )
         pack.errors.append(
             f"Truthfulness safeguard triggered ({forbidden_pre} suspected fabricated claims); "
             "using safe base resume content."
@@ -618,7 +623,8 @@ def _handle_eval_log(
             bullet_bank = [b.get("bullet", "") for b in bb_raw if isinstance(b, dict)]
         except Exception:
             bullet_bank = []
-        forbidden_claims_count = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank)
+        jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
+        forbidden_claims_count = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank, jd_text=jd_text)
 
     if ctx.truthfulness_fallback_used and forbidden_claims_count == 0:
         forbidden_claims_count = 1
