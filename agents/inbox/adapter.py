@@ -96,6 +96,21 @@ async def _run_and_respond(
             f"✉️ Collateral generated: {generated_label}\n"
             f"🧪 Run ID: {pack.run_id or 'n/a'}"
         )
+        # Send the PDF resume if compile succeeded
+        if pack.pdf_path and pack.pdf_path.exists():
+            with open(pack.pdf_path, "rb") as pdf_file:
+                await update.message.reply_document(
+                    document=pdf_file,
+                    filename=pack.pdf_path.name,
+                    caption=f"📄 Tailored resume for {jd.company} — {jd.role}",
+                )
+        # Send collateral drafts as text
+        if pack.email_draft:
+            await update.message.reply_text(f"✉️ Email draft:\n\n{pack.email_draft}")
+        if pack.linkedin_draft:
+            await update.message.reply_text(f"💬 LinkedIn DM:\n\n{pack.linkedin_draft}")
+        if pack.referral_draft:
+            await update.message.reply_text(f"🤝 Referral note:\n\n{pack.referral_draft}")
         if pack.errors:
             await update.message.reply_text(
                 "⚠️ Completed with issues:\n" + "\n".join(f"• {e}" for e in pack.errors[:5])
