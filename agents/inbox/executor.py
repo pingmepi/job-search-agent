@@ -89,6 +89,7 @@ class ExecutionContext:
     total_cost: float = 0.0
     generation_ids: list[tuple[str, str]] = field(default_factory=list)
     llm_usage_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
+    last_step_audit: dict[str, Any] = field(default_factory=dict)  # extra data for audit trail
 
     # Step outputs carried forward
     original_tex: Optional[str] = None
@@ -334,6 +335,13 @@ def _handle_resume_mutate(
 
     mutations = mutations_data.get("mutations", [])
     mutated_tex = apply_mutations(original_tex, mutations)
+
+    # Store raw LLM data for audit trail
+    ctx.last_step_audit = {
+        "raw_llm_response": response.text[:5000] if hasattr(response, "text") else None,
+        "mutations_count": len(mutations),
+        "mutations": mutations,
+    }
 
     # Truthfulness safeguard
     original_bullets = _extract_bullets(original_tex)
@@ -776,12 +784,63 @@ _HANDLERS: dict[str, Handler] = {
 # ── Executor ──────────────────────────────────────────────────────────────────
 
 
+def _build_step_input(step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext) -> dict[str, Any]:
+    """Build a lightweight input snapshot for the audit trail."""
+    data: dict[str, Any] = {"tool": step.tool}
+    if pack.jd:
+        data["company"] = pack.jd.company
+        data["role"] = pack.jd.role
+        data["jd_hash"] = pack.jd.jd_hash
+    if ctx.base_path:
+        data["base_resume"] = ctx.base_path.name
+    if step.params:
+        data["params"] = {k: str(v)[:200] for k, v in step.params.items()}
+    return data
+
+
+def _build_step_output(step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext) -> dict[str, Any]:
+    """Build a lightweight output snapshot for the audit trail."""
+    data: dict[str, Any] = {}
+    if step.tool == "jd_extract" and pack.jd:
+        data["jd_schema"] = {"company": pack.jd.company, "role": pack.jd.role, "skills": pack.jd.skills, "location": pack.jd.location}
+    elif step.tool == "resume_select":
+        data["selected"] = pack.resume_base
+        data["fit_score"] = ctx.fit_score_percent
+        data["details"] = ctx.fit_score_details
+    elif step.tool == "resume_mutate":
+        data["mutated_length"] = len(pack.mutated_tex) if pack.mutated_tex else 0
+        data["truthfulness_fallback"] = ctx.truthfulness_fallback_used
+        if ctx.last_step_audit:
+            data.update(ctx.last_step_audit)
+            ctx.last_step_audit = {}
+    elif step.tool == "compile":
+        data["pdf_path"] = str(pack.pdf_path) if pack.pdf_path else None
+        data["compile_outcome"] = ctx.compile_outcome
+        data["single_page_status"] = ctx.single_page_status
+    elif step.tool in ("draft_email", "draft_linkedin", "draft_referral"):
+        kind = step.tool.replace("draft_", "")
+        draft = getattr(pack, f"{kind}_draft", None)
+        data["draft_length"] = len(draft) if draft else 0
+    elif step.tool == "eval_log":
+        data["run_id"] = pack.run_id
+        data["job_id"] = pack.job_id
+        data["total_tokens"] = ctx.total_tokens
+        data["total_cost"] = ctx.total_cost
+    # Include LLM usage if it was updated during this step
+    step_usage = ctx.llm_usage_breakdown.get(step.tool) or ctx.llm_usage_breakdown.get(step.name)
+    if step_usage:
+        data["llm_usage"] = step_usage
+    return data
+
+
 def _run_step_with_retry(
     step: ToolStep,
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> StepResult:
     """Execute a single step, retrying transient errors as configured."""
+    from core.db import insert_step, complete_step
+
     handler = _HANDLERS.get(step.tool)
     if handler is None:
         return StepResult(
@@ -790,10 +849,23 @@ def _run_step_with_retry(
             error=f"Unknown tool: {step.tool!r}",
         )
 
+    # Audit: record step start
+    step_start = time.time()
+    try:
+        insert_step(ctx.run_id, step.name, input_data=_build_step_input(step, pack, ctx))
+    except Exception:
+        logger.debug("Failed to insert audit step for %s (non-fatal)", step.name)
+
     last_error: Optional[Exception] = None
     for attempt in range(1, step.max_attempts + 1):
         try:
             pack = handler(step, pack, ctx)
+            duration_ms = int((time.time() - step_start) * 1000)
+            # Audit: record step success
+            try:
+                complete_step(ctx.run_id, step.name, output_data=_build_step_output(step, pack, ctx), duration_ms=duration_ms)
+            except Exception:
+                logger.debug("Failed to complete audit step for %s (non-fatal)", step.name)
             return StepResult(step_name=step.name, success=True, attempts=attempt)
         except Exception as exc:
             last_error = exc
@@ -805,6 +877,12 @@ def _run_step_with_retry(
             break
 
     err_msg = f"{step.name} failed: {last_error}"
+    duration_ms = int((time.time() - step_start) * 1000)
+    # Audit: record step failure
+    try:
+        complete_step(ctx.run_id, step.name, error=err_msg, duration_ms=duration_ms)
+    except Exception:
+        logger.debug("Failed to complete audit step for %s (non-fatal)", step.name)
     return StepResult(
         step_name=step.name,
         success=False,

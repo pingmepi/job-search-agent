@@ -4,6 +4,7 @@ PostgreSQL database layer for inbox-agent.
 Tables:
   - jobs           : tracks every job application (PRD §5.3)
   - runs           : telemetry per agent invocation
+  - run_steps      : per-step audit trail for each run
   - webhook_events : raw webhook envelopes and processing lifecycle
 """
 
@@ -59,6 +60,22 @@ CREATE TABLE IF NOT EXISTS runs (
     completed_at    TEXT
 );
 """
+
+RUN_STEPS_DDL = """\
+CREATE TABLE IF NOT EXISTS run_steps (
+    id          SERIAL PRIMARY KEY,
+    run_id      TEXT    NOT NULL,
+    step_name   TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'started',
+    input_json  TEXT,
+    output_json TEXT,
+    duration_ms INTEGER,
+    error_text  TEXT,
+    created_at  TEXT    NOT NULL
+);
+"""
+
+RUN_STEPS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps (run_id);"
 
 WEBHOOK_EVENTS_DDL = """\
 CREATE TABLE IF NOT EXISTS webhook_events (
@@ -116,6 +133,8 @@ def init_db() -> None:
         cur = conn.cursor()
         cur.execute(JOBS_DDL)
         cur.execute(RUNS_DDL)
+        cur.execute(RUN_STEPS_DDL)
+        cur.execute(RUN_STEPS_INDEX_DDL)
         cur.execute(WEBHOOK_EVENTS_DDL)
         _apply_migrations(cur)
 
@@ -303,6 +322,77 @@ def list_runs(*, limit: int = 20, db_path: Any = None) -> list[dict[str, Any]]:
                 d["errors"] = json.loads(d["errors_json"])
             if d.get("context_json"):
                 d["context"] = json.loads(d["context_json"])
+            results.append(d)
+        return results
+
+
+# ── Run Steps (audit trail) ──────────────────────────────────────
+
+def insert_step(
+    run_id: str,
+    step_name: str,
+    *,
+    input_data: dict[str, Any] | None = None,
+) -> None:
+    """Record the start of a pipeline step."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO run_steps (run_id, step_name, status, input_json, created_at)
+               VALUES (%s, %s, 'started', %s, %s)""",
+            (
+                run_id,
+                step_name,
+                json.dumps(input_data, default=str) if input_data else None,
+                _now_iso(),
+            ),
+        )
+
+
+def complete_step(
+    run_id: str,
+    step_name: str,
+    *,
+    output_data: dict[str, Any] | None = None,
+    duration_ms: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Mark a pipeline step as completed or failed."""
+    status = "failed" if error else "completed"
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE run_steps
+               SET status = %s, output_json = %s, duration_ms = %s, error_text = %s
+               WHERE run_id = %s AND step_name = %s AND status = 'started'""",
+            (
+                status,
+                json.dumps(output_data, default=str) if output_data else None,
+                duration_ms,
+                error,
+                run_id,
+                step_name,
+            ),
+        )
+
+
+def get_run_steps(run_id: str) -> list[dict[str, Any]]:
+    """Fetch all steps for a run, ordered by creation time."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT * FROM run_steps
+               WHERE run_id = %s
+               ORDER BY created_at ASC, id ASC""",
+            (run_id,),
+        )
+        results = []
+        for row in cur.fetchall():
+            d = dict(row)
+            if d.get("input_json"):
+                d["input"] = json.loads(d["input_json"])
+            if d.get("output_json"):
+                d["output"] = json.loads(d["output_json"])
             results.append(d)
         return results
 

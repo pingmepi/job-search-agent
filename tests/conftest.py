@@ -29,7 +29,7 @@ def db():
         try:
             cur = conn.cursor()
             cur.execute(
-                "TRUNCATE TABLE webhook_events, runs, jobs RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE run_steps, webhook_events, runs, jobs RESTART IDENTITY CASCADE"
             )
             conn.commit()
         finally:

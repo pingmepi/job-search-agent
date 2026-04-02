@@ -217,16 +217,35 @@ def main() -> None:
         )
 
     elif command == "runs":
-        from core.db import list_runs, get_run
+        from core.db import list_runs, get_run, get_run_steps
 
         args = sys.argv[2:]
         if args and not args[0].startswith("--"):
-            # Specific run: python main.py runs run-d594ddf9109e
-            run = get_run(args[0])
-            if run:
-                print(json.dumps(run, indent=2, default=str))
+            run_id = args[0]
+            show_steps = "--steps" in args
+
+            run = get_run(run_id)
+            if not run:
+                print(f"Run not found: {run_id}")
             else:
-                print(f"Run not found: {args[0]}")
+                print(json.dumps(run, indent=2, default=str))
+
+                if show_steps:
+                    steps = get_run_steps(run_id)
+                    if not steps:
+                        print("\nNo step audit data for this run.")
+                    else:
+                        print(f"\n--- Steps ({len(steps)}) ---")
+                        for s in steps:
+                            status_icon = "✅" if s["status"] == "completed" else "❌"
+                            duration = f"{s.get('duration_ms', '?')}ms"
+                            print(f"\n{status_icon} {s['step_name']}  ({duration})  [{s['status']}]")
+                            if s.get("input"):
+                                print(f"  INPUT:  {json.dumps(s['input'], indent=4, default=str)}")
+                            if s.get("output"):
+                                print(f"  OUTPUT: {json.dumps(s['output'], indent=4, default=str)}")
+                            if s.get("error_text"):
+                                print(f"  ERROR:  {s['error_text']}")
         else:
             # List recent: python main.py runs [--limit 10]
             limit = 20
