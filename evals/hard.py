@@ -53,42 +53,101 @@ def check_edit_scope(
     return not outside_changed
 
 
+# Common capitalized words that are NOT proper nouns — these appear at
+# sentence starts or as generic business terms and should not trigger the
+# fabrication detector.
+_COMMON_SKIP_WORDS = frozenset({
+    "product", "senior", "junior", "lead", "manager", "platform", "team",
+    "data", "engineering", "operations", "business", "strategy", "growth",
+    "marketing", "technical", "analytics", "design", "development",
+    "customer", "revenue", "sales", "cross", "functional", "built",
+    "drove", "launched", "designed", "implemented", "defined", "managed",
+    "developed", "created", "established", "optimized", "reduced",
+    "increased", "improved", "integrated", "automated", "delivered",
+    "streamlined", "scaled", "led", "spearheaded", "architected",
+    "orchestrated", "partnered", "collaborated", "mentored", "owned",
+    "leveraged", "utilized", "facilitated", "coordinated", "analyzed",
+})
+
+
+def check_forbidden_claims_per_bullet(
+    original_bullets: list[str],
+    mutated_bullets: list[str],
+    bullet_bank: list[str],
+    jd_text: str = "",
+    allowed_tools: list[str] | None = None,
+    profile_text: str = "",
+) -> list[dict]:
+    """Evaluate each mutated bullet individually for fabricated claims.
+
+    Returns a list of dicts, one per mutated bullet:
+    ``[{"bullet": str, "index": int, "flagged": bool, "reasons": list[str]}]``
+    """
+    import re
+
+    # Build the allowed corpus
+    allowed_text = (
+        " ".join(original_bullets + bullet_bank).lower()
+        + " " + jd_text.lower()
+        + " " + profile_text.lower()
+    )
+
+    # Build skip set: common words + allowed tools
+    skip_words = set(_COMMON_SKIP_WORDS)
+    for tool in (allowed_tools or []):
+        skip_words.add(tool.lower())
+
+    results: list[dict] = []
+    for idx, bullet in enumerate(mutated_bullets):
+        reasons: list[str] = []
+
+        # Numeric claim drift
+        for token in re.findall(r"\b\d+(?:\.\d+)?%?\b", bullet):
+            if token.lower() not in allowed_text:
+                reasons.append(f"num:{token.lower()}")
+
+        # Entity detection — only multi-word capitalized sequences
+        # (catches "Goldman Sachs", skips "Product")
+        for entity in re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b", bullet):
+            if entity.lower() not in allowed_text:
+                reasons.append(f"ent:{entity.lower()}")
+
+        # Single capitalized words — only flag if NOT in skip set
+        for word in re.findall(r"\b[A-Z][a-z]+\b", bullet):
+            if (
+                word.lower() not in skip_words
+                and word.lower() not in allowed_text
+            ):
+                reasons.append(f"ent:{word.lower()}")
+
+        results.append({
+            "bullet": bullet,
+            "index": idx,
+            "flagged": len(reasons) > 0,
+            "reasons": reasons,
+        })
+
+    return results
+
+
 def check_forbidden_claims(
     original_bullets: list[str],
     mutated_bullets: list[str],
     bullet_bank: list[str],
     jd_text: str = "",
+    allowed_tools: list[str] | None = None,
+    profile_text: str = "",
 ) -> int:
+    """Count the number of mutated bullets with potentially fabricated claims.
+
+    Thin wrapper around ``check_forbidden_claims_per_bullet`` that returns
+    a single int for backward compatibility with CI gate and existing tests.
     """
-    Count the number of potentially fabricated claims in mutated bullets.
-
-    A "forbidden claim" is any proper noun or named entity that appears in
-    the mutated text but NOT in the original bullets, the bullet bank, or
-    the JD text (since JD terms are expected to appear in tailored resumes).
-
-    Returns the count of suspicious claims (0 = clean).
-    """
-    import re
-
-    # Build the "allowed" corpus — includes JD text since tailoring
-    # naturally introduces terms from the job description.
-    allowed_text = " ".join(original_bullets + bullet_bank).lower() + " " + jd_text.lower()
-    suspicious_claims: set[str] = set()
-
-    for bullet in mutated_bullets:
-        # Numeric claim drift detector (e.g., new percentages/metrics).
-        numeric_tokens = re.findall(r"\b\d+(?:\.\d+)?%?\b", bullet)
-        for token in numeric_tokens:
-            if token.lower() not in allowed_text:
-                suspicious_claims.add(f"num:{token.lower()}")
-
-        # Extract capitalized words (simple proper-noun heuristic)
-        proper_nouns = re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b", bullet)
-        for noun in proper_nouns:
-            if noun.lower() not in allowed_text:
-                suspicious_claims.add(f"ent:{noun.lower()}")
-
-    return len(suspicious_claims)
+    per_bullet = check_forbidden_claims_per_bullet(
+        original_bullets, mutated_bullets, bullet_bank,
+        jd_text=jd_text, allowed_tools=allowed_tools, profile_text=profile_text,
+    )
+    return sum(1 for b in per_bullet if b["flagged"])
 
 
 def check_draft_length(draft: str, *, max_chars: int = 300) -> bool:

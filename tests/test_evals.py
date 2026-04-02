@@ -8,6 +8,7 @@ from evals.hard import (
     check_jd_schema,
     check_edit_scope,
     check_forbidden_claims,
+    check_forbidden_claims_per_bullet,
     check_draft_length,
     check_cost,
 )
@@ -70,6 +71,81 @@ class TestForbiddenClaims:
         mutated_bullets = ["Improved retention by 35%"]
         count = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank=[])
         assert count > 0
+
+
+class TestForbiddenClaimsPerBullet:
+    def test_returns_list_of_dicts(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Led team of 5"], ["Led team of 5"], bullet_bank=[],
+        )
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert "flagged" in results[0]
+        assert "reasons" in results[0]
+
+    def test_clean_bullets_not_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Led team of 5", "Built ML pipeline"],
+            ["Led cross-functional team of 5", "Built scalable ML pipeline"],
+            bullet_bank=[],
+        )
+        assert all(not r["flagged"] for r in results)
+
+    def test_only_bad_bullet_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Worked at Acme", "Led team of 5"],
+            ["Worked at Goldman Sachs", "Led team of 5"],
+            bullet_bank=[],
+        )
+        assert results[0]["flagged"] is True  # Goldman Sachs is new
+        assert results[1]["flagged"] is False  # unchanged
+
+    def test_allowed_tools_not_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Built system"],
+            ["Built system using Python and Tableau"],
+            bullet_bank=[],
+            allowed_tools=["Python", "Tableau"],
+        )
+        assert all(not r["flagged"] for r in results)
+
+    def test_common_words_not_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Did work"],
+            ["Product roadmap defined for the team"],
+            bullet_bank=[],
+        )
+        # "Product" is in the common skip set
+        flagged_ents = [r for r in results[0]["reasons"] if "product" in r]
+        assert len(flagged_ents) == 0
+
+    def test_jd_terms_not_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Built system"],
+            ["Built Kubernetes deployment pipeline"],
+            bullet_bank=[],
+            jd_text="Kubernetes deployment experience required",
+        )
+        assert all(not r["flagged"] for r in results)
+
+    def test_real_company_still_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Built system"],
+            ["Built system at Goldman Sachs"],
+            bullet_bank=[],
+            jd_text="remote startup role",
+        )
+        assert results[0]["flagged"] is True
+        assert any("goldman sachs" in r for r in results[0]["reasons"])
+
+    def test_invented_metric_flagged(self):
+        results = check_forbidden_claims_per_bullet(
+            ["Improved retention by 10%"],
+            ["Improved retention by 35%"],
+            bullet_bank=[],
+        )
+        assert results[0]["flagged"] is True
+        assert any("35" in r for r in results[0]["reasons"])
 
 
 class TestDraftLength:
