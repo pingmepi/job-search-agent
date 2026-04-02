@@ -63,7 +63,7 @@ class Settings:
         default_factory=lambda: os.environ.get("WEBHOOK_HOST", "0.0.0.0")
     )
     webhook_port: int = field(
-        default_factory=lambda: int(os.environ.get("WEBHOOK_PORT", "8000"))
+        default_factory=lambda: int(os.environ.get("PORT", os.environ.get("WEBHOOK_PORT", "8000")))
     )
     webhook_process_timeout_seconds: float = field(
         default_factory=lambda: float(os.environ.get("WEBHOOK_PROCESS_TIMEOUT_SECONDS", "10"))
