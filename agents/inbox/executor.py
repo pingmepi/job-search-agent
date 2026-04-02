@@ -291,7 +291,8 @@ def _handle_resume_mutate(
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
-    from evals.hard import check_forbidden_claims
+    from evals.hard import check_forbidden_claims_per_bullet
+    from agents.inbox.bullet_relevance import select_relevant_bullets
 
     assert ctx.base_path is not None
     original_tex = ctx.base_path.read_text(encoding="utf-8")
@@ -304,17 +305,42 @@ def _handle_resume_mutate(
         return pack
 
     editable_content = "\n".join(r.content for r in regions)
+
+    # Load bullet bank and filter by relevance
     bullet_bank_raw = json.loads(
         ctx.settings.bullet_bank_path.read_text(encoding="utf-8")
     )
-    bullet_bank_values = [b["bullet"] for b in bullet_bank_raw if isinstance(b, dict) and "bullet" in b]
-    bullet_bank_text = "\n".join(bullet_bank_values)
+    relevant_bullets = select_relevant_bullets(
+        bullet_bank_raw, jd.skills, jd.description, top_n=12,
+    )
+    bullet_bank_values = [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b]
 
-    system = load_prompt("resume_mutate", version=1)
+    # Format bank bullets with IDs and tags for the LLM
+    bank_lines = []
+    for b in relevant_bullets:
+        bid = b.get("id", "?")
+        tags = ", ".join(b.get("tags", []))
+        bank_lines.append(f"[{bid}] (tags: {tags}) {b.get('bullet', '')}")
+    bullet_bank_formatted = "\n".join(bank_lines)
+
+    # Load profile context
+    try:
+        profile = json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
+    except Exception:
+        profile = {}
+    allowed_tools = profile.get("allowed_tools", [])
+    positioning = profile.get("positioning", {})
+    profile_context = (
+        f"Candidate positioning:\n{json.dumps(positioning, indent=2)}\n\n"
+        f"Allowed tools: {', '.join(allowed_tools)}"
+    )
+
+    system = load_prompt("resume_mutate", version=2)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
         f"Current editable bullets:\n{editable_content}\n\n"
-        f"Bullet bank:\n{bullet_bank_text}"
+        f"Relevant bullet bank entries:\n{bullet_bank_formatted}\n\n"
+        f"Profile context:\n{profile_context}"
     )
 
     mutations_data, response = _chat_json_with_retry(
@@ -337,28 +363,61 @@ def _handle_resume_mutate(
     mutated_tex = apply_mutations(original_tex, mutations)
 
     # Store raw LLM data for audit trail
+    mutation_types = {}
+    for m in mutations:
+        mt = m.get("type", "REWRITE")
+        mutation_types[mt] = mutation_types.get(mt, 0) + 1
     ctx.last_step_audit = {
         "raw_llm_response": response.text[:5000] if hasattr(response, "text") else None,
         "mutations_count": len(mutations),
+        "mutation_types": mutation_types,
         "mutations": mutations,
+        "bank_bullets_sent": len(relevant_bullets),
+        "bank_bullets_total": len(bullet_bank_raw),
     }
 
-    # Truthfulness safeguard
+    # Per-bullet truthfulness safeguard with selective revert
     original_bullets = _extract_bullets(original_tex)
     mutated_bullets = _extract_bullets(mutated_tex)
     jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
-    forbidden_pre = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank_values, jd_text=jd_text)
-    if forbidden_pre > 0:
-        ctx.truthfulness_fallback_used = True
-        logger.warning(
-            "Truthfulness safeguard: %d suspected fabricated claims detected (not in original, bullet bank, or JD)",
-            forbidden_pre,
-        )
-        pack.errors.append(
-            f"Truthfulness safeguard triggered ({forbidden_pre} suspected fabricated claims); "
-            "using safe base resume content."
-        )
-        mutated_tex = original_tex
+    profile_text = json.dumps(positioning)
+
+    per_bullet = check_forbidden_claims_per_bullet(
+        original_bullets, mutated_bullets, bullet_bank_values,
+        jd_text=jd_text, allowed_tools=allowed_tools, profile_text=profile_text,
+    )
+    flagged = [r for r in per_bullet if r["flagged"]]
+
+    if flagged:
+        # Identify which mutations produced flagged bullets and remove them
+        flagged_texts = {r["bullet"] for r in flagged}
+        clean_mutations = [
+            m for m in mutations
+            if m.get("replacement", "") not in flagged_texts
+        ]
+
+        if len(clean_mutations) < len(mutations):
+            ctx.truthfulness_fallback_used = True
+            reverted_count = len(mutations) - len(clean_mutations)
+            logger.warning(
+                "Truthfulness safeguard: %d/%d mutations reverted (flagged bullets: %s)",
+                reverted_count, len(mutations),
+                "; ".join(f"{r['bullet'][:50]}... [{', '.join(r['reasons'])}]" for r in flagged),
+            )
+            pack.errors.append(
+                f"Truthfulness safeguard reverted {reverted_count}/{len(mutations)} mutations "
+                f"({len(flagged)} bullets had fabricated claims)."
+            )
+            # Re-apply only clean mutations from scratch
+            mutated_tex = apply_mutations(original_tex, clean_mutations)
+
+        # Update audit with truthfulness results
+        ctx.last_step_audit["truthfulness"] = {
+            "per_bullet_results": per_bullet,
+            "flagged_count": len(flagged),
+            "reverted_mutations": reverted_count if len(clean_mutations) < len(mutations) else 0,
+            "kept_mutations": len(clean_mutations),
+        }
 
     pack.mutated_tex = mutated_tex
     return pack
@@ -632,7 +691,16 @@ def _handle_eval_log(
         except Exception:
             bullet_bank = []
         jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
-        forbidden_claims_count = check_forbidden_claims(original_bullets, mutated_bullets, bullet_bank, jd_text=jd_text)
+        try:
+            profile = json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
+        except Exception:
+            profile = {}
+        forbidden_claims_count = check_forbidden_claims(
+            original_bullets, mutated_bullets, bullet_bank,
+            jd_text=jd_text,
+            allowed_tools=profile.get("allowed_tools", []),
+            profile_text=json.dumps(profile.get("positioning", {})),
+        )
 
     if ctx.truthfulness_fallback_used and forbidden_claims_count == 0:
         forbidden_claims_count = 1
