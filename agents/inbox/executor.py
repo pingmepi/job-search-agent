@@ -398,84 +398,15 @@ def _handle_compile(
     try:
         pack.pdf_path = _compile_and_persist(pack.mutated_tex)
 
-        MAX_CONDENSE = 2
-        current_tex = pack.mutated_tex
-        while pack.pdf_path and pack.pdf_path.exists():
+        # Page count check (informational only — no condense/reject loop)
+        if pack.pdf_path and pack.pdf_path.exists():
             pages = _safe_page_count(pack.pdf_path)
-            if pages is None:
+            if pages is not None:
+                ctx.single_page_target_met = (pages <= 1)
+                ctx.single_page_status = "met" if pages <= 1 else f"accepted_{pages}_pages"
+            else:
                 ctx.single_page_status = "unknown"
-                ctx.compile_outcome = "mutated_success"
-                break
-            if pages <= 1:
-                ctx.single_page_target_met = True
-                ctx.single_page_status = "met"
-                ctx.compile_outcome = "mutated_success"
-                break
-            if ctx.condense_retries >= MAX_CONDENSE:
-                pack.errors.append(
-                    f"Resume is {pages} pages after {ctx.condense_retries} condense retries. "
-                    "Falling back to safe base resume PDF."
-                )
-                try:
-                    base_tex = base_path.read_text(encoding="utf-8")
-                    pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
-                    ctx.compile_rollback_used = True
-                    fp = _safe_page_count(pack.pdf_path)
-                    if fp is not None and fp <= 1:
-                        ctx.compile_outcome = "fallback_success"
-                        ctx.single_page_target_met = True
-                        ctx.single_page_status = "fallback_base_used"
-                    else:
-                        ctx.compile_outcome = None
-                        ctx.single_page_target_met = False
-                        ctx.single_page_status = "failed_multi_page_terminal"
-                        pack.errors.append(
-                            f"Terminal fallback exceeds one page ({fp} pages). Run marked failed."
-                        )
-                        removed = _cleanup_pdfs(app_output_dir)
-                        if removed:
-                            pack.errors.append("Removed non-compliant PDFs: " + ", ".join(sorted(removed)))
-                        pack.pdf_path = None
-                except Exception as fe:
-                    pack.errors.append(f"LaTeX compile fallback failed: {fe}")
-                    ctx.single_page_status = "fallback_failed"
-                break
-
-            # condense pass
-            logger.info("PDF is %d pages, running condense pass %d/%d", pages, ctx.condense_retries + 1, MAX_CONDENSE)
-            try:
-                condense_sys = load_prompt("resume_condense", version=1)
-                editable_content = "\n".join(
-                    r.content for r in parse_editable_regions(current_tex)
-                )
-                condense_user = (
-                    f"Page count: {pages} (must be 1)\n\n"
-                    f"JD context:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills})}\n\n"
-                    f"Current editable content:\n{editable_content}"
-                )
-                condense_data, condense_resp = _chat_json_with_retry(
-                    system=condense_sys,
-                    user_msg=condense_user,
-                    step_name=f"Condense pass {ctx.condense_retries + 1}",
-                )
-                ctx.total_tokens += condense_resp.total_tokens
-                if condense_resp.generation_id:
-                    ctx.generation_ids.append((f"condense_pass_{ctx.condense_retries + 1}", condense_resp.generation_id))
-
-                cmuts = condense_data.get("mutations", [])
-                for removed_b in condense_data.get("bullets_removed", []):
-                    orig = removed_b.get("original", "")
-                    if orig:
-                        cmuts.append({"original": orig, "replacement": ""})
-
-                if cmuts:
-                    current_tex = apply_mutations(current_tex, cmuts)
-                    pack.mutated_tex = current_tex
-                    pack.pdf_path = _compile_and_persist(current_tex, f"_v{ctx.condense_retries + 2}")
-                ctx.condense_retries += 1
-            except Exception as ce:
-                pack.errors.append(f"Condense pass {ctx.condense_retries + 1} failed: {ce}")
-                ctx.condense_retries += 1
+            ctx.compile_outcome = "mutated_success"
 
     except Exception as e:
         pack.errors.append(f"LaTeX compile failed: {e}")
@@ -483,23 +414,9 @@ def _handle_compile(
             base_tex = base_path.read_text(encoding="utf-8")
             pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
             ctx.compile_rollback_used = True
-            fp = _safe_page_count(pack.pdf_path)
-            if fp is not None and fp <= 1:
-                ctx.compile_outcome = "fallback_success"
-                ctx.single_page_target_met = True
-                ctx.single_page_status = "fallback_base_used"
-                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
-            else:
-                ctx.compile_outcome = None
-                ctx.single_page_target_met = False
-                ctx.single_page_status = "failed_multi_page_terminal"
-                pack.errors.append(
-                    f"LaTeX compile rollback produced a non-compliant resume ({fp} pages). Run marked failed."
-                )
-                removed = _cleanup_pdfs(app_output_dir)
-                if removed:
-                    pack.errors.append("Removed non-compliant PDFs: " + ", ".join(sorted(removed)))
-                pack.pdf_path = None
+            ctx.compile_outcome = "fallback_success"
+            ctx.single_page_status = "fallback_base_used"
+            pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
         except Exception as fe:
             pack.errors.append(f"LaTeX compile fallback failed: {fe}")
             ctx.single_page_status = "fallback_failed"
