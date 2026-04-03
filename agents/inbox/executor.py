@@ -19,6 +19,7 @@ import re
 import shutil
 import tempfile
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -126,6 +127,13 @@ def _extract_bullets(text: str) -> list[str]:
         if stripped.startswith(r"\item "):
             bullets.append(stripped.replace(r"\item ", "", 1).strip())
     return bullets
+
+
+def _load_profile(ctx: "ExecutionContext") -> dict:
+    try:
+        return json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def _outside_editable_content_changed(original_tex: str, mutated_tex: str) -> bool:
@@ -306,7 +314,6 @@ def _handle_resume_mutate(
 
     editable_content = "\n".join(r.content for r in regions)
 
-    # Load bullet bank and filter by relevance
     bullet_bank_raw = json.loads(
         ctx.settings.bullet_bank_path.read_text(encoding="utf-8")
     )
@@ -315,19 +322,12 @@ def _handle_resume_mutate(
     )
     bullet_bank_values = [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b]
 
-    # Format bank bullets with IDs and tags for the LLM
-    bank_lines = []
-    for b in relevant_bullets:
-        bid = b.get("id", "?")
-        tags = ", ".join(b.get("tags", []))
-        bank_lines.append(f"[{bid}] (tags: {tags}) {b.get('bullet', '')}")
-    bullet_bank_formatted = "\n".join(bank_lines)
+    bullet_bank_formatted = "\n".join(
+        f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
+        for b in relevant_bullets
+    )
 
-    # Load profile context
-    try:
-        profile = json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
-    except Exception:
-        profile = {}
+    profile = _load_profile(ctx)
     allowed_tools = profile.get("allowed_tools", [])
     positioning = profile.get("positioning", {})
     profile_context = (
@@ -362,11 +362,7 @@ def _handle_resume_mutate(
     mutations = mutations_data.get("mutations", [])
     mutated_tex = apply_mutations(original_tex, mutations)
 
-    # Store raw LLM data for audit trail
-    mutation_types = {}
-    for m in mutations:
-        mt = m.get("type", "REWRITE")
-        mutation_types[mt] = mutation_types.get(mt, 0) + 1
+    mutation_types = dict(Counter(m.get("type", "REWRITE") for m in mutations))
     ctx.last_step_audit = {
         "raw_llm_response": response.text[:5000] if hasattr(response, "text") else None,
         "mutations_count": len(mutations),
@@ -376,7 +372,6 @@ def _handle_resume_mutate(
         "bank_bullets_total": len(bullet_bank_raw),
     }
 
-    # Per-bullet truthfulness safeguard with selective revert
     original_bullets = _extract_bullets(original_tex)
     mutated_bullets = _extract_bullets(mutated_tex)
     jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
@@ -389,16 +384,15 @@ def _handle_resume_mutate(
     flagged = [r for r in per_bullet if r["flagged"]]
 
     if flagged:
-        # Identify which mutations produced flagged bullets and remove them
         flagged_texts = {r["bullet"] for r in flagged}
         clean_mutations = [
             m for m in mutations
             if m.get("replacement", "") not in flagged_texts
         ]
 
-        if len(clean_mutations) < len(mutations):
+        reverted_count = len(mutations) - len(clean_mutations)
+        if reverted_count > 0:
             ctx.truthfulness_fallback_used = True
-            reverted_count = len(mutations) - len(clean_mutations)
             logger.warning(
                 "Truthfulness safeguard: %d/%d mutations reverted (flagged bullets: %s)",
                 reverted_count, len(mutations),
@@ -408,14 +402,12 @@ def _handle_resume_mutate(
                 f"Truthfulness safeguard reverted {reverted_count}/{len(mutations)} mutations "
                 f"({len(flagged)} bullets had fabricated claims)."
             )
-            # Re-apply only clean mutations from scratch
             mutated_tex = apply_mutations(original_tex, clean_mutations)
 
-        # Update audit with truthfulness results
         ctx.last_step_audit["truthfulness"] = {
             "per_bullet_results": per_bullet,
             "flagged_count": len(flagged),
-            "reverted_mutations": reverted_count if len(clean_mutations) < len(mutations) else 0,
+            "reverted_mutations": reverted_count,
             "kept_mutations": len(clean_mutations),
         }
 
@@ -691,10 +683,7 @@ def _handle_eval_log(
         except Exception:
             bullet_bank = []
         jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
-        try:
-            profile = json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
-        except Exception:
-            profile = {}
+        profile = _load_profile(ctx)
         forbidden_claims_count = check_forbidden_claims(
             original_bullets, mutated_bullets, bullet_bank,
             jd_text=jd_text,
