@@ -299,10 +299,17 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await status_handler(update, context)
 
     elif result.target == AgentTarget.ARTICLE:
-        await update.message.reply_text(
-            "📰 This looks like article content, not a job description. "
-            "Please send a JD URL, raw JD text, or screenshot so I can process an application pack."
-        )
+        await update.message.reply_text("📰 Summarizing article...")
+        try:
+            from agents.article.agent import summarize
+            summary, signals = summarize(text)
+            signal_text = "\n".join(f"• {s}" for s in signals) if signals else "None detected."
+            await update.message.reply_text(
+                f"📰 Article Summary\n\n{summary}\n\n"
+                f"🔍 Job search signals:\n{signal_text}"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error summarizing article: {e}")
 
     elif result.target == AgentTarget.AMBIGUOUS_NON_JOB:
         await update.message.reply_text(
