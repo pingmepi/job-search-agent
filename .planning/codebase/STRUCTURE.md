@@ -11,7 +11,7 @@
 - `scripts/`: operational shell scripts
 - `profile/`: canonical candidate profile + bullet bank inputs
 - `resumes/`: source `.tex` and exported PDF resume assets
-- `data/`: SQLite database file location
+- `data/`: PostgreSQL connection config (previously SQLite; migrated at commit `e18a794`)
 - `runs/`: generated runtime artifacts and outputs
 - `.planning/codebase/`: architecture mapping documents
 
@@ -31,11 +31,15 @@
 - `agents/followup/agent.py`: follow-up detection and draft generation
 - `agents/followup/runner.py`: scheduled execution wrapper with run telemetry
 - `agents/profile/agent.py`: grounded profile answering and narrative selection
+- `agents/article/agent.py`: article summarization and job-search signal extraction
+- `agents/inbox/planner.py`: deterministic tool plan assembly (zero LLM calls)
+- `agents/inbox/executor.py`: resilient 12-step execution with retry and graceful degradation
+- `agents/inbox/bullet_relevance.py`: JD-aware bullet bank relevance scoring for mutation selection
 
 ### Shared Infrastructure
 - `core/config.py`: environment-backed immutable settings singleton
 - `core/router.py`: deterministic routing engine
-- `core/db.py`: SQLite schema, migrations, and CRUD helpers
+- `core/db.py`: PostgreSQL schema, migrations, and CRUD helpers (`psycopg2`)
 - `core/llm.py`: OpenRouter-backed LLM gateway
 - `core/prompts/`: versioned prompt text files (`*_v{n}.txt`)
 
@@ -63,7 +67,7 @@
 - Shell utilities: `.sh` scripts under `scripts/` or root helper scripts
 
 ### Runtime Data Locations
-- DB default: `data/inbox_agent.db`
+- DB: PostgreSQL via `DATABASE_URL` env var (previously `data/inbox_agent.db`)
 - Run outputs/artifacts: `runs/artifacts/`
 - Profile source of truth: `profile/profile.json` and `profile/bullet_bank.json`
 - Resume sources: `resumes/*.tex`; additional generated/exported docs under `resumes/Resumes/`
@@ -89,5 +93,6 @@
 - Inbox execution: `agents/inbox/adapter.py` -> `agents/inbox/agent.py`
 - Follow-up schedule: `main.py` -> `agents/followup/runner.py` -> `agents/followup/agent.py`
 - Profile response: `agents/inbox/adapter.py` -> `agents/profile/agent.py`
+- Article response: `agents/inbox/adapter.py` -> `core/router.py` -> `agents/article/agent.py`
 - Persistence: agents -> `core/db.py`
 - LLM calls: agents -> `core/llm.py` with prompts from `core/prompts/`

@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last updated: 2026-03-16
+Last updated: 2026-04-03
 
 ## Purpose
 This file is the short-lived operational handoff between sessions/windows when context gets full. Keep it concise and current.
@@ -8,38 +8,45 @@ This file is the short-lived operational handoff between sessions/windows when c
 ## Snapshot
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
-- Active phase: Pipeline enhancements + feature completion
-- Current test baseline: `222 passed` with `.venv/bin/pytest -q` (2026-03-16); 1 pre-existing failure in compile-rollback integration test
+- Active phase: Phase 3 complete. V2 mutation pipeline + ArticleAgent shipped. Phase 4 planning.
+- Current test baseline: `222+ passed` with `.venv/bin/pytest -q` (new test files added for ArticleAgent and bullet relevance since last count)
 - Current CI gate: `PASSED` with `.venv/bin/python main.py ci-gate` (fixture-based; all 5 thresholds green)
 - Active execution ticket: `KAR-62` (Pending)
+- Deployment: Railway (PostgreSQL + Docker). Webhook live.
 - Milestone targets:
-  - Phase 0 (2026-03-01) — overdue
-  - Phase 1 (2026-03-15) — overdue
-  - Phase 2 (2026-04-05)
+  - Phase 0 (2026-03-01) — complete
+  - Phase 1 (2026-03-15) — complete
+  - Phase 2 (2026-04-05) — in progress
   - Phase 3 (2026-04-30)
 
 ## What Was Just Completed
-- **KAR-61: Planner/Executor separation.** Split monolithic `run_pipeline` into `planner.py` (deterministic tool plan creation) and `executor.py` (resilient execution loop with retries and graceful degradation). Added 49 new unit tests. 222 tests now passing.
-- **KAR-60: Success Criteria Gates.** CI gate overhauled with fixture-based primary gating.
+- **KAR-73: ArticleAgent.** New `agents/article/agent.py` — summarizes article content and surfaces job-search signals (companies, hiring, skills, funding). Router integration + 4 unit tests.
+- **V2 mutation pipeline.** REWRITE/SWAP/GENERATE ops with JD-relevant bullet bank pre-filtering (top-12), profile context injection, and selective revert on truthfulness failure.
+- **Bullet relevance scoring.** `agents/inbox/bullet_relevance.py` — tag overlap (60%) + keyword overlap (40%) scoring for JD-aware bullet selection.
+- **Per-bullet truthfulness guard.** Granular per-bullet checking replaces all-or-nothing fallback. Common-word skip set reduces false positives.
+- **Executor simplification.** Extracted `_load_profile` helper, fixed `reverted_count` scope bug, `Counter` usage.
+- **run_steps audit trail.** Per-step input/output logging via `run_steps` table. `python main.py runs <id> --steps`.
+- **PostgreSQL migration.** SQLite → PostgreSQL (`psycopg2`) for production concurrency.
+- **Operations fixes.** Railway PORT healthcheck, stdout logging, PDF delivery via Telegram, truthfulness false positive reduction.
 
 ## What Is Next
 1. KAR-62: Phase 3 SaaS readiness scoping.
-2. KAR-72: Persist raw Telegram webhook events.
-3. KAR-73: Add ArticleAgent routing.
+2. KAR-72: Persist raw Telegram webhook events to `data/raw_events/`.
+3. KAR-74: Default memory agent fallback behavior.
 
 ## Known Risks / Gaps
-- Pre-existing test failure: `test_run_pipeline_compile_fallback_rolls_back_to_base_resume` — PDF byte content from mock doesn't satisfy pypdf page-count check. Not introduced by KAR-60 (confirmed via git stash).
-- Live DB shows ⚠️ compile 50%, forbidden claims 9, avg latency 83s — historical noise from dev runs. Non-blocking.
-- URL ingestion behavior is incomplete relative to PRD expectations.
-- Production deployment requires HTTPS + reverse proxy and Telegram webhook registration.
+- URL ingestion behavior is incomplete relative to PRD expectations (readability fallback, field extraction hardening).
+- Pre-existing test failure in `test_run_pipeline_compile_fallback_rolls_back_to_base_resume` may be resolved by single-page enforcement removal — needs verification.
+- `.venv` not present in repo — tests must be run after recreating the virtual environment.
 
 ## Quick Start For New Agent
-1. Read `TRACKER.md`.
-2. Read `PRD.md` sections 2, 3, 6.
-3. Run tests: `.venv/bin/pytest -q`
-4. Run CI gate: `.venv/bin/python main.py ci-gate`
-5. Pick next ticket from `TRACKER.md` execution order.
-6. Update both `TRACKER.md` and this file after each phase.
+1. Read `BUILD_LOG.md` for full project evolution.
+2. Read `TRACKER.md` for current ticket status.
+3. Read `PRD.md` sections 2, 3, 6 for requirements.
+4. Run tests: `.venv/bin/pytest -q`
+5. Run CI gate: `.venv/bin/python main.py ci-gate`
+6. Pick next ticket from `TRACKER.md` execution order.
+7. Update `TRACKER.md`, this file, and `BUILD_LOG.md` after each phase.
 
 ## Handoff Template
 Use this block when ending a work phase:

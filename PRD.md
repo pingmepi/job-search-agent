@@ -118,6 +118,7 @@ No routing LLM initially.
 | Message contains URL             | Inbox Agent       |
 | Message contains JD-like content | Inbox Agent       |
 | Message asks about Karan/profile | Profile Agent     |
+| Message looks like article content | Article Agent   |
 | Message ambiguous                | Ask clarification |
 
 ---
@@ -144,7 +145,7 @@ Eval Logger (Fixture-backed CI Gating)
 
 Shared Storage:
 
-* SQLite DB
+* PostgreSQL DB (migrated from SQLite)
 * Canonical profile store
 * Run logs
 * Evals dataset
@@ -410,7 +411,7 @@ Example Epic Structure:
 ### Epic 1: Infrastructure
 
 * Setup repo structure
-* Setup SQLite schema
+* Setup PostgreSQL schema
 * Setup Drive + Calendar OAuth
 
 ### Epic 2: Inbox Agent Core
@@ -496,36 +497,37 @@ System is production-ready and CI gates enforce:
 
 ---
 
-# 13. PRD ↔ Linear Traceability (Synced 2026-02-15)
+# 13. PRD ↔ Linear Traceability (Synced 2026-04-03)
 
-Linear project used for execution tracking: `job-search-agent`  
+Linear project used for execution tracking: `job-search-agent`
 https://linear.app/karans/project/job-search-agent-d5014a28b093
 
 ## 13.1 Functional Requirements Mapping
 
 | PRD Requirement | Linear Issue(s) | Status |
 | --- | --- | --- |
-| FR-IA-1 Ingestion (URL fetch + screenshot fallback) | KAR-50 | Todo |
-| FR-IA-2 OCR pipeline + cleanup + schema validation hardening | KAR-52 | Todo |
-| FR-IA-3 Resume selection (keyword overlap, fit score) | KAR-53 | Todo |
-| FR-IA-4 Resume mutation constraints | KAR-42, KAR-44 | Done |
-| FR-IA-5 Compile + failure rollback | KAR-45, KAR-54 | Mixed (Done + Todo) |
-| FR-IA-6 Drive upload | KAR-55 | Todo |
-| FR-IA-7 Calendar events | KAR-55 | Todo |
+| FR-IA-1 Ingestion (URL fetch + screenshot fallback) | KAR-50 | Done |
+| FR-IA-2 OCR pipeline + cleanup + schema validation hardening | KAR-52 | Done |
+| FR-IA-3 Resume selection (keyword overlap, fit score) | KAR-53 | Done |
+| FR-IA-4 Resume mutation constraints (v2: REWRITE/SWAP/GENERATE) | KAR-42, KAR-44 | Done |
+| FR-IA-5 Compile + failure rollback | KAR-45, KAR-54 | Done |
+| FR-IA-6 Drive upload | KAR-55 | Done |
+| FR-IA-7 Calendar events | KAR-55 | Done |
 | FR-IA-8 Draft generation | KAR-46 | Done |
-| FR-IA-9 Eval logging completeness | KAR-48, KAR-57 | Mixed (Done + Todo) |
-| FR-PA-1 Grounded responses | KAR-56 | Todo |
-| FR-PA-2 No inventions / forbidden claims | KAR-56 | Todo |
+| FR-IA-9 Eval logging completeness | KAR-48, KAR-57 | Done |
+| FR-PA-1 Grounded responses | KAR-56 | Done |
+| FR-PA-2 No inventions / forbidden claims | KAR-56 | Done |
 | FR-PA-3 Narrative selection | KAR-63 | Done |
-| FR-FU-1 Follow-up detection (+7d, no update, scheduled) | KAR-49, KAR-58 | Todo |
+| FR-FU-1 Follow-up detection (+7d, no update, scheduled) | KAR-49, KAR-58 | Done |
 | FR-FU-2 Follow-up draft generation | KAR-64 | Done |
+| FR-AA-1 Article summarization + signal extraction | KAR-73 | Done |
 
 ## 13.2 Eval / CI / Success Criteria Mapping
 
 | PRD Item | Linear Issue(s) | Status |
 | --- | --- | --- |
 | Hard eval constraints implementation | KAR-48 | Done |
-| Soft eval constraints | KAR-59 | Todo |
+| Soft eval constraints | KAR-59 | Done |
 | CI thresholds + 10+ eval cases | KAR-60, KAR-51 | Done |
 | Cost/latency target instrumentation | KAR-57, KAR-60 | Done |
 
@@ -533,8 +535,8 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 
 | Phase | Linear Issue(s) | Status |
 | --- | --- | --- |
-| Phase 0 Core Executor hardening | KAR-42..KAR-60 | In progress |
-| Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | In progress |
+| Phase 0 Core Executor hardening | KAR-42..KAR-60 | Done |
+| Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | Done |
 | Phase 2 Planner Mode | KAR-61 | Done |
 | Phase 3 SaaS Readiness | KAR-62 | Todo |
 
