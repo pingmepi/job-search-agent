@@ -67,7 +67,20 @@ _COMMON_SKIP_WORDS = frozenset({
     "streamlined", "scaled", "led", "spearheaded", "architected",
     "orchestrated", "partnered", "collaborated", "mentored", "owned",
     "leveraged", "utilized", "facilitated", "coordinated", "analyzed",
+    "conducted",
 })
+
+
+def _normalize_latex(text: str) -> str:
+    """Strip common LaTeX escaping so numeric/entity comparisons match."""
+    import re as _re
+    text = text.replace("\\%", "%")
+    text = text.replace("\\$", "$")
+    text = text.replace("\\&", "&")
+    text = text.replace("\\sim", "")
+    text = _re.sub(r"(?<!-)--(?!-)", "-", text)   # em-dash to hyphen
+    text = text.replace("~", " ")
+    return text
 
 
 def check_forbidden_claims_per_bullet(
@@ -85,8 +98,8 @@ def check_forbidden_claims_per_bullet(
     """
     import re
 
-    # Build the allowed corpus
-    allowed_text = (
+    # Build the allowed corpus (LaTeX-normalized so metrics match)
+    allowed_text = _normalize_latex(
         " ".join(original_bullets + bullet_bank).lower()
         + " " + jd_text.lower()
         + " " + profile_text.lower()
@@ -110,7 +123,13 @@ def check_forbidden_claims_per_bullet(
         # (catches "Goldman Sachs", skips "Product")
         for entity in re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b", bullet):
             if entity.lower() not in allowed_text:
-                reasons.append(f"ent:{entity.lower()}")
+                # Only flag if there are unknown words after removing skip words
+                unknown = [
+                    w for w in entity.lower().split()
+                    if w not in skip_words and w not in allowed_text
+                ]
+                if unknown:
+                    reasons.append(f"ent:{entity.lower()}")
 
         # Single capitalized words — only flag if NOT in skip set
         for word in re.findall(r"\b[A-Z][a-z]+\b", bullet):

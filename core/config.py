@@ -88,6 +88,14 @@ class Settings:
         default_factory=lambda: os.environ.get("GOOGLE_CALENDAR_TOKEN_B64", "")
     )
 
+    # ── Resume enforcement ─────────────────────────────────────────
+    enforce_single_page: bool = field(
+        default_factory=lambda: _env_bool("ENFORCE_SINGLE_PAGE", default=True)
+    )
+    max_condense_retries: int = field(
+        default_factory=lambda: int(os.environ.get("MAX_CONDENSE_RETRIES", "2"))
+    )
+
     # ── Cost ──────────────────────────────────────────────────────
     max_cost_per_job: float = field(
         default_factory=lambda: float(os.environ.get("MAX_COST_PER_JOB", "0.15"))

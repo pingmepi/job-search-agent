@@ -335,7 +335,7 @@ def _handle_resume_mutate(
         f"Allowed tools: {', '.join(allowed_tools)}"
     )
 
-    system = load_prompt("resume_mutate", version=2)
+    system = load_prompt("resume_mutate", version=3)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
         f"Current editable bullets:\n{editable_content}\n\n"
@@ -459,18 +459,118 @@ def _handle_compile(
             removed.append(pdf.name)
         return removed
 
+    enforce = getattr(ctx.settings, "enforce_single_page", True)
+    max_condense = getattr(ctx.settings, "max_condense_retries", 2)
+
+    def _run_condense(tex: str, page_count: int) -> Optional[str]:
+        """Call the condense LLM and return condensed TeX, or None on failure."""
+        try:
+            condense_system = load_prompt("resume_condense", version=1)
+            regions = parse_editable_regions(tex)
+            if not regions:
+                return None
+            editable_content = "\n".join(r.content for r in regions)
+            condense_user = (
+                f"JD context: {jd.company} — {jd.role}\n"
+                f"Skills: {', '.join(jd.skills)}\n\n"
+                f"Current editable content:\n{editable_content}\n\n"
+                f"Current page count: {page_count}"
+            )
+            data, response = _chat_json_with_retry(
+                system=condense_system,
+                user_msg=condense_user,
+                step_name="Resume condense",
+                max_attempts=2,
+            )
+            ctx.total_tokens += response.total_tokens
+            if response.generation_id:
+                ctx.generation_ids.append(("resume_condense", response.generation_id))
+            ctx.llm_usage_breakdown["resume_condense"] = {
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "cost_estimate": response.cost_estimate,
+            }
+            # Build combined mutation list: rewrites + removals (empty replacement)
+            mutations = data.get("mutations", [])
+            for removed in data.get("bullets_removed", []):
+                mutations.append({
+                    "original": removed["original"],
+                    "replacement": "",
+                })
+            return apply_mutations(tex, mutations)
+        except Exception as exc:
+            pack.errors.append(f"Resume condense failed: {exc}")
+            logger.warning("Condense LLM call failed: %s", exc)
+            return None
+
     try:
         pack.pdf_path = _compile_and_persist(pack.mutated_tex)
 
-        # Page count check (informational only — no condense/reject loop)
+        # Page count check + condense loop
         if pack.pdf_path and pack.pdf_path.exists():
             pages = _safe_page_count(pack.pdf_path)
-            if pages is not None:
-                ctx.single_page_target_met = (pages <= 1)
-                ctx.single_page_status = "met" if pages <= 1 else f"accepted_{pages}_pages"
-            else:
+            if pages is not None and pages <= 1:
+                ctx.single_page_target_met = True
+                ctx.single_page_status = "met"
+                ctx.compile_outcome = "mutated_success"
+            elif pages is not None and pages > 1 and enforce:
+                # Condense loop
+                current_tex = pack.mutated_tex
+                condensed_ok = False
+                for retry in range(1, max_condense + 1):
+                    ctx.condense_retries = retry
+                    condensed = _run_condense(current_tex, pages)
+                    if condensed is None:
+                        break
+                    try:
+                        pack.pdf_path = _compile_and_persist(condensed, f"_condense{retry}")
+                    except Exception as ce:
+                        pack.errors.append(f"Condense recompile {retry} failed: {ce}")
+                        break
+                    pages = _safe_page_count(pack.pdf_path)
+                    if pages is not None and pages <= 1:
+                        pack.mutated_tex = condensed
+                        ctx.single_page_target_met = True
+                        ctx.single_page_status = "met"
+                        ctx.compile_outcome = "mutated_success"
+                        condensed_ok = True
+                        break
+                    current_tex = condensed
+
+                if not condensed_ok:
+                    # Fall back to base resume
+                    logger.warning("Condense exhausted (%d retries); falling back to base.", max_condense)
+                    try:
+                        base_tex = base_path.read_text(encoding="utf-8")
+                        pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
+                        ctx.compile_rollback_used = True
+                        fb_pages = _safe_page_count(pack.pdf_path)
+                        if fb_pages is not None and fb_pages > 1:
+                            # Terminal failure: base resume also exceeds one page
+                            pack.pdf_path = None
+                            _cleanup_pdfs(app_output_dir)
+                            ctx.single_page_status = "failed_multi_page_terminal"
+                            ctx.compile_outcome = None
+                            pack.errors.append(
+                                f"Resume exceeds one page ({fb_pages} pages) and base fallback "
+                                "also exceeds one page. No compliant PDF produced."
+                            )
+                        else:
+                            ctx.compile_outcome = "fallback_success"
+                            ctx.single_page_status = "fallback_base_used"
+                            pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+                    except Exception as fe:
+                        pack.errors.append(f"LaTeX compile fallback failed: {fe}")
+                        ctx.single_page_status = "fallback_failed"
+            elif pages is None:
                 ctx.single_page_status = "unknown"
-            ctx.compile_outcome = "mutated_success"
+                ctx.compile_outcome = "mutated_success"
+            else:
+                # pages > 1 but enforce is off
+                ctx.single_page_target_met = False
+                ctx.single_page_status = f"accepted_{pages}_pages"
+                ctx.compile_outcome = "mutated_success"
 
     except Exception as e:
         pack.errors.append(f"LaTeX compile failed: {e}")
@@ -478,9 +578,20 @@ def _handle_compile(
             base_tex = base_path.read_text(encoding="utf-8")
             pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
             ctx.compile_rollback_used = True
-            ctx.compile_outcome = "fallback_success"
-            ctx.single_page_status = "fallback_base_used"
-            pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+            fb_pages = _safe_page_count(pack.pdf_path) if enforce else None
+            if enforce and fb_pages is not None and fb_pages > 1:
+                pack.pdf_path = None
+                _cleanup_pdfs(app_output_dir)
+                ctx.single_page_status = "failed_multi_page_terminal"
+                ctx.compile_outcome = None
+                pack.errors.append(
+                    f"Resume exceeds one page ({fb_pages} pages) and base fallback "
+                    "also exceeds one page. No compliant PDF produced."
+                )
+            else:
+                ctx.compile_outcome = "fallback_success"
+                ctx.single_page_status = "fallback_base_used"
+                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
         except Exception as fe:
             pack.errors.append(f"LaTeX compile fallback failed: {fe}")
             ctx.single_page_status = "fallback_failed"
