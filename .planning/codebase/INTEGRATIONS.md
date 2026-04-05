@@ -52,11 +52,11 @@
 - Behavior: webhook requests are rejected with `401` if secret mismatch.
 
 ### Google OAuth
-- Auth mechanism: OAuth client credentials + token refresh flow.
+- Auth mechanism: OAuth client credentials + token refresh flow via `integrations/google_auth.py`.
 - Credentials file path: `GOOGLE_CREDENTIALS_PATH` (default `credentials/google_oauth.json`).
-- Token cache files:
-  - `credentials/drive_token.pickle`
-  - `credentials/calendar_token.pickle`
+- Token cache file: `credentials/google_token.pickle` (single token with both Drive + Calendar scopes).
+- Headless deployment: token bootstrapped from `GOOGLE_TOKEN_B64` env var on startup.
+- Local bootstrap: `python main.py auth-google` (interactive, needs browser).
 
 ## Webhooks and Event Interfaces
 - Inbound webhook provider: Telegram.
