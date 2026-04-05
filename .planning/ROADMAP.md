@@ -51,6 +51,21 @@ This roadmap hardens the existing Telegram-first pipeline into a reliable, measu
   3. Generated collateral and resume artifacts are uploaded to a per-application Google Drive folder structure.
 **Plans**: 3/3 complete (`03-01`, `03-02`, `03-03`)
 
+### Post-Phase-3 Feature Work (shipped outside phase structure, 2026-03-16 to 2026-04-03)
+
+Features shipped between Phase 3 completion and Phase 4 planning:
+
+- **KAR-60: Fixture-based CI gating** (2026-03-16) — 12 eval fixtures, 5 thresholds, deterministic and reproducible.
+- **KAR-61: Planner/executor separation** (2026-03-16) — deterministic `planner.py` (zero LLM calls) + resilient `executor.py` with 12 step handlers. 49 new tests.
+- **PostgreSQL migration** (2026-03-31) — SQLite → PostgreSQL for production concurrency. Railway deployment with Docker.
+- **Operations fixes** (2026-04-02) — Railway PORT healthcheck, stdout logging, PDF delivery via Telegram, truthfulness false positive reduction.
+- **run_steps audit trail** (2026-04-02) — per-step input/output logging via `run_steps` table.
+- **Bullet relevance scoring** (2026-04-02) — JD-aware bullet bank pre-filtering with tag + keyword overlap scoring.
+- **Per-bullet truthfulness guard** (2026-04-02) — granular per-bullet checking, common-word skip set, reduced false positives.
+- **V2 mutation pipeline** (2026-04-02) — REWRITE/SWAP/GENERATE ops, profile context, selective revert on flagged bullets.
+- **Executor simplification** (2026-04-02) — `_load_profile` extraction, `reverted_count` scope fix, `Counter` usage.
+- **KAR-73: ArticleAgent** (2026-04-03) — article summarization and job-search signal extraction.
+
 ### Phase 4: Eval Gates and Release Quality
 **Goal**: Release decisions are consistently blocked or passed by measurable quality gates across representative job-processing scenarios.
 **Depends on**: Phase 3

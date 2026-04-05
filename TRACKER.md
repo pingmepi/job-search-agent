@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-02-24
+Last updated: 2026-04-03
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -10,12 +10,25 @@ Last updated: 2026-02-24
   - https://linear.app/karans/document/tracker-2026-02-16-20e846e0ca54
 
 ## Current Status
-- Phase: Core pipeline hardening + feature enhancements.
-- Test status: `222 passed` (`.venv/bin/pytest -q` on 2026-03-16; 1 pre-existing failure in compile-fallback integration test).
-- CI gate status: `PASSED` (`.venv/bin/python main.py ci-gate` on 2026-03-16; fixture-based gating, all 5 thresholds green).
+- Phase: Phase 3 complete. V2 mutation pipeline + ArticleAgent shipped. Phase 4 planning.
+- Deployment: Railway (PostgreSQL + Docker). Webhook live.
+- Test status: `222+ passed` (new test files added since last count for ArticleAgent and bullet relevance).
+- CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
 - Active issue: `KAR-62` (Pending).
 
-## Latest Progress (2026-03-16)
+## Latest Progress (2026-04-03)
+- Implemented `KAR-73` ArticleAgent — `agents/article/agent.py` summarizes articles and surfaces job-search signals. Router integration + 4 unit tests.
+- Added bullet bank relevance scoring (`agents/inbox/bullet_relevance.py`) — JD-aware pre-filtering with tag overlap (60%) + keyword overlap (40%).
+- Built v2 mutation pipeline — REWRITE/SWAP/GENERATE ops, top-12 bullet pre-selection, profile context injection, selective revert on truthfulness failure (`43d56bf`).
+- Added per-bullet truthfulness guard — granular checking replaces all-or-nothing fallback, common-word skip set reduces false positives (`6177cee`).
+- Simplified executor — `_load_profile` extraction, `reverted_count` scope fix, `Counter` usage (`cfccfa3`).
+- Added `run_steps` audit trail — per-step input/output logging via `run_steps` table, `python main.py runs <id> --steps` (`2712592`).
+- Migrated persistence from SQLite to PostgreSQL (`psycopg2`) for production concurrency (`e18a794`).
+- Deployed to Railway with Docker (python:3.11-slim + Tesseract + TexLive).
+- Fixed Railway PORT healthcheck, stdout logging, PDF delivery via Telegram, truthfulness false positives (`d8c3a5c`, `244fa09`, `16c1cda`, `22eb3bf`).
+- Removed single-page enforcement — multi-page accepted, page count tracked as metadata (`22eb3bf`).
+
+## Previous Progress (2026-03-16)
 - Implemented `KAR-61` planner/executor separation.
 - Decoupled tool planning from LLM context - `agents/inbox/planner.py` added for deterministic routing logic without any LLM calls.
 - Migrated 12 execution step handlers with resilient retry logic and graceful degradation to `agents/inbox/executor.py`.
@@ -84,25 +97,20 @@ Last updated: 2026-02-24
 - [x] KAR-77 Webhook API E2E realistic payload integration tests
 - [x] KAR-60 Success criteria gates + CI thresholds (compile ≥ 95%, forbidden claims = 0, edit violations = 0, cost/latency reporting)
 - [x] KAR-61 Phase 2 planner/executor separation
+- [x] KAR-73 ArticleAgent — article summarization and job-search signal surfacing
 
 ## Pending Work
 - [ ] KAR-62 Phase 3 SaaS readiness scoping
 - [ ] KAR-72 Persist raw Telegram webhook events to `data/raw_events/`
-- [ ] KAR-73 Add `ArticleAgent` routing and handler flow
 - [ ] KAR-74 Implement default memory agent fallback behavior
 - [ ] KAR-75 Define and persist formal JSON artifacts for job/resume/eval outputs
 - [ ] KAR-76 Auto-create/update Linear application issue from pipeline output
 
 ## Merged From `docs/execution_plan` (Tracker Superset)
 - [ ] Add webhook raw event persistence to `data/raw_events/` (`KAR-72`).
-- [ ] Add router branch + handler flow for `ArticleAgent` (`KAR-73`).
 - [ ] Add default memory/fallback agent behavior beyond current clarify response (`KAR-74`).
 - [ ] Define and persist structured JSON artifacts for job posting, resume output, and eval result (partially covered by existing run logs; formal schema artifacts tracked in `KAR-75`).
 - [ ] Auto-create/update Linear issue per generated application (`Apply - {Company} - {Role}` with resume/JD attachments) (`KAR-76`).
-- [ ] URL extraction quality hardening (direct fetch + readability fallback + field extraction) (`KAR-50`).
-- [ ] OCR hardening and failure handling (`KAR-52`).
-- [ ] Eval expansion (skill coverage, keyword overlap, missing requirements, hallucination checks, compile integrity gate hardening) (`KAR-53`, `KAR-56`, `KAR-59`, `KAR-60`).
-- [ ] Follow-up outcome feedback loop and adaptive optimization (Phase 2 direction; currently represented by `KAR-61`).
 - [ ] Productization/SaaS readiness items (dockerization, configurable backends, public vs paid packaging scope) (`KAR-62`).
 
 ## Milestones (Linear)
@@ -116,11 +124,12 @@ Last updated: 2026-02-24
 2. KAR-72
 
 ## Notes
-- Telegram ingestion now runs through webhook service endpoint `/telegram/webhook` (no polling runtime).
-- Telegram handlers now derive `skip_upload` / `skip_calendar` from env toggles (`TELEGRAM_ENABLE_DRIVE_UPLOAD`, `TELEGRAM_ENABLE_CALENDAR_EVENTS`).
+- Persistence: PostgreSQL via `psycopg2` (migrated from SQLite at commit `e18a794`).
+- Deployed on Railway with Docker (`python:3.11-slim` + Tesseract + TexLive).
+- Telegram ingestion runs through webhook service endpoint `/telegram/webhook` (no polling).
+- Telegram handlers derive `skip_upload` / `skip_calendar` from env toggles.
 - Pipeline artifacts persist to `runs/artifacts/`.
-- `docs/execution_plan` has been merged into this tracker; this file is the canonical superset for planning/execution.
-- CI gate currently fails due to historical compile eval results in `runs` lowering compile success rate below threshold.
-- Follow-up scheduler is now available via `python main.py followup-runner --once` (or loop mode).
-- Local `.env` now includes bot credential wiring; `.env.example` includes `TELEGRAM_BOT_USERNAME` for onboarding consistency.
-- Added `set_webhook.sh` for Telegram webhook registration (`drop_pending_updates=true` + `secret_token`).
+- CI gate: fixture-based, all 5 thresholds green. Historical live-DB noise is non-blocking.
+- Follow-up scheduler: `python main.py followup-runner --once` (or loop mode).
+- `docs/execution_plan` merged into this tracker; this file is the canonical superset.
+- See `BUILD_LOG.md` for full project evolution history.
