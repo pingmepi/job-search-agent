@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Pre-commit hook: lint, format check, and test staged Python files.
+# Install with: bash scripts/install-hooks.sh
+set -e
+
+# Use the project venv if available, else system python3
+if [ -f ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+elif command -v python3 &>/dev/null; then
+    PY="python3"
+else
+    echo "❌ No python3 found. Skipping pre-commit checks."
+    exit 0
+fi
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+if [ -z "$STAGED" ]; then
+    echo "No Python files staged, skipping checks."
+    exit 0
+fi
+
+# Check if ruff is available
+if ! $PY -m ruff --version &>/dev/null; then
+    echo "⚠️  ruff not installed. Run: pip install ruff"
+    echo "   Skipping lint/format checks."
+else
+    echo "🔍 ruff check (lint)..."
+    echo "$STAGED" | xargs $PY -m ruff check
+
+    echo "🎨 ruff format (check)..."
+    echo "$STAGED" | xargs $PY -m ruff format --check
+fi
+
+# Check if pytest is available
+if $PY -m pytest --version &>/dev/null; then
+    echo "🧪 pytest..."
+    $PY -m pytest tests/ -q --tb=short -x
+else
+    echo "⚠️  pytest not installed. Skipping tests."
+fi
+
+echo "✅ All pre-commit checks passed."

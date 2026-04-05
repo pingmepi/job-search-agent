@@ -80,7 +80,9 @@ class EvalOutputArtifact:
         return asdict(self)
 
 
-def build_job_extraction_artifact(*, run_id: str, input_mode: str, jd_hash: str, jd: dict[str, Any]) -> JobExtractionArtifact:
+def build_job_extraction_artifact(
+    *, run_id: str, input_mode: str, jd_hash: str, jd: dict[str, Any]
+) -> JobExtractionArtifact:
     return JobExtractionArtifact(
         run_id=_ensure_non_empty(run_id, "run_id"),
         schema_version=SCHEMA_VERSION,
@@ -120,8 +122,13 @@ def build_resume_output_artifact(
     compile_outcome: str | None = None,
     fit_score_details: dict[str, Any] | None = None,
 ) -> ResumeOutputArtifact:
-    if compile_outcome is not None and compile_outcome not in {"mutated_success", "fallback_success"}:
-        raise ValueError("compile_outcome must be one of mutated_success, fallback_success, or None")
+    if compile_outcome is not None and compile_outcome not in {
+        "mutated_success",
+        "fallback_success",
+    }:
+        raise ValueError(
+            "compile_outcome must be one of mutated_success, fallback_success, or None"
+        )
     allowed_keys = {"email", "linkedin", "referral"}
     normalized_collateral_files = collateral_files or {}
     unknown_keys = set(normalized_collateral_files) - allowed_keys

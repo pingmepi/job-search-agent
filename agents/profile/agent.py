@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import Optional
 
 from core.config import get_settings
-from core.llm import chat_text, LLMResponse
-
+from core.llm import chat_text
 
 # ── Data loading ──────────────────────────────────────────────────
+
 
 def load_profile(profile_path: Optional[Path] = None) -> dict:
     """Load the canonical profile JSON."""
@@ -50,7 +50,9 @@ def select_narrative(query: str, profile: dict) -> str:
     # Simple keyword-based selection
     if any(kw in query_lower for kw in ["ai", "ml", "machine learning", "llm", "data science"]):
         return "ai"
-    if any(kw in query_lower for kw in ["growth", "acquisition", "retention", "conversion", "funnel"]):
+    if any(
+        kw in query_lower for kw in ["growth", "acquisition", "retention", "conversion", "funnel"]
+    ):
         return "growth"
     if any(kw in query_lower for kw in ["martech", "marketing", "automation", "crm", "campaign"]):
         return "martech"
@@ -70,6 +72,7 @@ def select_narrative(query: str, profile: dict) -> str:
 
 
 # ── Forbidden claims check ────────────────────────────────────────
+
 
 def check_response_grounding(
     response_text: str,

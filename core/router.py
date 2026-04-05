@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 
 class AgentTarget(str, Enum):
@@ -94,12 +93,7 @@ _ARTICLE_INDICATORS = [
 
 def _normalize_text(text: str) -> str:
     """Normalize punctuation variants used in chat copy/pastes."""
-    return (
-        text.lower()
-        .replace("’", "'")
-        .replace("‘", "'")
-        .replace("`", "'")
-    )
+    return text.lower().replace("’", "'").replace("‘", "'").replace("`", "'")
 
 
 def route(
@@ -119,7 +113,9 @@ def route(
     """
     # Rule 1: Image → Inbox (likely a JD screenshot)
     if has_image:
-        return RouteResult(AgentTarget.INBOX, "Message contains image (likely JD screenshot)", "image_input")
+        return RouteResult(
+            AgentTarget.INBOX, "Message contains image (likely JD screenshot)", "image_input"
+        )
 
     if text is None:
         return RouteResult(AgentTarget.CLARIFY, "No text or image provided", "empty_input")
@@ -130,20 +126,28 @@ def route(
     if has_url is None:
         has_url = bool(_URL_PATTERN.search(text))
     if has_url:
-        return RouteResult(AgentTarget.INBOX, "Message contains URL (likely job listing)", "url_input")
+        return RouteResult(
+            AgentTarget.INBOX, "Message contains URL (likely job listing)", "url_input"
+        )
 
     # Rule 3: Follow-up keywords
     if any(kw in text_lower for kw in _FOLLOWUP_KEYWORDS):
-        return RouteResult(AgentTarget.FOLLOWUP, "Message asks about follow-ups", "followup_keyword")
+        return RouteResult(
+            AgentTarget.FOLLOWUP, "Message asks about follow-ups", "followup_keyword"
+        )
 
     # Rule 4: Profile keywords
     if any(kw in text_lower for kw in _PROFILE_KEYWORDS):
-        return RouteResult(AgentTarget.PROFILE, "Message asks about Karan / profile", "profile_keyword")
+        return RouteResult(
+            AgentTarget.PROFILE, "Message asks about Karan / profile", "profile_keyword"
+        )
 
     # Rule 5: JD-like content → Inbox
     jd_score = sum(1 for ind in _JD_INDICATORS if ind in text_lower)
     if jd_score >= 2:
-        return RouteResult(AgentTarget.INBOX, f"Message looks like a JD ({jd_score} indicators)", "jd_signal")
+        return RouteResult(
+            AgentTarget.INBOX, f"Message looks like a JD ({jd_score} indicators)", "jd_signal"
+        )
 
     article_score = sum(1 for ind in _ARTICLE_INDICATORS if ind in text_lower)
     if article_score >= 2 and jd_score == 0:
@@ -160,4 +164,6 @@ def route(
             "Message is non-job or ambiguous",
             "ambiguous_non_job",
         )
-    return RouteResult(AgentTarget.CLARIFY, "Message is ambiguous — need clarification", "empty_text")
+    return RouteResult(
+        AgentTarget.CLARIFY, "Message is ambiguous — need clarification", "empty_text"
+    )

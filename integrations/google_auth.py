@@ -101,7 +101,6 @@ def get_google_credentials(*, interactive: bool = False) -> Any:
             f"Run 'python main.py auth-google' locally to set up OAuth."
         )
 
-    from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
 
     creds = None

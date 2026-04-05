@@ -35,6 +35,6 @@ def db():
         finally:
             conn.close()
 
-    _truncate()   # ensure clean state before the test
+    _truncate()  # ensure clean state before the test
     yield database_url
-    _truncate()   # clean up after the test
+    _truncate()  # clean up after the test

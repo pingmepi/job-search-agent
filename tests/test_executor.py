@@ -10,9 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-
-import pytest
 
 from agents.inbox.executor import (
     ExecutionContext,
@@ -24,7 +21,6 @@ from agents.inbox.executor import (
     execute_plan,
 )
 from agents.inbox.planner import (
-    TOOL_CALENDAR,
     TOOL_COMPILE,
     TOOL_DB_LOG,
     TOOL_JD_EXTRACT,
@@ -34,7 +30,6 @@ from agents.inbox.planner import (
     build_tool_plan,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -42,9 +37,14 @@ def _make_pack():
     """Return a minimal ApplicationPack-like namespace."""
     from agents.inbox.agent import ApplicationPack
     from agents.inbox.jd import JDSchema
+
     jd = JDSchema(
-        company="Acme", role="AI PM", location="Remote",
-        experience_required="3yr", skills=["python"], description="Own the roadmap.",
+        company="Acme",
+        role="AI PM",
+        location="Remote",
+        experience_required="3yr",
+        skills=["python"],
+        description="Own the roadmap.",
     )
     pack = ApplicationPack(jd=jd, resume_base="master_ai.tex")
     pack.collateral_files = {"email": None, "linkedin": None, "referral": None}
@@ -53,6 +53,7 @@ def _make_pack():
 
 def _make_settings(tmp_path: Path):
     import os
+
     return SimpleNamespace(
         database_url=os.environ.get("DATABASE_URL", ""),
         runs_dir=tmp_path / "runs",
@@ -74,6 +75,7 @@ def _make_plan(*, skip_upload=True, skip_calendar=True, selected_collateral=None
 
 def _make_ctx(tmp_path: Path, plan=None):
     import time
+
     if plan is None:
         plan = _make_plan()
     settings = _make_settings(tmp_path)
@@ -129,12 +131,12 @@ class TestKeywordCoverage:
 class TestOutsideEditableChanged:
     def test_only_editable_changed_returns_false(self):
         original = "header\n%%BEGIN_EDITABLE\nold\n%%END_EDITABLE\nfooter"
-        mutated  = "header\n%%BEGIN_EDITABLE\nnew\n%%END_EDITABLE\nfooter"
+        mutated = "header\n%%BEGIN_EDITABLE\nnew\n%%END_EDITABLE\nfooter"
         assert _outside_editable_content_changed(original, mutated) is False
 
     def test_outside_changed_returns_true(self):
         original = "header\n%%BEGIN_EDITABLE\nold\n%%END_EDITABLE\nfooter"
-        mutated  = "CHANGED\n%%BEGIN_EDITABLE\nold\n%%END_EDITABLE\nfooter"
+        mutated = "CHANGED\n%%BEGIN_EDITABLE\nold\n%%END_EDITABLE\nfooter"
         assert _outside_editable_content_changed(original, mutated) is True
 
 
@@ -175,8 +177,9 @@ class TestRunStepWithRetry:
 
         monkeypatch.setitem(ex._HANDLERS, TOOL_JD_EXTRACT, _fake_jd_handler)
 
-        step = ToolStep(name="jd_extract", tool=TOOL_JD_EXTRACT,
-                        retry_on_transient=True, max_attempts=3)
+        step = ToolStep(
+            name="jd_extract", tool=TOOL_JD_EXTRACT, retry_on_transient=True, max_attempts=3
+        )
         pack = _make_pack()
         ctx = _make_ctx(tmp_path)
         result = _run_step_with_retry(step, pack, ctx)
@@ -195,8 +198,9 @@ class TestRunStepWithRetry:
 
         monkeypatch.setitem(ex._HANDLERS, TOOL_JD_EXTRACT, _failing_handler)
 
-        step = ToolStep(name="jd_extract", tool=TOOL_JD_EXTRACT,
-                        retry_on_transient=True, max_attempts=3)
+        step = ToolStep(
+            name="jd_extract", tool=TOOL_JD_EXTRACT, retry_on_transient=True, max_attempts=3
+        )
         pack = _make_pack()
         ctx = _make_ctx(tmp_path)
         result = _run_step_with_retry(step, pack, ctx)
@@ -217,8 +221,9 @@ class TestRunStepWithRetry:
         monkeypatch.setattr(ex, "_is_transient_error", lambda _exc: True)
         monkeypatch.setattr("time.sleep", lambda _: None)
 
-        step = ToolStep(name="jd_extract", tool=TOOL_JD_EXTRACT,
-                        retry_on_transient=True, max_attempts=3)
+        step = ToolStep(
+            name="jd_extract", tool=TOOL_JD_EXTRACT, retry_on_transient=True, max_attempts=3
+        )
         pack = _make_pack()
         ctx = _make_ctx(tmp_path)
         result = _run_step_with_retry(step, pack, ctx)
@@ -233,7 +238,6 @@ class TestExecutePlan:
     def test_step_failure_appended_to_errors(self, tmp_path, monkeypatch):
         """A failed step should append an error message to pack.errors."""
         import agents.inbox.executor as ex
-        from agents.inbox.jd import JDSchema
 
         def _fail(step, pack, ctx):
             raise RuntimeError("extraction failed")
@@ -296,7 +300,13 @@ class TestExecutePlan:
             calendar_ran["ran"] = True
             return pack
 
-        for tool in [TOOL_JD_EXTRACT, TOOL_RESUME_SELECT, TOOL_RESUME_MUTATE, TOOL_DB_LOG, "eval_log"]:
+        for tool in [
+            TOOL_JD_EXTRACT,
+            TOOL_RESUME_SELECT,
+            TOOL_RESUME_MUTATE,
+            TOOL_DB_LOG,
+            "eval_log",
+        ]:
             monkeypatch.setitem(ex._HANDLERS, tool, _ok)
 
         monkeypatch.setitem(ex._HANDLERS, TOOL_COMPILE, _fail_compile)

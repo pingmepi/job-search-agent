@@ -63,7 +63,9 @@ def create_webhook_app(
     """Create a FastAPI app that processes Telegram webhook updates."""
     resolved_settings = settings or get_settings()
     runtime = TelegramWebhookRuntime(telegram_app)
-    resolved_db_path = Path(resolved_settings.db_path) if hasattr(resolved_settings, "db_path") else None
+    resolved_db_path = (
+        Path(resolved_settings.db_path) if hasattr(resolved_settings, "db_path") else None
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -245,7 +247,9 @@ def create_webhook_app(
                 try:
                     if isinstance(update_id, int):
                         runtime.update_attempts[update_id] = attempt
-                    logger.info("Processing update_id=%s attempt=%s/%s", update_id, attempt, max_attempts)
+                    logger.info(
+                        "Processing update_id=%s attempt=%s/%s", update_id, attempt, max_attempts
+                    )
                     process_task = asyncio.create_task(runtime.telegram_app.process_update(update))
                     await asyncio.wait_for(
                         asyncio.shield(process_task),
@@ -278,12 +282,14 @@ def create_webhook_app(
                         async with runtime.lock:
                             runtime.background_update_tasks[update_id] = process_task
                         process_task.add_done_callback(
-                            lambda done, uid=update_id, eid=event_id, upd=update: asyncio.create_task(
-                                _finalize_background_update(
-                                    update_id=uid,
-                                    event_id=eid,
-                                    update=upd,
-                                    task=done,
+                            lambda done, uid=update_id, eid=event_id, upd=update: (
+                                asyncio.create_task(
+                                    _finalize_background_update(
+                                        update_id=uid,
+                                        event_id=eid,
+                                        update=upd,
+                                        task=done,
+                                    )
                                 )
                             )
                         )
@@ -299,7 +305,12 @@ def create_webhook_app(
                     break
                 except Exception as exc:
                     last_error = exc
-                    logger.warning("Update processing failed update_id=%s attempt=%s error=%s", update_id, attempt, exc)
+                    logger.warning(
+                        "Update processing failed update_id=%s attempt=%s error=%s",
+                        update_id,
+                        attempt,
+                        exc,
+                    )
                     if attempt == max_attempts:
                         await _notify_processing_failed(update)
                         if isinstance(update_id, int):
@@ -324,7 +335,9 @@ def create_webhook_app(
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if last_error is None:
-            logger.info("Webhook update processed update_id=%s latency_ms=%s", update_id, elapsed_ms)
+            logger.info(
+                "Webhook update processed update_id=%s latency_ms=%s", update_id, elapsed_ms
+            )
         else:
             logger.error(
                 "Webhook update failed after retries update_id=%s latency_ms=%s",

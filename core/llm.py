@@ -16,7 +16,7 @@ including free-tier models.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
@@ -89,9 +89,9 @@ def resolve_generation_cost(generation_id: str) -> float:
     This should be called AFTER the pipeline completes — not inline
     during LLM calls — to avoid adding latency to each request.
     """
+    import json as _json
     import time
     import urllib.request
-    import json as _json
 
     settings = get_settings()
     url = f"{settings.openrouter_base_url.rstrip('/')}/generation?id={generation_id}"

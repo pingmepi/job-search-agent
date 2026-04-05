@@ -9,7 +9,6 @@ Key constraints (PRD §10):
 
 from __future__ import annotations
 
-import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,6 +105,7 @@ def apply_mutations(
 
 # ── Resume selection ──────────────────────────────────────────────
 
+
 def compute_keyword_overlap(jd_skills: list[str], tex_content: str) -> float:
     """Compute fraction of JD skills found in resume text."""
     if not jd_skills:
@@ -158,11 +158,7 @@ def select_base_resume_with_details(
     matched_skills = sorted([s for s in jd_skills_normalized if s in chosen_text])
     missing_skills = sorted([s for s in jd_skills_normalized if s not in chosen_text])
 
-    top_candidates = [
-        path.name
-        for path, score in candidate_scores
-        if score == best_score
-    ]
+    top_candidates = [path.name for path, score in candidate_scores if score == best_score]
     tie_break_reason = (
         "highest_score_unique"
         if len(top_candidates) == 1
@@ -186,6 +182,7 @@ def select_base_resume_with_details(
 
 # ── Compilation ───────────────────────────────────────────────────
 
+
 def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     """
     Compile a .tex file to PDF using pdflatex.
@@ -200,7 +197,8 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         [
             "pdflatex",
             "-interaction=nonstopmode",
-            "-output-directory", str(output_dir),
+            "-output-directory",
+            str(output_dir),
             str(tex_path),
         ],
         capture_output=True,
@@ -221,6 +219,7 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
 
 
 # ── Page-count verification ───────────────────────────────────────
+
 
 def get_pdf_page_count(pdf_path: Path) -> int:
     """Return the number of pages in a compiled PDF."""

@@ -21,6 +21,7 @@ def _get_calendar_service():
     """Build an authenticated Google Calendar service."""
     creds = get_google_credentials()
     from googleapiclient.discovery import build
+
     return build("calendar", "v3", credentials=creds)
 
 
@@ -47,9 +48,7 @@ def create_application_events(
         "end": {"date": now.strftime("%Y-%m-%d")},
         "reminders": {"useDefault": False},
     }
-    apply_result = service.events().insert(
-        calendarId="primary", body=apply_event
-    ).execute()
+    apply_result = service.events().insert(calendarId="primary", body=apply_event).execute()
 
     followup_date = now + timedelta(days=followup_days)
     followup_event = {
@@ -65,9 +64,7 @@ def create_application_events(
             "overrides": [{"method": "popup", "minutes": 60}],
         },
     }
-    followup_result = service.events().insert(
-        calendarId="primary", body=followup_event
-    ).execute()
+    followup_result = service.events().insert(calendarId="primary", body=followup_event).execute()
 
     logger.info(
         "Calendar events created: Applied (%s), Follow-up (%s)",

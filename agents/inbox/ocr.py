@@ -9,22 +9,21 @@ Pipeline:
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-from typing import Optional
 
 try:
     import pytesseract
     from PIL import Image
+
     HAS_TESSERACT = True
 except ImportError:
     HAS_TESSERACT = False
 
-from core.llm import chat_text
 from core.config import get_settings
-
+from core.llm import chat_text
 
 # ── OCR ───────────────────────────────────────────────────────────
+
 
 def extract_text_from_image(image_path: Path) -> str:
     """
@@ -137,6 +136,7 @@ class OCRQualityError(RuntimeError):
 
 
 # ── Full pipeline ─────────────────────────────────────────────────
+
 
 def ocr_pipeline(image_path: Path) -> str:
     """

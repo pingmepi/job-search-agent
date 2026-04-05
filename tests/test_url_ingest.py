@@ -45,7 +45,9 @@ def test_fetch_url_text_success(monkeypatch) -> None:
             )
             return body.encode("utf-8")
 
-    monkeypatch.setattr("agents.inbox.url_ingest.urlopen", lambda *_args, **_kwargs: _FakeResponse())
+    monkeypatch.setattr(
+        "agents.inbox.url_ingest.urlopen", lambda *_args, **_kwargs: _FakeResponse()
+    )
     result = fetch_url_text("https://example.com/job")
     assert result.ok is True
     assert "job description" in result.extracted_text.lower()

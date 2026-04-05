@@ -20,15 +20,15 @@ from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
-from core.config import get_settings
-from core.router import route, AgentTarget
 from agents.inbox.collateral import normalize_collateral_selection
 from agents.inbox.url_ingest import extract_first_url, fetch_url_text
+from core.config import get_settings
+from core.router import AgentTarget, route
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,8 @@ COLLATERAL_PROMPT = (
     "Examples: `email` or `email, linkedin`.\n"
     "Reply `none` to skip collateral generation."
 )
+
+
 async def _run_and_respond(
     update: Update,
     *,
@@ -73,7 +75,10 @@ async def _run_and_respond(
             pack.generated_collateral,
         )
         if not pack.pdf_path:
-            details = "\n".join(f"• {e}" for e in pack.errors[:5]) or "• No compiled one-page resume artifact was produced."
+            details = (
+                "\n".join(f"• {e}" for e in pack.errors[:5])
+                or "• No compiled one-page resume artifact was produced."
+            )
             await update.message.reply_text(
                 "❌ Process failed\n"
                 "I couldn't produce a valid one-page terminal resume artifact.\n"
@@ -83,7 +88,9 @@ async def _run_and_respond(
             )
             return
         jd = pack.jd
-        generated_label = ", ".join(pack.generated_collateral) if pack.generated_collateral else "none"
+        generated_label = (
+            ", ".join(pack.generated_collateral) if pack.generated_collateral else "none"
+        )
         await update.message.reply_text(
             f"✅ Process completed\n"
             f"✅ JD Extracted:\n"
@@ -130,6 +137,7 @@ async def _run_and_respond(
 
 
 # ── Handlers ──────────────────────────────────────────────────────
+
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command."""
@@ -185,6 +193,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # Save to temp file
     import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
         await photo_file.download_to_drive(tmp.name)
         image_path = Path(tmp.name)
@@ -249,8 +258,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if result.target == AgentTarget.INBOX:
         await update.message.reply_text(
-            f"📥 Routing to Inbox Agent... ({result.reason})\n"
-            "Preparing job input..."
+            f"📥 Routing to Inbox Agent... ({result.reason})\nPreparing job input..."
         )
         try:
             settings = get_settings()
@@ -285,6 +293,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"👤 Routing to Profile Agent... ({result.reason})")
         try:
             from agents.profile.agent import answer
+
             response_text, narrative, ungrounded = answer(text)
             warning = ""
             if ungrounded:
@@ -302,11 +311,11 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("📰 Summarizing article...")
         try:
             from agents.article.agent import summarize
+
             summary, signals = summarize(text)
             signal_text = "\n".join(f"• {s}" for s in signals) if signals else "None detected."
             await update.message.reply_text(
-                f"📰 Article Summary\n\n{summary}\n\n"
-                f"🔍 Job search signals:\n{signal_text}"
+                f"📰 Article Summary\n\n{summary}\n\n🔍 Job search signals:\n{signal_text}"
             )
         except Exception as e:
             await update.message.reply_text(f"❌ Error summarizing article: {e}")
@@ -328,14 +337,14 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 # ── Bot startup ───────────────────────────────────────────────────
 
+
 def create_bot() -> Application:
     """Create and configure the Telegram bot application."""
     settings = get_settings()
 
     if settings.telegram_token == "placeholder":
         logger.warning(
-            "⚠️  Telegram token is 'placeholder'. "
-            "Set TELEGRAM_TOKEN in .env to use the bot."
+            "⚠️  Telegram token is 'placeholder'. Set TELEGRAM_TOKEN in .env to use the bot."
         )
 
     app = Application.builder().token(settings.telegram_token).build()

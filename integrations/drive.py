@@ -19,6 +19,7 @@ def _get_drive_service():
     """Build an authenticated Google Drive service."""
     creds = get_google_credentials()
     from googleapiclient.discovery import build
+
     return build("drive", "v3", credentials=creds)
 
 
@@ -101,16 +102,20 @@ def upload_application_artifacts(
 
             @_upload_with_retry
             def _do_upload():
-                return service.files().create(
-                    body=file_metadata, media_body=media, fields="id,webViewLink,name"
-                ).execute()
+                return (
+                    service.files()
+                    .create(body=file_metadata, media_body=media, fields="id,webViewLink,name")
+                    .execute()
+                )
 
             file = _do_upload()
             uploads[logical_name] = {
                 "status": "uploaded",
                 "id": file["id"],
                 "name": file["name"],
-                "webViewLink": file.get("webViewLink", f"https://drive.google.com/file/d/{file['id']}"),
+                "webViewLink": file.get(
+                    "webViewLink", f"https://drive.google.com/file/d/{file['id']}"
+                ),
             }
             logger.info("Uploaded %s (%s) to Drive", path.name, logical_name)
         except Exception as upload_err:

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
 from evals.hard import (
-    check_jd_schema,
+    check_cost,
+    check_draft_length,
     check_edit_scope,
     check_forbidden_claims,
     check_forbidden_claims_per_bullet,
-    check_draft_length,
-    check_cost,
+    check_jd_schema,
 )
 
 
@@ -61,7 +59,8 @@ class TestForbiddenClaims:
         mutated_bullets = ["Worked at Google and Acme"]
         # "Google" was not in original or bullet bank — should flag
         count = check_forbidden_claims(
-            original_bullets, mutated_bullets,
+            original_bullets,
+            mutated_bullets,
             bullet_bank=["Worked at Acme"],
         )
         assert count > 0
@@ -76,7 +75,9 @@ class TestForbiddenClaims:
 class TestForbiddenClaimsPerBullet:
     def test_returns_list_of_dicts(self):
         results = check_forbidden_claims_per_bullet(
-            ["Led team of 5"], ["Led team of 5"], bullet_bank=[],
+            ["Led team of 5"],
+            ["Led team of 5"],
+            bullet_bank=[],
         )
         assert isinstance(results, list)
         assert len(results) == 1

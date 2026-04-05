@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import psycopg2.extras
-import pytest
 
 from core.db import (
     complete_run,
@@ -66,8 +64,11 @@ class TestSchema:
 class TestJobsCRUD:
     def test_insert_and_get(self, db):
         job_id = insert_job(
-            "Acme Corp", "AI PM", "abc123",
-            fit_score=85, resume_used="master_ai.tex",
+            "Acme Corp",
+            "AI PM",
+            "abc123",
+            fit_score=85,
+            resume_used="master_ai.tex",
         )
         assert job_id is not None
         assert job_id > 0

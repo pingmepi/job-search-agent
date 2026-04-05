@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agents.inbox.planner import (
     TOOL_CALENDAR,
     TOOL_COMPILE,
@@ -24,15 +22,13 @@ from agents.inbox.planner import (
     TOOL_OCR,
     TOOL_RESUME_MUTATE,
     TOOL_RESUME_SELECT,
-    ToolPlan,
-    ToolStep,
     build_tool_plan,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 TEXT_INPUT = "We are hiring a Senior AI PM at Acme Inc, full-time remote."
-URL_INPUT  = "https://example.com/jobs/ai-pm"
+URL_INPUT = "https://example.com/jobs/ai-pm"
 
 
 # ── Core assembly tests ───────────────────────────────────────────────────────
@@ -42,8 +38,14 @@ class TestBuildToolPlanBasic:
     def test_text_input_contains_core_steps(self):
         plan = build_tool_plan(TEXT_INPUT)
         tools = plan.tool_names()
-        for required in [TOOL_JD_EXTRACT, TOOL_RESUME_SELECT, TOOL_RESUME_MUTATE,
-                         TOOL_COMPILE, TOOL_DB_LOG, TOOL_EVAL_LOG]:
+        for required in [
+            TOOL_JD_EXTRACT,
+            TOOL_RESUME_SELECT,
+            TOOL_RESUME_MUTATE,
+            TOOL_COMPILE,
+            TOOL_DB_LOG,
+            TOOL_EVAL_LOG,
+        ]:
             assert required in tools, f"Missing step: {required}"
 
     def test_text_input_has_no_ocr_step(self):

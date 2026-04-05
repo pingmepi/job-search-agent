@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_one_page_terminal_enforcement.py tests/test_resume_json_retry.py -x --tb=short)",
+      "Bash(python3 -m pytest tests/test_one_page_terminal_enforcement.py tests/test_resume_json_retry.py -x --tb=short)",
+      "Bash(ls .venv/bin/python*)",
+      "Bash(uv run:*)",
+      "Bash(python -m ruff:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(git commit -m ':*)"
+    ]
+  }
+}

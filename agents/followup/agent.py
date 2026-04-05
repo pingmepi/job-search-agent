@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from core.db import get_jobs_needing_followup, update_job
 from core.llm import chat_text
 
-
 # ── Escalation tiers ──────────────────────────────────────────────
 
 ESCALATION_TIERS = {
@@ -39,6 +38,7 @@ MAX_FOLLOW_UPS = 3
 
 
 # ── Follow-up detection ──────────────────────────────────────────
+
 
 def detect_followups(*, db_path=None) -> list[dict]:
     """
@@ -139,13 +139,15 @@ def generate_all_followups(*, db_path=None, persist_progress: bool = True) -> li
         next_count = int(job.get("follow_up_count", 0) or 0)
         if persist_progress:
             next_count = _persist_followup_progress(job, db_path=db_path)
-        results.append({
-            "job_id": job["id"],
-            "company": job["company"],
-            "role": job["role"],
-            "tier": job["tier_number"] + 1,
-            "draft": draft,
-            "follow_up_count_after": next_count,
-        })
+        results.append(
+            {
+                "job_id": job["id"],
+                "company": job["company"],
+                "role": job["role"],
+                "tier": job["tier_number"] + 1,
+                "draft": draft,
+                "follow_up_count_after": next_count,
+            }
+        )
 
     return results

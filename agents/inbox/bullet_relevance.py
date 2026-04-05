@@ -33,18 +33,14 @@ def score_bullet_relevance(
     # Tag overlap: fraction of bullet tags that match any JD skill
     if tags:
         tag_matches = sum(
-            1 for tag in tags
-            if any(skill in tag or tag in skill for skill in normalized_skills)
+            1 for tag in tags if any(skill in tag or tag in skill for skill in normalized_skills)
         )
         tag_score = tag_matches / len(tags)
     else:
         tag_score = 0.0
 
     # Keyword overlap: fraction of JD skills found in bullet text
-    keyword_matches = sum(
-        1 for skill in normalized_skills
-        if skill in bullet_text
-    )
+    keyword_matches = sum(1 for skill in normalized_skills if skill in bullet_text)
     keyword_score = keyword_matches / len(normalized_skills)
 
     return 0.6 * tag_score + 0.4 * keyword_score

@@ -1,4 +1,5 @@
 """Tests for agents.article.agent.summarize()."""
+
 from __future__ import annotations
 
 import json

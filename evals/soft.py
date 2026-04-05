@@ -32,6 +32,7 @@ Return ONLY a JSON object: {"score": <number>, "reasoning": "<brief explanation>
     response = chat_text(system, user_msg, model=model, json_mode=True)
 
     import json
+
     try:
         data = json.loads(response.text)
         score = float(data.get("score", 0))
@@ -66,10 +67,7 @@ Check:
 
 Return ONLY a JSON object: {"score": <number>, "reasoning": "<brief explanation>"}
 """
-    user_msg = (
-        f"RAW TEXT:\n{raw_text}\n\n"
-        f"EXTRACTION:\n{json.dumps(extracted_jd, indent=2)}"
-    )
+    user_msg = f"RAW TEXT:\n{raw_text}\n\nEXTRACTION:\n{json.dumps(extracted_jd, indent=2)}"
 
     response = chat_text(system, user_msg, model=model, json_mode=True)
 

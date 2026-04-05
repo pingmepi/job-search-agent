@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
+import pytest
+
 from agents.profile.agent import (
-    load_profile,
-    load_bullet_bank,
-    select_narrative,
-    check_response_grounding,
     answer,
+    check_response_grounding,
+    load_bullet_bank,
+    load_profile,
+    select_narrative,
 )
 
 
@@ -39,8 +40,18 @@ def profile_path(tmp_path: Path) -> Path:
 def bullet_bank_path(tmp_path: Path) -> Path:
     """Create a test bullet bank."""
     bullets = [
-        {"id": "ai-001", "role_family": "ai", "bullet": "Built ML pipeline at Acme Corp", "tags": ["ml"]},
-        {"id": "growth-001", "role_family": "growth", "bullet": "Drove 3x MAU growth", "tags": ["growth"]},
+        {
+            "id": "ai-001",
+            "role_family": "ai",
+            "bullet": "Built ML pipeline at Acme Corp",
+            "tags": ["ml"],
+        },
+        {
+            "id": "growth-001",
+            "role_family": "growth",
+            "bullet": "Drove 3x MAU growth",
+            "tags": ["growth"],
+        },
     ]
     path = tmp_path / "bullet_bank.json"
     path.write_text(json.dumps(bullets), encoding="utf-8")
@@ -110,11 +121,15 @@ class TestGroundingCheck:
 
 
 class TestAnswerGrounding:
-    def test_answer_returns_ungrounded_claims(self, profile_path: Path, bullet_bank_path: Path, monkeypatch):
+    def test_answer_returns_ungrounded_claims(
+        self, profile_path: Path, bullet_bank_path: Path, monkeypatch
+    ):
         class _FakeResponse:
             text = "Karan scaled Stripe Finance conversion by 50%."
 
-        monkeypatch.setattr("agents.profile.agent.chat_text", lambda *_args, **_kwargs: _FakeResponse())
+        monkeypatch.setattr(
+            "agents.profile.agent.chat_text", lambda *_args, **_kwargs: _FakeResponse()
+        )
 
         response_text, narrative, ungrounded = answer(
             "Share Karan's highlights",

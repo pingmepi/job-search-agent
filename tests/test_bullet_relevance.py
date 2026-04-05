@@ -40,10 +40,7 @@ class TestScoreBulletRelevance:
 
 class TestSelectRelevantBullets:
     def _make_bank(self, n: int) -> list[dict]:
-        return [
-            {"id": f"b-{i}", "bullet": f"Bullet {i}", "tags": [f"skill-{i}"]}
-            for i in range(n)
-        ]
+        return [{"id": f"b-{i}", "bullet": f"Bullet {i}", "tags": [f"skill-{i}"]} for i in range(n)]
 
     def test_top_n_respected(self):
         bank = self._make_bank(20)

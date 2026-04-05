@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 
 # ── Helpers ───────────────────────────────────────────────────────
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -165,6 +166,7 @@ def get_conn() -> Generator[Any, None, None]:
 
 # ── Job CRUD ──────────────────────────────────────────────────────
 
+
 def insert_job(
     company: str,
     role: str,
@@ -187,8 +189,18 @@ def insert_job(
                 calendar_apply_event_id, calendar_followup_event_id, created_at, updated_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (company, role, jd_hash, fit_score, resume_used, drive_link,
-             calendar_apply_event_id, calendar_followup_event_id, now, now),
+            (
+                company,
+                role,
+                jd_hash,
+                fit_score,
+                resume_used,
+                drive_link,
+                calendar_apply_event_id,
+                calendar_followup_event_id,
+                now,
+                now,
+            ),
         )
         row = cur.fetchone()
         return row["id"]
@@ -229,6 +241,7 @@ def update_job(job_id: int, *, db_path: Any = None, **fields: Any) -> None:
 
 
 # ── Run CRUD ──────────────────────────────────────────────────────
+
 
 def insert_run(
     run_id: str,
@@ -335,6 +348,7 @@ def list_runs(*, limit: int = 20, db_path: Any = None) -> list[dict[str, Any]]:
 
 
 # ── Run Steps (audit trail) ──────────────────────────────────────
+
 
 def insert_step(
     run_id: str,
@@ -458,6 +472,7 @@ def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
 
 
 # ── Webhook Event CRUD ───────────────────────────────────────────
+
 
 def insert_webhook_event(
     event_id: str,

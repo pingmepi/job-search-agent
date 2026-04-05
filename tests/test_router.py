@@ -30,25 +30,31 @@ class TestURLRouting:
 
 
 class TestProfileRouting:
-    @pytest.mark.parametrize("msg", [
-        "Tell me about Karan",
-        "What is Karan's background?",
-        "Who is Karan?",
-        "Can you share a bio?",
-        "Karan's experience in AI",
-        "Karan's skills",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "Tell me about Karan",
+            "What is Karan's background?",
+            "Who is Karan?",
+            "Can you share a bio?",
+            "Karan's experience in AI",
+            "Karan's skills",
+        ],
+    )
     def test_profile_keywords(self, msg: str):
         result = route(msg)
         assert result.target == AgentTarget.PROFILE
 
 
 class TestFollowUpRouting:
-    @pytest.mark.parametrize("msg", [
-        "Any follow up needed?",
-        "Check follow-up status",
-        "Show me pending applications for nudge",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "Any follow up needed?",
+            "Check follow-up status",
+            "Show me pending applications for nudge",
+        ],
+    )
     def test_followup_keywords(self, msg: str):
         result = route(msg)
         assert result.target == AgentTarget.FOLLOWUP

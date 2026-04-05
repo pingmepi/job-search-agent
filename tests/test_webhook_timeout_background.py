@@ -84,7 +84,9 @@ class _SlowTelegramApp:
             raise
 
 
-def test_webhook_timeout_runs_handler_in_background_without_duplicate_processing(monkeypatch, db) -> None:
+def test_webhook_timeout_runs_handler_in_background_without_duplicate_processing(
+    monkeypatch, db
+) -> None:
     app_module = _load_app_module_with_stubs()
     tg_app = _SlowTelegramApp()
 
