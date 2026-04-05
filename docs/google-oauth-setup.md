@@ -53,21 +53,18 @@ python main.py auth-google
 ```
 
 This will:
-1. Open your browser for Google Drive authorization
-2. Save the Drive token to `credentials/drive_token.pickle`
-3. Open your browser again for Google Calendar authorization
-4. Save the Calendar token to `credentials/calendar_token.pickle`
+1. Open your browser for Google authorization (Drive + Calendar scopes in one prompt)
+2. Save the token to `credentials/google_token.pickle`
 
 ## Step 6: Deploy to Railway
 
-Railway containers are stateless — pickle files don't persist across deploys. Use base64-encoded env vars instead.
+Railway containers are stateless — the pickle file doesn't persist across deploys. Use a base64-encoded env var instead.
 
-### Encode tokens
+### Encode the token
 
 ```bash
 # On macOS/Linux
-base64 < credentials/drive_token.pickle | tr -d '\n'
-base64 < credentials/calendar_token.pickle | tr -d '\n'
+base64 < credentials/google_token.pickle | tr -d '\n'
 ```
 
 ### Set Railway env vars
@@ -77,12 +74,11 @@ In your Railway project settings, add:
 | Variable | Value |
 |----------|-------|
 | `GOOGLE_CREDENTIALS_PATH` | `credentials/google_oauth.json` |
-| `GOOGLE_DRIVE_TOKEN_B64` | *(paste base64 Drive token)* |
-| `GOOGLE_CALENDAR_TOKEN_B64` | *(paste base64 Calendar token)* |
+| `GOOGLE_TOKEN_B64` | *(paste base64 token)* |
 | `TELEGRAM_ENABLE_DRIVE_UPLOAD` | `true` |
 | `TELEGRAM_ENABLE_CALENDAR_EVENTS` | `true` |
 
-The app will automatically decode the base64 tokens to pickle files on startup.
+The app will automatically decode the base64 token to a pickle file on startup.
 
 ## Step 7: Verify
 
@@ -95,7 +91,7 @@ Send a job description to the Telegram bot. After processing, check:
 Tokens auto-refresh using the embedded refresh token. If refresh fails (e.g., token revoked):
 
 1. Re-run `python main.py auth-google` locally
-2. Re-encode and update the Railway env vars
+2. Re-encode and update `GOOGLE_TOKEN_B64` in Railway
 
 ## Troubleshooting
 

@@ -1,21 +1,20 @@
 """
 Shared Google OAuth2 authentication and retry utilities.
 
-Provides headless-safe credential loading for Railway deployment:
+Uses a single token file with both Drive and Calendar scopes.
+
+Headless-safe credential loading for Railway deployment:
 - Load cached token pickle → refresh if expired
-- Decode base64-encoded tokens from env vars on first call
+- Decode base64-encoded token from GOOGLE_TOKEN_B64 env var on first call
 - Interactive mode for local CLI bootstrap (`python main.py auth-google`)
 - Never opens a browser in headless mode
-
-Usage:
-    creds = get_google_credentials(SCOPES, "drive_token.pickle")
-    creds = get_google_credentials(SCOPES, "calendar_token.pickle", interactive=True)
 """
 
 from __future__ import annotations
 
 import base64
 import logging
+import os
 import pickle
 from pathlib import Path
 from typing import Any
@@ -28,6 +27,14 @@ from tenacity import (
 )
 
 logger = logging.getLogger(__name__)
+
+ALL_SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/calendar.events",
+]
+
+TOKEN_FILENAME = "google_token.pickle"
+TOKEN_ENV_VAR = "GOOGLE_TOKEN_B64"
 
 
 # ── Exceptions ────────────────────────────────────────────────────
@@ -45,14 +52,12 @@ class GoogleAuthExpired(GoogleAuthError):
     """Token expired and automatic refresh failed."""
 
 
-# ── Token bootstrap from env vars ─────────────────────────────────
+# ── Token bootstrap from env var ──────────────────────────────────
 
 
-def _bootstrap_token_from_env(env_var: str, token_path: Path) -> None:
+def _bootstrap_token_from_env(token_path: Path) -> None:
     """Decode a base64-encoded token from env var to disk if not already present."""
-    import os
-
-    b64 = os.environ.get(env_var, "")
+    b64 = os.environ.get(TOKEN_ENV_VAR, "")
     if not b64 or token_path.exists():
         return
 
@@ -60,33 +65,19 @@ def _bootstrap_token_from_env(env_var: str, token_path: Path) -> None:
     try:
         data = base64.b64decode(b64)
         token_path.write_bytes(data)
-        logger.info("Bootstrapped %s from %s", token_path.name, env_var)
+        logger.info("Bootstrapped %s from %s", token_path.name, TOKEN_ENV_VAR)
     except Exception as exc:
-        logger.warning("Failed to decode %s: %s", env_var, exc)
-
-
-# Token filename → env var mapping
-_TOKEN_ENV_MAP = {
-    "drive_token.pickle": "GOOGLE_DRIVE_TOKEN_B64",
-    "calendar_token.pickle": "GOOGLE_CALENDAR_TOKEN_B64",
-}
+        logger.warning("Failed to decode %s: %s", TOKEN_ENV_VAR, exc)
 
 
 # ── Core credential loader ────────────────────────────────────────
 
 
-def get_google_credentials(
-    scopes: list[str],
-    token_filename: str,
-    *,
-    interactive: bool = False,
-) -> Any:
+def get_google_credentials(*, interactive: bool = False) -> Any:
     """
-    Load or create Google OAuth2 credentials.
+    Load or create Google OAuth2 credentials with Drive + Calendar scopes.
 
     Args:
-        scopes: OAuth2 scopes to request.
-        token_filename: Name of the pickle file (e.g. "drive_token.pickle").
         interactive: If True, open browser for OAuth flow. Must be False in headless.
 
     Returns:
@@ -100,12 +91,9 @@ def get_google_credentials(
 
     settings = get_settings()
     creds_path = Path(settings.google_credentials_path)
-    token_path = creds_path.parent / token_filename
+    token_path = creds_path.parent / TOKEN_FILENAME
 
-    # Try env-var bootstrap first
-    env_var = _TOKEN_ENV_MAP.get(token_filename)
-    if env_var:
-        _bootstrap_token_from_env(env_var, token_path)
+    _bootstrap_token_from_env(token_path)
 
     if not creds_path.exists() and not token_path.exists():
         raise GoogleAuthNotConfigured(
@@ -127,27 +115,25 @@ def get_google_credentials(
     if creds and creds.valid:
         return creds
 
-    # Try refresh
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
             with open(token_path, "wb") as f:
                 pickle.dump(creds, f)
-            logger.info("Refreshed token: %s", token_filename)
+            logger.info("Refreshed Google token")
             return creds
         except Exception as exc:
             if not interactive:
                 raise GoogleAuthExpired(
-                    f"Token expired and refresh failed for {token_filename}: {exc}. "
+                    f"Token expired and refresh failed: {exc}. "
                     f"Run 'python main.py auth-google' locally to re-authenticate."
                 ) from exc
             logger.warning("Token refresh failed, falling through to interactive: %s", exc)
 
-    # Interactive flow (local only)
     if not interactive:
         raise GoogleAuthNotConfigured(
-            f"No valid token for {token_filename} and interactive mode is disabled. "
-            f"Run 'python main.py auth-google' locally to authenticate."
+            "No valid Google token and interactive mode is disabled. "
+            "Run 'python main.py auth-google' locally to authenticate."
         )
 
     if not creds_path.exists():
@@ -157,14 +143,14 @@ def get_google_credentials(
 
     from google_auth_oauthlib.flow import InstalledAppFlow
 
-    flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), scopes)
+    flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), ALL_SCOPES)
     creds = flow.run_local_server(port=0)
 
     token_path.parent.mkdir(parents=True, exist_ok=True)
     with open(token_path, "wb") as f:
         pickle.dump(creds, f)
 
-    logger.info("Saved new token: %s", token_filename)
+    logger.info("Saved Google token with scopes: %s", ALL_SCOPES)
     return creds
 
 

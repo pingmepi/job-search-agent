@@ -14,12 +14,10 @@ from integrations.google_auth import get_google_credentials, google_api_retry
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-
 
 def _get_drive_service():
     """Build an authenticated Google Drive service."""
-    creds = get_google_credentials(SCOPES, "drive_token.pickle")
+    creds = get_google_credentials()
     from googleapiclient.discovery import build
     return build("drive", "v3", credentials=creds)
 

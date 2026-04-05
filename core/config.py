@@ -81,11 +81,16 @@ class Settings:
             "GOOGLE_CREDENTIALS_PATH", "credentials/google_oauth.json"
         )
     )
-    google_drive_token_b64: str = field(
-        default_factory=lambda: os.environ.get("GOOGLE_DRIVE_TOKEN_B64", "")
+    google_token_b64: str = field(
+        default_factory=lambda: os.environ.get("GOOGLE_TOKEN_B64", "")
     )
-    google_calendar_token_b64: str = field(
-        default_factory=lambda: os.environ.get("GOOGLE_CALENDAR_TOKEN_B64", "")
+
+    # ── Resume enforcement ─────────────────────────────────────────
+    enforce_single_page: bool = field(
+        default_factory=lambda: _env_bool("ENFORCE_SINGLE_PAGE", default=True)
+    )
+    max_condense_retries: int = field(
+        default_factory=lambda: int(os.environ.get("MAX_CONDENSE_RETRIES", "2"))
     )
 
     # ── Cost ──────────────────────────────────────────────────────
