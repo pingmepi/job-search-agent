@@ -265,6 +265,28 @@ def main() -> None:
     elif command == "replay-webhook":
         _run_replay_webhook(sys.argv[2:])
 
+    elif command == "auth-google":
+        from integrations.google_auth import get_google_credentials
+        print("Authenticating Google Drive...")
+        get_google_credentials(
+            ["https://www.googleapis.com/auth/drive.file"],
+            "drive_token.pickle",
+            interactive=True,
+        )
+        print("  Drive token saved.")
+        print("\nAuthenticating Google Calendar...")
+        get_google_credentials(
+            ["https://www.googleapis.com/auth/calendar.events"],
+            "calendar_token.pickle",
+            interactive=True,
+        )
+        print("  Calendar token saved.")
+        print("\nTo deploy to Railway, base64-encode the tokens:")
+        print("  base64 < credentials/drive_token.pickle")
+        print("  base64 < credentials/calendar_token.pickle")
+        print("Then set GOOGLE_DRIVE_TOKEN_B64 and GOOGLE_CALENDAR_TOKEN_B64 in Railway env vars.")
+        print("Also set TELEGRAM_ENABLE_DRIVE_UPLOAD=true and TELEGRAM_ENABLE_CALENDAR_EVENTS=true.")
+
     else:
         print(f"Unknown command: {command}")
         print(__doc__)

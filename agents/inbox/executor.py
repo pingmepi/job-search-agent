@@ -498,7 +498,9 @@ def _handle_calendar(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from integrations.calendar import create_application_events
-    create_application_events(pack.jd.company, pack.jd.role)
+    apply_id, followup_id = create_application_events(pack.jd.company, pack.jd.role)
+    pack.calendar_apply_event_id = apply_id
+    pack.calendar_followup_event_id = followup_id
     return pack
 
 
@@ -626,6 +628,8 @@ def _handle_db_log(
         fit_score=ctx.fit_score_percent,
         resume_used=pack.resume_base,
         drive_link=pack.drive_link,
+        calendar_apply_event_id=getattr(pack, "calendar_apply_event_id", None),
+        calendar_followup_event_id=getattr(pack, "calendar_followup_event_id", None),
     )
     pack.job_id = job_id
     return pack

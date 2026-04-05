@@ -10,52 +10,21 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from integrations.google_auth import get_google_credentials, google_api_retry
+
 logger = logging.getLogger(__name__)
+
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def _get_drive_service():
-    """
-    Build an authenticated Google Drive service.
-
-    Requires Google OAuth credentials to be configured.
-    """
-    from core.config import get_settings
-
-    settings = get_settings()
-    creds_path = Path(settings.google_credentials_path)
-
-    if not creds_path.exists():
-        raise FileNotFoundError(
-            f"Google credentials not found at {creds_path}. "
-            f"Follow the setup guide to configure OAuth."
-        )
-
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from google.auth.transport.requests import Request
+    """Build an authenticated Google Drive service."""
+    creds = get_google_credentials(SCOPES, "drive_token.pickle")
     from googleapiclient.discovery import build
-    import pickle
-
-    SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-    token_path = creds_path.parent / "drive_token.pickle"
-
-    creds = None
-    if token_path.exists():
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
-
     return build("drive", "v3", credentials=creds)
 
 
+@google_api_retry()
 def _find_or_create_folder(service, name: str, parent_id: Optional[str] = None) -> str:
     """Find or create a folder in Drive. Returns folder ID."""
     query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder'"
@@ -114,13 +83,14 @@ def upload_application_artifacts(
     """
     service = _get_drive_service()
 
-    # Create folder structure
     jobs_id = _find_or_create_folder(service, "Jobs")
     company_id = _find_or_create_folder(service, company, jobs_id)
     role_id = _find_or_create_folder(service, role, company_id)
     app_id = _find_or_create_folder(service, application_context_id, role_id)
 
     from googleapiclient.http import MediaFileUpload
+
+    _upload_with_retry = google_api_retry()
 
     uploads: dict[str, dict[str, str]] = {}
     for logical_name, path in files.items():
@@ -130,9 +100,14 @@ def upload_application_artifacts(
         }
         try:
             media = MediaFileUpload(str(path), mimetype=_mime_for_file(path))
-            file = service.files().create(
-                body=file_metadata, media_body=media, fields="id,webViewLink,name"
-            ).execute()
+
+            @_upload_with_retry
+            def _do_upload():
+                return service.files().create(
+                    body=file_metadata, media_body=media, fields="id,webViewLink,name"
+                ).execute()
+
+            file = _do_upload()
             uploads[logical_name] = {
                 "status": "uploaded",
                 "id": file["id"],

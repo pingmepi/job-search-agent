@@ -113,6 +113,10 @@ def _apply_migrations(cur: Any) -> None:
     jobs_cols = _table_columns(cur, "jobs")
     if "last_follow_up_at" not in jobs_cols:
         cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_follow_up_at TEXT")
+    if "calendar_apply_event_id" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS calendar_apply_event_id TEXT")
+    if "calendar_followup_event_id" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS calendar_followup_event_id TEXT")
 
     runs_cols = _table_columns(cur, "runs")
     for col, col_type in {
@@ -169,6 +173,8 @@ def insert_job(
     fit_score: int | None = None,
     resume_used: str | None = None,
     drive_link: str | None = None,
+    calendar_apply_event_id: str | None = None,
+    calendar_followup_event_id: str | None = None,
     db_path: Any = None,  # ignored, kept for call-site compatibility during transition
 ) -> int:
     """Insert a new job row and return its id."""
@@ -177,10 +183,12 @@ def insert_job(
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO jobs
-               (company, role, jd_hash, fit_score, resume_used, drive_link, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               (company, role, jd_hash, fit_score, resume_used, drive_link,
+                calendar_apply_event_id, calendar_followup_event_id, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (company, role, jd_hash, fit_score, resume_used, drive_link, now, now),
+            (company, role, jd_hash, fit_score, resume_used, drive_link,
+             calendar_apply_event_id, calendar_followup_event_id, now, now),
         )
         row = cur.fetchone()
         return row["id"]
