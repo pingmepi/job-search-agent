@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS run_steps (
 
 RUN_STEPS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps (run_id);"
 
+ARTICLE_SIGNALS_DDL = """\
+CREATE TABLE IF NOT EXISTS article_signals (
+    id          SERIAL PRIMARY KEY,
+    run_id      TEXT NOT NULL,
+    signal_text TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+"""
+
 WEBHOOK_EVENTS_DDL = """\
 CREATE TABLE IF NOT EXISTS webhook_events (
     event_id          TEXT PRIMARY KEY,
@@ -141,6 +150,7 @@ def init_db() -> None:
         cur.execute(RUN_STEPS_DDL)
         cur.execute(RUN_STEPS_INDEX_DDL)
         cur.execute(WEBHOOK_EVENTS_DDL)
+        cur.execute(ARTICLE_SIGNALS_DDL)
         _apply_migrations(cur)
 
 
@@ -469,6 +479,29 @@ def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
         "compile": dict(compile_row) if compile_row else {},
         "webhook_events": dict(webhook_row) if webhook_row else {},
     }
+
+
+# ── Article Signals ──────────────────────────────────────────────
+
+
+def insert_article_signals(
+    run_id: str,
+    signals: list[str],
+    *,
+    db_path: Any = None,
+) -> None:
+    """Persist article-extracted job-search signals."""
+    if not signals:
+        return
+    now = _now_iso()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        for signal in signals:
+            cur.execute(
+                """INSERT INTO article_signals (run_id, signal_text, created_at)
+                   VALUES (%s, %s, %s)""",
+                (run_id, signal, now),
+            )
 
 
 # ── Webhook Event CRUD ───────────────────────────────────────────

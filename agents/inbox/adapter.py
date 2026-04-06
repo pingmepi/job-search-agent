@@ -292,9 +292,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     elif result.target == AgentTarget.PROFILE:
         await update.message.reply_text(f"👤 Routing to Profile Agent... ({result.reason})")
         try:
-            from agents.profile.agent import answer
+            from agents.profile.agent import run_profile_agent
 
-            response_text, narrative, ungrounded = answer(text)
+            response_text, narrative, ungrounded = run_profile_agent(text)
             warning = ""
             if ungrounded:
                 warning = f"\n⚠️ Potential ungrounded claims: {', '.join(ungrounded)}"
@@ -310,12 +310,14 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     elif result.target == AgentTarget.ARTICLE:
         await update.message.reply_text("📰 Summarizing article...")
         try:
-            from agents.article.agent import summarize
+            from agents.article.agent import run_article_agent
 
-            summary, signals = summarize(text)
+            summary, signals, run_id = run_article_agent(text)
             signal_text = "\n".join(f"• {s}" for s in signals) if signals else "None detected."
             await update.message.reply_text(
-                f"📰 Article Summary\n\n{summary}\n\n🔍 Job search signals:\n{signal_text}"
+                f"📰 Article Summary\n\n{summary}\n\n"
+                f"🔍 Job search signals:\n{signal_text}\n\n"
+                f"🧪 Run ID: {run_id}"
             )
         except Exception as e:
             await update.message.reply_text(f"❌ Error summarizing article: {e}")

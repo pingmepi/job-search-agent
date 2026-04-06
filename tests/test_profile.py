@@ -12,6 +12,7 @@ from agents.profile.agent import (
     check_response_grounding,
     load_bullet_bank,
     load_profile,
+    run_profile_agent,
     select_narrative,
 )
 
@@ -141,3 +142,71 @@ class TestAnswerGrounding:
         assert any("50%" in c or "50" in c for c in ungrounded)
         assert narrative in {"ai", "growth", "martech"}
         assert response_text
+
+
+class TestRunProfileAgent:
+    def test_logs_run_and_returns_results(self, profile_path, bullet_bank_path, monkeypatch):
+        """run_profile_agent() should call insert_run + complete_run and return the same tuple as answer()."""
+        from unittest.mock import MagicMock
+
+        class _FakeResponse:
+            text = "Karan has experience with Python."
+            total_tokens = 150
+            prompt_tokens = 100
+            completion_tokens = 50
+            model = "test-model"
+            cost_estimate = 0.0
+            generation_id = None
+
+        monkeypatch.setattr(
+            "agents.profile.agent.chat_text", lambda *_args, **_kwargs: _FakeResponse()
+        )
+        mock_insert = MagicMock()
+        mock_complete = MagicMock()
+        monkeypatch.setattr("agents.profile.agent.insert_run", mock_insert)
+        monkeypatch.setattr("agents.profile.agent.complete_run", mock_complete)
+
+        response_text, narrative, ungrounded = run_profile_agent(
+            "Tell me about Karan",
+            profile_path=profile_path,
+            bullet_bank_path=bullet_bank_path,
+        )
+
+        assert response_text
+        assert narrative in {"ai", "growth", "martech"}
+        mock_insert.assert_called_once()
+        mock_complete.assert_called_once()
+        # Verify run_id format
+        call_args = mock_insert.call_args
+        assert call_args[0][0].startswith("profile-")
+        assert call_args[0][1] == "profile_agent"
+        # Verify complete_run got tokens
+        complete_kwargs = mock_complete.call_args[1]
+        assert complete_kwargs["tokens_used"] == 150
+        assert complete_kwargs["status"] == "completed"
+
+    def test_logs_failure_on_exception(self, profile_path, bullet_bank_path, monkeypatch):
+        """run_profile_agent() should log a failed run if the LLM call raises."""
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(
+            "agents.profile.agent.chat_text",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("LLM down")),
+        )
+        mock_insert = MagicMock()
+        mock_complete = MagicMock()
+        monkeypatch.setattr("agents.profile.agent.insert_run", mock_insert)
+        monkeypatch.setattr("agents.profile.agent.complete_run", mock_complete)
+
+        with pytest.raises(RuntimeError, match="LLM down"):
+            run_profile_agent(
+                "Tell me about Karan",
+                profile_path=profile_path,
+                bullet_bank_path=bullet_bank_path,
+            )
+
+        mock_insert.assert_called_once()
+        mock_complete.assert_called_once()
+        complete_kwargs = mock_complete.call_args[1]
+        assert complete_kwargs["status"] == "failed"
+        assert "LLM down" in complete_kwargs["errors"][0]

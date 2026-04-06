@@ -582,6 +582,9 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         errors=[],
         selected_collateral=["email", "linkedin"],
         generated_collateral=["email", "linkedin"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -655,6 +658,9 @@ async def test_text_handler_reports_failure_when_no_valid_pdf(monkeypatch) -> No
         errors=["Terminal fallback resume exceeds one page (2 pages)."],
         selected_collateral=["email"],
         generated_collateral=["email"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     monkeypatch.setattr("agents.inbox.agent.run_pipeline", lambda *_a, **_k: fake_pack)
@@ -708,6 +714,9 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
         errors=[],
         selected_collateral=["referral"],
         generated_collateral=["referral"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -825,6 +834,9 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
         errors=[],
         selected_collateral=[],
         generated_collateral=[],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -862,7 +874,7 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
+async def test_text_handler_article_route_summarizes_and_logs(monkeypatch) -> None:
     from agents.inbox import adapter
 
     monkeypatch.setattr(
@@ -870,13 +882,20 @@ async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
         "route",
         lambda _text: RouteResult(AgentTarget.ARTICLE, "article route", "article_signal"),
     )
+    monkeypatch.setattr(
+        "agents.article.agent.run_article_agent",
+        lambda text: ("• AI is growing fast.", ["OpenAI hiring"], "article-abc123"),
+    )
     update = _FakeUpdate("long article text")
     context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
 
-    assert len(update.message.replies) == 1
-    assert "article content" in update.message.replies[0][0]
+    assert len(update.message.replies) == 2
+    assert "Summarizing article" in update.message.replies[0][0]
+    assert "AI is growing fast" in update.message.replies[1][0]
+    assert "OpenAI hiring" in update.message.replies[1][0]
+    assert "article-abc123" in update.message.replies[1][0]
 
 
 @pytest.mark.asyncio
