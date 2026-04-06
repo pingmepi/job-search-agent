@@ -173,15 +173,18 @@ def main() -> None:
 
     if command in {"webhook", "bot"}:
         from app import run_webhook_server
+
         run_webhook_server()
 
     elif command == "init-db":
         from core.db import init_db
+
         init_db()
         print("✅ Database initialized")
 
     elif command == "ci-gate":
         from evals.ci_gate import main as run_gate
+
         run_gate()
 
     elif command == "db-stats":
@@ -217,7 +220,7 @@ def main() -> None:
         )
 
     elif command == "runs":
-        from core.db import list_runs, get_run, get_run_steps
+        from core.db import get_run, get_run_steps, list_runs
 
         args = sys.argv[2:]
         if args and not args[0].startswith("--"):
@@ -239,7 +242,9 @@ def main() -> None:
                         for s in steps:
                             status_icon = "✅" if s["status"] == "completed" else "❌"
                             duration = f"{s.get('duration_ms', '?')}ms"
-                            print(f"\n{status_icon} {s['step_name']}  ({duration})  [{s['status']}]")
+                            print(
+                                f"\n{status_icon} {s['step_name']}  ({duration})  [{s['status']}]"
+                            )
                             if s.get("input"):
                                 print(f"  INPUT:  {json.dumps(s['input'], indent=4, default=str)}")
                             if s.get("output"):
@@ -257,13 +262,28 @@ def main() -> None:
                 status = "✅" if not r.get("errors") else f"⚠️ ({len(r['errors'])} errors)"
                 company = r.get("company", "?")
                 role = r.get("role", "?")
-                print(f"{r['run_id']}  {company} / {role}  {status}  tokens={r.get('tokens_used', 0)}  latency={r.get('latency_ms', 0)}ms  {r.get('created_at', '')}")
+                print(
+                    f"{r['run_id']}  {company} / {role}  {status}  tokens={r.get('tokens_used', 0)}  latency={r.get('latency_ms', 0)}ms  {r.get('created_at', '')}"
+                )
 
     elif command == "followup-runner":
         _run_followup_runner(sys.argv[2:])
 
     elif command == "replay-webhook":
         _run_replay_webhook(sys.argv[2:])
+
+    elif command == "auth-google":
+        from integrations.google_auth import TOKEN_FILENAME, get_google_credentials
+
+        print("Authenticating Google (Drive + Calendar scopes)...")
+        get_google_credentials(interactive=True)
+        print(f"  Token saved to credentials/{TOKEN_FILENAME}")
+        print("\nTo deploy to Railway, base64-encode the token:")
+        print(f"  base64 < credentials/{TOKEN_FILENAME}")
+        print("Then set GOOGLE_TOKEN_B64 in Railway env vars.")
+        print(
+            "Also set TELEGRAM_ENABLE_DRIVE_UPLOAD=true and TELEGRAM_ENABLE_CALENDAR_EVENTS=true."
+        )
 
     else:
         print(f"Unknown command: {command}")

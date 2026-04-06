@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -93,7 +93,7 @@ def _extract_first_json_object(text: str) -> str | None:
         if ch == "}":
             depth -= 1
             if depth == 0:
-                return text[start:idx + 1]
+                return text[start : idx + 1]
     return None
 
 

@@ -13,14 +13,20 @@ Never executes tools directly — only returns text.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from core.config import get_settings
-from core.llm import chat_text, LLMResponse
+from core.db import complete_run, insert_run
+from core.llm import LLMResponse, chat_text
 
+logger = logging.getLogger(__name__)
 
 # ── Data loading ──────────────────────────────────────────────────
+
 
 def load_profile(profile_path: Optional[Path] = None) -> dict:
     """Load the canonical profile JSON."""
@@ -50,7 +56,9 @@ def select_narrative(query: str, profile: dict) -> str:
     # Simple keyword-based selection
     if any(kw in query_lower for kw in ["ai", "ml", "machine learning", "llm", "data science"]):
         return "ai"
-    if any(kw in query_lower for kw in ["growth", "acquisition", "retention", "conversion", "funnel"]):
+    if any(
+        kw in query_lower for kw in ["growth", "acquisition", "retention", "conversion", "funnel"]
+    ):
         return "growth"
     if any(kw in query_lower for kw in ["martech", "marketing", "automation", "crm", "campaign"]):
         return "martech"
@@ -70,6 +78,7 @@ def select_narrative(query: str, profile: dict) -> str:
 
 
 # ── Forbidden claims check ────────────────────────────────────────
+
 
 def check_response_grounding(
     response_text: str,
@@ -161,6 +170,25 @@ def answer(
     -------
     (response_text, narrative_used, ungrounded_claims)
     """
+    text, narrative, ungrounded, _resp = answer_with_telemetry(
+        query, profile_path=profile_path, bullet_bank_path=bullet_bank_path
+    )
+    return text, narrative, ungrounded
+
+
+def answer_with_telemetry(
+    query: str,
+    *,
+    profile_path: Optional[Path] = None,
+    bullet_bank_path: Optional[Path] = None,
+) -> tuple[str, str, list[str], LLMResponse]:
+    """
+    Answer a question and also return the raw LLMResponse for telemetry.
+
+    Returns
+    -------
+    (response_text, narrative_used, ungrounded_claims, llm_response)
+    """
     profile = load_profile(profile_path)
     bullet_bank = load_bullet_bank(bullet_bank_path)
 
@@ -180,4 +208,53 @@ def answer(
     # Check grounding
     ungrounded = check_response_grounding(llm_response.text, profile, bullet_bank)
 
-    return llm_response.text, narrative, ungrounded
+    return llm_response.text, narrative, ungrounded, llm_response
+
+
+# ── Logged runner ────────────────────────────────────────────────
+
+
+def run_profile_agent(
+    query: str,
+    *,
+    profile_path: Optional[Path] = None,
+    bullet_bank_path: Optional[Path] = None,
+) -> tuple[str, str, list[str]]:
+    """
+    Run the profile agent with full telemetry logging.
+
+    Logs a run to the ``runs`` table with token usage, latency, and
+    grounding eval results. Returns the same tuple as ``answer()``.
+    """
+    run_id = f"profile-{uuid4().hex[:12]}"
+    insert_run(run_id, "profile_agent")
+
+    t0 = time.monotonic()
+    try:
+        text, narrative, ungrounded, llm_resp = answer_with_telemetry(
+            query, profile_path=profile_path, bullet_bank_path=bullet_bank_path
+        )
+        latency_ms = int((time.monotonic() - t0) * 1000)
+
+        complete_run(
+            run_id,
+            status="completed",
+            tokens_used=llm_resp.total_tokens,
+            latency_ms=latency_ms,
+            eval_results={
+                "ungrounded_claims": len(ungrounded),
+                "narrative": narrative,
+            },
+        )
+        return text, narrative, ungrounded
+
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        logger.exception("Profile agent failed run_id=%s", run_id)
+        complete_run(
+            run_id,
+            status="failed",
+            latency_ms=latency_ms,
+            errors=[str(exc)],
+        )
+        raise

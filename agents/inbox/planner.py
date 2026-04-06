@@ -27,18 +27,18 @@ from typing import Any, Optional
 # Keep as string literals so they're easy to assert against in tests and
 # dispatch in the executor without importing the whole module tree.
 
-TOOL_OCR             = "ocr"
-TOOL_JD_EXTRACT      = "jd_extract"
-TOOL_RESUME_SELECT   = "resume_select"
-TOOL_RESUME_MUTATE   = "resume_mutate"
-TOOL_COMPILE         = "compile"
-TOOL_CALENDAR        = "calendar"
-TOOL_DRAFT_EMAIL     = "draft_email"
-TOOL_DRAFT_LINKEDIN  = "draft_linkedin"
-TOOL_DRAFT_REFERRAL  = "draft_referral"
-TOOL_DRIVE_UPLOAD    = "drive_upload"
-TOOL_DB_LOG          = "db_log"
-TOOL_EVAL_LOG        = "eval_log"
+TOOL_OCR = "ocr"
+TOOL_JD_EXTRACT = "jd_extract"
+TOOL_RESUME_SELECT = "resume_select"
+TOOL_RESUME_MUTATE = "resume_mutate"
+TOOL_COMPILE = "compile"
+TOOL_CALENDAR = "calendar"
+TOOL_DRAFT_EMAIL = "draft_email"
+TOOL_DRAFT_LINKEDIN = "draft_linkedin"
+TOOL_DRAFT_REFERRAL = "draft_referral"
+TOOL_DRIVE_UPLOAD = "drive_upload"
+TOOL_DB_LOG = "db_log"
+TOOL_EVAL_LOG = "eval_log"
 
 # Canonical ordering — used to validate / sort steps.
 TOOL_ORDER: list[str] = [
@@ -127,7 +127,7 @@ class ToolPlan:
 _SUPPORTED_COLLATERAL = ("email", "linkedin", "referral")
 
 _COLLATERAL_TOOL = {
-    "email":    TOOL_DRAFT_EMAIL,
+    "email": TOOL_DRAFT_EMAIL,
     "linkedin": TOOL_DRAFT_LINKEDIN,
     "referral": TOOL_DRAFT_REFERRAL,
 }
@@ -188,86 +188,106 @@ def build_tool_plan(
 
     # 1. OCR — only when image input
     if image_path:
-        steps.append(ToolStep(
-            name="ocr",
-            tool=TOOL_OCR,
-            params={"image_path": str(image_path)},
-            retry_on_transient=True,
-            max_attempts=2,
-        ))
+        steps.append(
+            ToolStep(
+                name="ocr",
+                tool=TOOL_OCR,
+                params={"image_path": str(image_path)},
+                retry_on_transient=True,
+                max_attempts=2,
+            )
+        )
 
     # 2. JD extraction — always
-    steps.append(ToolStep(
-        name="jd_extract",
-        tool=TOOL_JD_EXTRACT,
-        params={"input_mode": input_mode},
-        retry_on_transient=True,
-        max_attempts=3,
-    ))
+    steps.append(
+        ToolStep(
+            name="jd_extract",
+            tool=TOOL_JD_EXTRACT,
+            params={"input_mode": input_mode},
+            retry_on_transient=True,
+            max_attempts=3,
+        )
+    )
 
     # 3. Resume selection — always
-    steps.append(ToolStep(
-        name="resume_select",
-        tool=TOOL_RESUME_SELECT,
-        params={},
-    ))
+    steps.append(
+        ToolStep(
+            name="resume_select",
+            tool=TOOL_RESUME_SELECT,
+            params={},
+        )
+    )
 
     # 4. Resume mutation — always
-    steps.append(ToolStep(
-        name="resume_mutate",
-        tool=TOOL_RESUME_MUTATE,
-        params={},
-        retry_on_transient=True,
-        max_attempts=3,
-    ))
+    steps.append(
+        ToolStep(
+            name="resume_mutate",
+            tool=TOOL_RESUME_MUTATE,
+            params={},
+            retry_on_transient=True,
+            max_attempts=3,
+        )
+    )
 
     # 5. Compile — always
-    steps.append(ToolStep(
-        name="compile",
-        tool=TOOL_COMPILE,
-        params={},
-    ))
+    steps.append(
+        ToolStep(
+            name="compile",
+            tool=TOOL_COMPILE,
+            params={},
+        )
+    )
 
     # 6. Calendar — skip if requested
     if not skip_calendar:
-        steps.append(ToolStep(
-            name="calendar",
-            tool=TOOL_CALENDAR,
-            params={},
-        ))
+        steps.append(
+            ToolStep(
+                name="calendar",
+                tool=TOOL_CALENDAR,
+                params={},
+            )
+        )
 
     # 7. Drafts — one step per requested collateral type
     for collateral_type in normalised_collateral:
         tool_key = _COLLATERAL_TOOL[collateral_type]
-        steps.append(ToolStep(
-            name=f"draft_{collateral_type}",
-            tool=tool_key,
-            params={"collateral_type": collateral_type},
-            retry_on_transient=True,
-            max_attempts=2,
-        ))
+        steps.append(
+            ToolStep(
+                name=f"draft_{collateral_type}",
+                tool=tool_key,
+                params={"collateral_type": collateral_type},
+                retry_on_transient=True,
+                max_attempts=2,
+            )
+        )
 
     # 8. Drive upload — skip if requested
     if not skip_upload:
-        steps.append(ToolStep(
-            name="drive_upload",
-            tool=TOOL_DRIVE_UPLOAD,
-            params={},
-        ))
+        steps.append(
+            ToolStep(
+                name="drive_upload",
+                tool=TOOL_DRIVE_UPLOAD,
+                params={},
+            )
+        )
 
     # 9. DB log — always
-    steps.append(ToolStep(
-        name="db_log",
-        tool=TOOL_DB_LOG,
-        params={},
-    ))
+    steps.append(
+        ToolStep(
+            name="db_log",
+            tool=TOOL_DB_LOG,
+            params={},
+        )
+    )
 
     # 10. Eval log — always
-    steps.append(ToolStep(
-        name="eval_log",
-        tool=TOOL_EVAL_LOG,
-        params={},
-    ))
+    steps.append(
+        ToolStep(
+            name="eval_log",
+            tool=TOOL_EVAL_LOG,
+            params={},
+        )
+    )
 
     return ToolPlan(
         steps=steps,

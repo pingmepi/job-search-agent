@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import psycopg2
 import psycopg2.extras
-
 import pytest
 
 from agents.inbox.agent import run_pipeline
@@ -97,9 +95,16 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
 
     monkeypatch.setattr("agents.inbox.executor.compile_latex", _fake_compile)
 
-    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_args, **_kwargs: _response("referral"))
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_referral_template",
+        lambda *_args, **_kwargs: _response("referral"),
+    )
 
     monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
     monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
@@ -229,9 +234,16 @@ def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
 
     monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile_with_first_failure)
 
-    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_args, **_kwargs: _response("referral"))
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_referral_template",
+        lambda *_args, **_kwargs: _response("referral"),
+    )
 
     monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
     monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
@@ -389,6 +401,7 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
         "agents.inbox.executor.select_base_resume_with_details",
         lambda *_args, **_kwargs: (base_resume, 0.7, {"selected_resume": base_resume.name}),
     )
+
     def _compile(_tex_path: Path, out_dir: Path) -> Path:
         pdf = out_dir / "resume.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
@@ -397,9 +410,18 @@ def test_run_pipeline_skips_collateral_when_selection_missing(
     monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
 
     called = {"email": 0, "linkedin": 0, "referral": 0}
-    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: called.__setitem__("email", called["email"] + 1))
-    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: called.__setitem__("linkedin", called["linkedin"] + 1))
-    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: called.__setitem__("referral", called["referral"] + 1))
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft",
+        lambda *_a, **_k: called.__setitem__("email", called["email"] + 1),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_linkedin_dm",
+        lambda *_a, **_k: called.__setitem__("linkedin", called["linkedin"] + 1),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_referral_template",
+        lambda *_a, **_k: called.__setitem__("referral", called["referral"] + 1),
+    )
 
     pack = run_pipeline("raw jd text", skip_upload=True, skip_calendar=True)
 
@@ -471,9 +493,15 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
         return pdf
 
     monkeypatch.setattr("agents.inbox.executor.compile_latex", _compile)
-    monkeypatch.setattr("agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: _response("email"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: _response("linkedin"))
-    monkeypatch.setattr("agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: _response("referral"))
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft", lambda *_a, **_k: _response("email")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_linkedin_dm", lambda *_a, **_k: _response("linkedin")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_referral_template", lambda *_a, **_k: _response("referral")
+    )
 
     captured: dict[str, object] = {}
 
@@ -554,6 +582,9 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         errors=[],
         selected_collateral=["email", "linkedin"],
         generated_collateral=["email", "linkedin"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -627,6 +658,9 @@ async def test_text_handler_reports_failure_when_no_valid_pdf(monkeypatch) -> No
         errors=["Terminal fallback resume exceeds one page (2 pages)."],
         selected_collateral=["email"],
         generated_collateral=["email"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     monkeypatch.setattr("agents.inbox.agent.run_pipeline", lambda *_a, **_k: fake_pack)
@@ -680,6 +714,9 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
         errors=[],
         selected_collateral=["referral"],
         generated_collateral=["referral"],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -797,6 +834,9 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
         errors=[],
         selected_collateral=[],
         generated_collateral=[],
+        email_draft=None,
+        linkedin_draft=None,
+        referral_draft=None,
     )
 
     def _fake_run_pipeline(
@@ -834,7 +874,7 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
+async def test_text_handler_article_route_summarizes_and_logs(monkeypatch) -> None:
     from agents.inbox import adapter
 
     monkeypatch.setattr(
@@ -842,13 +882,20 @@ async def test_text_handler_article_route_returns_guidance(monkeypatch) -> None:
         "route",
         lambda _text: RouteResult(AgentTarget.ARTICLE, "article route", "article_signal"),
     )
+    monkeypatch.setattr(
+        "agents.article.agent.run_article_agent",
+        lambda text: ("• AI is growing fast.", ["OpenAI hiring"], "article-abc123"),
+    )
     update = _FakeUpdate("long article text")
     context = SimpleNamespace(user_data={})
 
     await adapter.text_handler(update, context)
 
-    assert len(update.message.replies) == 1
-    assert "article content" in update.message.replies[0][0]
+    assert len(update.message.replies) == 2
+    assert "Summarizing article" in update.message.replies[0][0]
+    assert "AI is growing fast" in update.message.replies[1][0]
+    assert "OpenAI hiring" in update.message.replies[1][0]
+    assert "article-abc123" in update.message.replies[1][0]
 
 
 @pytest.mark.asyncio

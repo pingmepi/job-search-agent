@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from core.config import get_settings
-from agents.inbox.planner import build_tool_plan
 from agents.inbox.executor import execute_plan
+from agents.inbox.planner import build_tool_plan
+from core.config import get_settings
 
 SUPPORTED_COLLATERAL_TYPES = ("email", "linkedin", "referral")
 
@@ -115,9 +115,14 @@ def run_pipeline(
 
     # Placeholder JD filled in by jd_extract step
     from agents.inbox.jd import JDSchema
+
     placeholder_jd = JDSchema(
-        company="", role="", location="",
-        experience_required="", skills=[], description="",
+        company="",
+        role="",
+        location="",
+        experience_required="",
+        skills=[],
+        description="",
     )
 
     pack = ApplicationPack(jd=placeholder_jd, resume_base="")
@@ -128,7 +133,7 @@ def run_pipeline(
 
     if invalid:
         pack.errors.append(
-            f"Collateral generation skipped: Invalid collateral type(s): "
+            "Collateral generation skipped: Invalid collateral type(s): "
             + ", ".join(sorted(set(invalid)))
         )
     elif selected_collateral is None:

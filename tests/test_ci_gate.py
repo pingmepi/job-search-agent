@@ -11,15 +11,11 @@ from __future__ import annotations
 import pytest
 
 from evals.ci_gate import (
-    COMPILE_RATE_THRESHOLD,
     COST_THRESHOLD,
-    EDIT_VIOLATIONS_MAX,
-    FORBIDDEN_CLAIMS_MAX,
     LATENCY_THRESHOLD_MS,
     run_gate_on_fixtures,
 )
 from evals.dataset import EVAL_FIXTURES, fixture_summary, get_fixtures
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -24,9 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+# Module-level imports for patchability (integration tests monkeypatch these)
+from agents.inbox.jd import extract_jd_with_usage, get_cached_jd
 from agents.inbox.planner import (
-    ToolPlan,
-    ToolStep,
     TOOL_CALENDAR,
     TOOL_COMPILE,
     TOOL_DB_LOG,
@@ -39,22 +39,20 @@ from agents.inbox.planner import (
     TOOL_OCR,
     TOOL_RESUME_MUTATE,
     TOOL_RESUME_SELECT,
+    ToolPlan,
+    ToolStep,
 )
-
-# Module-level imports for patchability (integration tests monkeypatch these)
-from agents.inbox.jd import extract_jd_with_usage, get_cached_jd
 from agents.inbox.resume import (
-    select_base_resume_with_details,
-    parse_editable_regions,
     apply_mutations,
     compile_latex,
     get_pdf_page_count,
+    parse_editable_regions,
+    select_base_resume_with_details,
 )
 from core.prompts import load_prompt
 
 if TYPE_CHECKING:
     from agents.inbox.agent import ApplicationPack
-    from core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +112,17 @@ class ExecutionContext:
 def _is_transient_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     markers = (
-        "rate limit", "too many requests", "429", "timeout", "timed out",
-        "connection", "temporarily unavailable", "server error", "503", "502", "504",
+        "rate limit",
+        "too many requests",
+        "429",
+        "timeout",
+        "timed out",
+        "connection",
+        "temporarily unavailable",
+        "server error",
+        "503",
+        "502",
+        "504",
     )
     return any(m in msg for m in markers)
 
@@ -181,7 +188,7 @@ def _extract_first_json_object(text: str) -> Optional[str]:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                return text[start:idx + 1]
+                return text[start : idx + 1]
     return None
 
 
@@ -248,6 +255,7 @@ def _handle_ocr(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from agents.inbox.ocr import ocr_pipeline_with_usage
+
     image_path = Path(step.params["image_path"])
     raw_text, usage = ocr_pipeline_with_usage(image_path)
     ctx.plan.raw_text = raw_text  # update shared text for subsequent steps
@@ -283,7 +291,8 @@ def _handle_resume_select(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     base_path, fit_score, details = select_base_resume_with_details(
-        pack.jd.skills, ctx.settings.resumes_dir,
+        pack.jd.skills,
+        ctx.settings.resumes_dir,
     )
     ctx.base_path = base_path
     ctx.fit_score = fit_score
@@ -299,8 +308,8 @@ def _handle_resume_mutate(
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
-    from evals.hard import check_forbidden_claims_per_bullet
     from agents.inbox.bullet_relevance import select_relevant_bullets
+    from evals.hard import check_forbidden_claims_per_bullet
 
     assert ctx.base_path is not None
     original_tex = ctx.base_path.read_text(encoding="utf-8")
@@ -314,13 +323,16 @@ def _handle_resume_mutate(
 
     editable_content = "\n".join(r.content for r in regions)
 
-    bullet_bank_raw = json.loads(
-        ctx.settings.bullet_bank_path.read_text(encoding="utf-8")
-    )
+    bullet_bank_raw = json.loads(ctx.settings.bullet_bank_path.read_text(encoding="utf-8"))
     relevant_bullets = select_relevant_bullets(
-        bullet_bank_raw, jd.skills, jd.description, top_n=12,
+        bullet_bank_raw,
+        jd.skills,
+        jd.description,
+        top_n=12,
     )
-    bullet_bank_values = [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b]
+    bullet_bank_values = [
+        b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b
+    ]
 
     bullet_bank_formatted = "\n".join(
         f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
@@ -335,7 +347,7 @@ def _handle_resume_mutate(
         f"Allowed tools: {', '.join(allowed_tools)}"
     )
 
-    system = load_prompt("resume_mutate", version=2)
+    system = load_prompt("resume_mutate", version=3)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
         f"Current editable bullets:\n{editable_content}\n\n"
@@ -378,24 +390,26 @@ def _handle_resume_mutate(
     profile_text = json.dumps(positioning)
 
     per_bullet = check_forbidden_claims_per_bullet(
-        original_bullets, mutated_bullets, bullet_bank_values,
-        jd_text=jd_text, allowed_tools=allowed_tools, profile_text=profile_text,
+        original_bullets,
+        mutated_bullets,
+        bullet_bank_values,
+        jd_text=jd_text,
+        allowed_tools=allowed_tools,
+        profile_text=profile_text,
     )
     flagged = [r for r in per_bullet if r["flagged"]]
 
     if flagged:
         flagged_texts = {r["bullet"] for r in flagged}
-        clean_mutations = [
-            m for m in mutations
-            if m.get("replacement", "") not in flagged_texts
-        ]
+        clean_mutations = [m for m in mutations if m.get("replacement", "") not in flagged_texts]
 
         reverted_count = len(mutations) - len(clean_mutations)
         if reverted_count > 0:
             ctx.truthfulness_fallback_used = True
             logger.warning(
                 "Truthfulness safeguard: %d/%d mutations reverted (flagged bullets: %s)",
-                reverted_count, len(mutations),
+                reverted_count,
+                len(mutations),
                 "; ".join(f"{r['bullet'][:50]}... [{', '.join(r['reasons'])}]" for r in flagged),
             )
             pack.errors.append(
@@ -459,18 +473,124 @@ def _handle_compile(
             removed.append(pdf.name)
         return removed
 
+    enforce = getattr(ctx.settings, "enforce_single_page", True)
+    max_condense = getattr(ctx.settings, "max_condense_retries", 2)
+
+    def _run_condense(tex: str, page_count: int) -> Optional[str]:
+        """Call the condense LLM and return condensed TeX, or None on failure."""
+        try:
+            condense_system = load_prompt("resume_condense", version=1)
+            regions = parse_editable_regions(tex)
+            if not regions:
+                return None
+            editable_content = "\n".join(r.content for r in regions)
+            condense_user = (
+                f"JD context: {jd.company} — {jd.role}\n"
+                f"Skills: {', '.join(jd.skills)}\n\n"
+                f"Current editable content:\n{editable_content}\n\n"
+                f"Current page count: {page_count}"
+            )
+            data, response = _chat_json_with_retry(
+                system=condense_system,
+                user_msg=condense_user,
+                step_name="Resume condense",
+                max_attempts=2,
+            )
+            ctx.total_tokens += response.total_tokens
+            if response.generation_id:
+                ctx.generation_ids.append(("resume_condense", response.generation_id))
+            ctx.llm_usage_breakdown["resume_condense"] = {
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "cost_estimate": response.cost_estimate,
+            }
+            # Build combined mutation list: rewrites + removals (empty replacement)
+            mutations = data.get("mutations", [])
+            for removed in data.get("bullets_removed", []):
+                mutations.append(
+                    {
+                        "original": removed["original"],
+                        "replacement": "",
+                    }
+                )
+            return apply_mutations(tex, mutations)
+        except Exception as exc:
+            pack.errors.append(f"Resume condense failed: {exc}")
+            logger.warning("Condense LLM call failed: %s", exc)
+            return None
+
     try:
         pack.pdf_path = _compile_and_persist(pack.mutated_tex)
 
-        # Page count check (informational only — no condense/reject loop)
+        # Page count check + condense loop
         if pack.pdf_path and pack.pdf_path.exists():
             pages = _safe_page_count(pack.pdf_path)
-            if pages is not None:
-                ctx.single_page_target_met = (pages <= 1)
-                ctx.single_page_status = "met" if pages <= 1 else f"accepted_{pages}_pages"
-            else:
+            if pages is not None and pages <= 1:
+                ctx.single_page_target_met = True
+                ctx.single_page_status = "met"
+                ctx.compile_outcome = "mutated_success"
+            elif pages is not None and pages > 1 and enforce:
+                # Condense loop
+                current_tex = pack.mutated_tex
+                condensed_ok = False
+                for retry in range(1, max_condense + 1):
+                    ctx.condense_retries = retry
+                    condensed = _run_condense(current_tex, pages)
+                    if condensed is None:
+                        break
+                    try:
+                        pack.pdf_path = _compile_and_persist(condensed, f"_condense{retry}")
+                    except Exception as ce:
+                        pack.errors.append(f"Condense recompile {retry} failed: {ce}")
+                        break
+                    pages = _safe_page_count(pack.pdf_path)
+                    if pages is not None and pages <= 1:
+                        pack.mutated_tex = condensed
+                        ctx.single_page_target_met = True
+                        ctx.single_page_status = "met"
+                        ctx.compile_outcome = "mutated_success"
+                        condensed_ok = True
+                        break
+                    current_tex = condensed
+
+                if not condensed_ok:
+                    # Fall back to base resume
+                    logger.warning(
+                        "Condense exhausted (%d retries); falling back to base.", max_condense
+                    )
+                    try:
+                        base_tex = base_path.read_text(encoding="utf-8")
+                        pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
+                        ctx.compile_rollback_used = True
+                        fb_pages = _safe_page_count(pack.pdf_path)
+                        if fb_pages is not None and fb_pages > 1:
+                            # Terminal failure: base resume also exceeds one page
+                            pack.pdf_path = None
+                            _cleanup_pdfs(app_output_dir)
+                            ctx.single_page_status = "failed_multi_page_terminal"
+                            ctx.compile_outcome = None
+                            pack.errors.append(
+                                f"Resume exceeds one page ({fb_pages} pages) and base fallback "
+                                "also exceeds one page. No compliant PDF produced."
+                            )
+                        else:
+                            ctx.compile_outcome = "fallback_success"
+                            ctx.single_page_status = "fallback_base_used"
+                            pack.errors.append(
+                                "LaTeX compile rollback applied: used base resume artifact."
+                            )
+                    except Exception as fe:
+                        pack.errors.append(f"LaTeX compile fallback failed: {fe}")
+                        ctx.single_page_status = "fallback_failed"
+            elif pages is None:
                 ctx.single_page_status = "unknown"
-            ctx.compile_outcome = "mutated_success"
+                ctx.compile_outcome = "mutated_success"
+            else:
+                # pages > 1 but enforce is off
+                ctx.single_page_target_met = False
+                ctx.single_page_status = f"accepted_{pages}_pages"
+                ctx.compile_outcome = "mutated_success"
 
     except Exception as e:
         pack.errors.append(f"LaTeX compile failed: {e}")
@@ -478,16 +598,30 @@ def _handle_compile(
             base_tex = base_path.read_text(encoding="utf-8")
             pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
             ctx.compile_rollback_used = True
-            ctx.compile_outcome = "fallback_success"
-            ctx.single_page_status = "fallback_base_used"
-            pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+            fb_pages = _safe_page_count(pack.pdf_path) if enforce else None
+            if enforce and fb_pages is not None and fb_pages > 1:
+                pack.pdf_path = None
+                _cleanup_pdfs(app_output_dir)
+                ctx.single_page_status = "failed_multi_page_terminal"
+                ctx.compile_outcome = None
+                pack.errors.append(
+                    f"Resume exceeds one page ({fb_pages} pages) and base fallback "
+                    "also exceeds one page. No compliant PDF produced."
+                )
+            else:
+                ctx.compile_outcome = "fallback_success"
+                ctx.single_page_status = "fallback_base_used"
+                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
         except Exception as fe:
             pack.errors.append(f"LaTeX compile fallback failed: {fe}")
             ctx.single_page_status = "fallback_failed"
 
     logger.info(
         "Compile result jd_hash=%s success=%s rollback=%s condense=%d",
-        jd.jd_hash, bool(pack.pdf_path), ctx.compile_rollback_used, ctx.condense_retries,
+        jd.jd_hash,
+        bool(pack.pdf_path),
+        ctx.compile_rollback_used,
+        ctx.condense_retries,
     )
     return pack
 
@@ -498,7 +632,10 @@ def _handle_calendar(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from integrations.calendar import create_application_events
-    create_application_events(pack.jd.company, pack.jd.role)
+
+    apply_id, followup_id = create_application_events(pack.jd.company, pack.jd.role)
+    pack.calendar_apply_event_id = apply_id
+    pack.calendar_followup_event_id = followup_id
     return pack
 
 
@@ -517,7 +654,6 @@ def _handle_draft(
     identity = profile.get("identity", {})
     name = identity.get("name", "Karan")
     positioning = profile.get("positioning", {}).get("ai", "Product Manager")
-    collateral_type = step.params.get("collateral_type", "")
     tool = step.tool
     jd = pack.jd
 
@@ -597,6 +733,7 @@ def _handle_drive_upload(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from integrations.drive import upload_application_artifacts
+
     if not pack.pdf_path:
         return pack
     drive_files: dict[str, Path] = {"resume_pdf": pack.pdf_path}
@@ -621,11 +758,16 @@ def _handle_db_log(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from core.db import insert_job
+
     job_id = insert_job(
-        pack.jd.company, pack.jd.role, pack.jd.jd_hash,
+        pack.jd.company,
+        pack.jd.role,
+        pack.jd.jd_hash,
         fit_score=ctx.fit_score_percent,
         resume_used=pack.resume_base,
         drive_link=pack.drive_link,
+        calendar_apply_event_id=getattr(pack, "calendar_apply_event_id", None),
+        calendar_followup_event_id=getattr(pack, "calendar_followup_event_id", None),
     )
     pack.job_id = job_id
     return pack
@@ -636,17 +778,20 @@ def _handle_eval_log(
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
-    from evals.hard import (
-        check_jd_schema, check_edit_scope, check_forbidden_claims,
-        check_draft_length, check_cost,
-    )
-    from evals.logger import log_run
     from core.artifacts import write_json_artifact
     from core.contracts import (
         build_eval_output_artifact,
         build_job_extraction_artifact,
         build_resume_output_artifact,
     )
+    from evals.hard import (
+        check_cost,
+        check_draft_length,
+        check_edit_scope,
+        check_forbidden_claims,
+        check_jd_schema,
+    )
+    from evals.logger import log_run
 
     jd = pack.jd
     latency_ms = int((time.time() - ctx.start_time) * 1000)
@@ -654,6 +799,7 @@ def _handle_eval_log(
     # ── Resolve real costs ────────────────────────────────────────
     try:
         from core.llm import resolve_costs_batch
+
         gen_id_list = [gid for _, gid in ctx.generation_ids]
         resolved = resolve_costs_batch(gen_id_list)
         for sname, gen_id in ctx.generation_ids:
@@ -672,7 +818,9 @@ def _handle_eval_log(
 
     if ctx.original_tex and pack.mutated_tex:
         outside_changed = _outside_editable_content_changed(ctx.original_tex, pack.mutated_tex)
-        edit_scope_ok = check_edit_scope(ctx.original_tex, pack.mutated_tex, outside_changed=outside_changed)
+        edit_scope_ok = check_edit_scope(
+            ctx.original_tex, pack.mutated_tex, outside_changed=outside_changed
+        )
         edit_scope_violations = 0 if edit_scope_ok else 1
 
         original_bullets = _extract_bullets(ctx.original_tex)
@@ -685,7 +833,9 @@ def _handle_eval_log(
         jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
         profile = _load_profile(ctx)
         forbidden_claims_count = check_forbidden_claims(
-            original_bullets, mutated_bullets, bullet_bank,
+            original_bullets,
+            mutated_bullets,
+            bullet_bank,
             jd_text=jd_text,
             allowed_tools=profile.get("allowed_tools", []),
             profile_text=json.dumps(profile.get("positioning", {})),
@@ -698,14 +848,18 @@ def _handle_eval_log(
     soft_resume_relevance: Optional[float] = None
     soft_jd_accuracy: Optional[float] = None
     try:
-        from evals.soft import score_resume_relevance, score_jd_accuracy
+        from evals.soft import score_jd_accuracy, score_resume_relevance
+
         if pack.mutated_tex:
             soft_resume_relevance = score_resume_relevance(jd.description, pack.mutated_tex)
         soft_jd_accuracy = score_jd_accuracy(
             ctx.plan.raw_text,
             {
-                "company": jd.company, "role": jd.role, "location": jd.location,
-                "experience_required": jd.experience_required, "skills": jd.skills,
+                "company": jd.company,
+                "role": jd.role,
+                "location": jd.location,
+                "experience_required": jd.experience_required,
+                "skills": jd.skills,
                 "description": jd.description,
             },
         )
@@ -735,11 +889,16 @@ def _handle_eval_log(
         "llm_total_tokens": ctx.total_tokens,
         "llm_total_cost": ctx.total_cost,
         "llm_usage_breakdown": ctx.llm_usage_breakdown,
-        "jd_schema_valid": check_jd_schema({
-            "company": jd.company, "role": jd.role, "location": jd.location,
-            "experience_required": jd.experience_required, "skills": jd.skills,
-            "description": jd.description,
-        }),
+        "jd_schema_valid": check_jd_schema(
+            {
+                "company": jd.company,
+                "role": jd.role,
+                "location": jd.location,
+                "experience_required": jd.experience_required,
+                "skills": jd.skills,
+                "description": jd.description,
+            }
+        ),
         "soft_resume_relevance": soft_resume_relevance,
         "soft_jd_accuracy": soft_jd_accuracy,
     }
@@ -749,13 +908,22 @@ def _handle_eval_log(
     artifact_paths: dict[str, str] = {}
     try:
         job_artifact = build_job_extraction_artifact(
-            run_id=ctx.run_id, input_mode=ctx.input_mode, jd_hash=jd.jd_hash,
-            jd={"company": jd.company, "role": jd.role, "location": jd.location,
-                "experience_required": jd.experience_required, "skills": jd.skills,
-                "description": jd.description},
+            run_id=ctx.run_id,
+            input_mode=ctx.input_mode,
+            jd_hash=jd.jd_hash,
+            jd={
+                "company": jd.company,
+                "role": jd.role,
+                "location": jd.location,
+                "experience_required": jd.experience_required,
+                "skills": jd.skills,
+                "description": jd.description,
+            },
         )
         resume_artifact = build_resume_output_artifact(
-            run_id=ctx.run_id, jd_hash=jd.jd_hash, resume_base=pack.resume_base,
+            run_id=ctx.run_id,
+            jd_hash=jd.jd_hash,
+            resume_base=pack.resume_base,
             fit_score=ctx.fit_score_percent,
             compile_success=bool(pack.pdf_path and pack.pdf_path.exists()),
             compile_rollback_used=ctx.compile_rollback_used,
@@ -776,24 +944,43 @@ def _handle_eval_log(
             fit_score_details=ctx.fit_score_details,
         )
         eval_artifact = build_eval_output_artifact(
-            run_id=ctx.run_id, jd_hash=jd.jd_hash, eval_results=eval_results,
+            run_id=ctx.run_id,
+            jd_hash=jd.jd_hash,
+            eval_results=eval_results,
         )
         base_dir = ctx.settings.runs_dir / "artifacts"
-        artifact_paths["job_extraction"] = str(write_json_artifact(ctx.run_id, "job_extraction.json", job_artifact.to_dict(), base_dir=base_dir))
-        artifact_paths["resume_output"] = str(write_json_artifact(ctx.run_id, "resume_output.json", resume_artifact.to_dict(), base_dir=base_dir))
-        artifact_paths["eval_output"] = str(write_json_artifact(ctx.run_id, "eval_output.json", eval_artifact.to_dict(), base_dir=base_dir))
+        artifact_paths["job_extraction"] = str(
+            write_json_artifact(
+                ctx.run_id, "job_extraction.json", job_artifact.to_dict(), base_dir=base_dir
+            )
+        )
+        artifact_paths["resume_output"] = str(
+            write_json_artifact(
+                ctx.run_id, "resume_output.json", resume_artifact.to_dict(), base_dir=base_dir
+            )
+        )
+        artifact_paths["eval_output"] = str(
+            write_json_artifact(
+                ctx.run_id, "eval_output.json", eval_artifact.to_dict(), base_dir=base_dir
+            )
+        )
     except Exception as ae:
         pack.errors.append(f"Artifact persistence failed: {ae}")
 
     # ── DB run log ────────────────────────────────────────────────
     run_context = {
-        "company": jd.company, "role": jd.role, "jd_hash": jd.jd_hash,
-        "resume_base": pack.resume_base, "fit_score": ctx.fit_score_percent,
+        "company": jd.company,
+        "role": jd.role,
+        "jd_hash": jd.jd_hash,
+        "resume_base": pack.resume_base,
+        "fit_score": ctx.fit_score_percent,
         "fit_score_details": ctx.fit_score_details,
         "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
-        "drive_link": pack.drive_link, "drive_uploads": pack.drive_uploads,
+        "drive_link": pack.drive_link,
+        "drive_uploads": pack.drive_uploads,
         "application_context_id": pack.application_context_id,
-        "skip_upload": ctx.plan.skip_upload, "skip_calendar": ctx.plan.skip_calendar,
+        "skip_upload": ctx.plan.skip_upload,
+        "skip_calendar": ctx.plan.skip_calendar,
         "input_mode": ctx.input_mode,
         "selected_collateral": pack.selected_collateral,
         "generated_collateral": pack.generated_collateral,
@@ -806,15 +993,26 @@ def _handle_eval_log(
         "compile_outcome": ctx.compile_outcome,
     }
     pack.run_id = log_run(
-        "inbox", eval_results, run_id=ctx.run_id, job_id=pack.job_id,
-        tokens_used=ctx.total_tokens, cost_estimate=ctx.total_cost,
-        latency_ms=latency_ms, input_mode=ctx.input_mode,
-        skip_upload=ctx.plan.skip_upload, skip_calendar=ctx.plan.skip_calendar,
-        errors=pack.errors, context=run_context,
+        "inbox",
+        eval_results,
+        run_id=ctx.run_id,
+        job_id=pack.job_id,
+        tokens_used=ctx.total_tokens,
+        cost_estimate=ctx.total_cost,
+        latency_ms=latency_ms,
+        input_mode=ctx.input_mode,
+        skip_upload=ctx.plan.skip_upload,
+        skip_calendar=ctx.plan.skip_calendar,
+        errors=pack.errors,
+        context=run_context,
     )
-    logger.info("Run logged run_id=%s jd_hash=%s pdf_path=%s errors=%d",
-                pack.run_id, jd.jd_hash,
-                str(pack.pdf_path) if pack.pdf_path else None, len(pack.errors))
+    logger.info(
+        "Run logged run_id=%s jd_hash=%s pdf_path=%s errors=%d",
+        pack.run_id,
+        jd.jd_hash,
+        str(pack.pdf_path) if pack.pdf_path else None,
+        len(pack.errors),
+    )
     return pack
 
 
@@ -841,7 +1039,9 @@ _HANDLERS: dict[str, Handler] = {
 # ── Executor ──────────────────────────────────────────────────────────────────
 
 
-def _build_step_input(step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext) -> dict[str, Any]:
+def _build_step_input(
+    step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext
+) -> dict[str, Any]:
     """Build a lightweight input snapshot for the audit trail."""
     data: dict[str, Any] = {"tool": step.tool}
     if pack.jd:
@@ -855,11 +1055,18 @@ def _build_step_input(step: ToolStep, pack: "ApplicationPack", ctx: ExecutionCon
     return data
 
 
-def _build_step_output(step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext) -> dict[str, Any]:
+def _build_step_output(
+    step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext
+) -> dict[str, Any]:
     """Build a lightweight output snapshot for the audit trail."""
     data: dict[str, Any] = {}
     if step.tool == "jd_extract" and pack.jd:
-        data["jd_schema"] = {"company": pack.jd.company, "role": pack.jd.role, "skills": pack.jd.skills, "location": pack.jd.location}
+        data["jd_schema"] = {
+            "company": pack.jd.company,
+            "role": pack.jd.role,
+            "skills": pack.jd.skills,
+            "location": pack.jd.location,
+        }
     elif step.tool == "resume_select":
         data["selected"] = pack.resume_base
         data["fit_score"] = ctx.fit_score_percent
@@ -896,7 +1103,7 @@ def _run_step_with_retry(
     ctx: ExecutionContext,
 ) -> StepResult:
     """Execute a single step, retrying transient errors as configured."""
-    from core.db import insert_step, complete_step
+    from core.db import complete_step, insert_step
 
     handler = _HANDLERS.get(step.tool)
     if handler is None:
@@ -920,15 +1127,25 @@ def _run_step_with_retry(
             duration_ms = int((time.time() - step_start) * 1000)
             # Audit: record step success
             try:
-                complete_step(ctx.run_id, step.name, output_data=_build_step_output(step, pack, ctx), duration_ms=duration_ms)
+                complete_step(
+                    ctx.run_id,
+                    step.name,
+                    output_data=_build_step_output(step, pack, ctx),
+                    duration_ms=duration_ms,
+                )
             except Exception:
                 logger.debug("Failed to complete audit step for %s (non-fatal)", step.name)
             return StepResult(step_name=step.name, success=True, attempts=attempt)
         except Exception as exc:
             last_error = exc
             if step.retry_on_transient and attempt < step.max_attempts and _is_transient_error(exc):
-                logger.warning("Step %s transient error (attempt %d/%d): %s",
-                               step.name, attempt, step.max_attempts, exc)
+                logger.warning(
+                    "Step %s transient error (attempt %d/%d): %s",
+                    step.name,
+                    attempt,
+                    step.max_attempts,
+                    exc,
+                )
                 time.sleep(0.3 * attempt)
                 continue
             break
@@ -978,16 +1195,47 @@ def execute_plan(
         settings=settings,
         input_mode=plan.input_mode,
         llm_usage_breakdown={
-            "ocr_cleanup": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
-            "jd_extract":  {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
-            "resume_mutation": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
-            "draft_email":     {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
-            "draft_linkedin":  {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
-            "draft_referral":  {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_estimate": 0.0},
+            "ocr_cleanup": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
+            "jd_extract": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
+            "resume_mutation": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
+            "draft_email": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
+            "draft_linkedin": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
+            "draft_referral": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_estimate": 0.0,
+            },
         },
     )
 
     from core.db import init_db
+
     init_db()
 
     for step in plan.steps:

@@ -20,6 +20,7 @@ from core.prompts import load_prompt
 @dataclass
 class DraftResult:
     """Result of a draft generation."""
+
     text: str
     draft_type: str
     char_count: int
@@ -31,6 +32,7 @@ class DraftResult:
 
 
 # ── Email draft ───────────────────────────────────────────────────
+
 
 def generate_email_draft(
     applicant_name: str,
@@ -98,7 +100,7 @@ def generate_linkedin_dm(
     within_limit = len(text) <= LINKEDIN_CHAR_LIMIT
     if not within_limit:
         # Hard truncate to enforce constraint
-        text = text[:LINKEDIN_CHAR_LIMIT - 3].rstrip() + "..."
+        text = text[: LINKEDIN_CHAR_LIMIT - 3].rstrip() + "..."
 
     return DraftResult(
         text=text,
@@ -113,6 +115,7 @@ def generate_linkedin_dm(
 
 
 # ── Referral template ────────────────────────────────────────────
+
 
 def generate_referral_template(
     applicant_name: str,

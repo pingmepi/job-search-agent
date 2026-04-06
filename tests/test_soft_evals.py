@@ -12,7 +12,7 @@ import json
 import pytest
 
 from core.llm import LLMResponse
-from evals.soft import score_resume_relevance, score_jd_accuracy
+from evals.soft import score_jd_accuracy, score_resume_relevance
 
 
 def _llm_response(text: str) -> LLMResponse:
@@ -52,7 +52,9 @@ class TestResumeRelevance:
         monkeypatch.setattr(
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response(
-                json.dumps({"score": 15, "reasoning": "Resume is marketing-focused, JD is engineering"})
+                json.dumps(
+                    {"score": 15, "reasoning": "Resume is marketing-focused, JD is engineering"}
+                )
             ),
         )
         score = score_resume_relevance(
@@ -90,9 +92,7 @@ class TestResumeRelevance:
         """Scores above 100 should still clamp to 1.0."""
         monkeypatch.setattr(
             "evals.soft.chat_text",
-            lambda *_a, **_k: _llm_response(
-                json.dumps({"score": 150, "reasoning": "overscored"})
-            ),
+            lambda *_a, **_k: _llm_response(json.dumps({"score": 150, "reasoning": "overscored"})),
         )
         score = score_resume_relevance("JD text", "Resume text")
         assert score == 1.0
@@ -101,9 +101,7 @@ class TestResumeRelevance:
         """Negative scores should clamp to 0.0."""
         monkeypatch.setattr(
             "evals.soft.chat_text",
-            lambda *_a, **_k: _llm_response(
-                json.dumps({"score": -10, "reasoning": "error"})
-            ),
+            lambda *_a, **_k: _llm_response(json.dumps({"score": -10, "reasoning": "error"})),
         )
         score = score_resume_relevance("JD text", "Resume text")
         assert score == 0.0
@@ -121,9 +119,7 @@ class TestResumeRelevance:
         """JSON without 'score' key should return 0.0."""
         monkeypatch.setattr(
             "evals.soft.chat_text",
-            lambda *_a, **_k: _llm_response(
-                json.dumps({"reasoning": "missing score field"})
-            ),
+            lambda *_a, **_k: _llm_response(json.dumps({"reasoning": "missing score field"})),
         )
         score = score_resume_relevance("JD text", "Resume text")
         assert score == 0.0

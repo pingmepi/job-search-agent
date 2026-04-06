@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import psycopg2.extras
-import pytest
 
-from core.db import init_db
 from agents.followup.agent import (
-    detect_followups,
     ESCALATION_TIERS,
     MAX_FOLLOW_UPS,
+    detect_followups,
     generate_all_followups,
 )
 

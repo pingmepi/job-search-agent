@@ -33,6 +33,7 @@ def check_compile(pdf_path: str | None) -> bool:
     if pdf_path is None:
         return False
     from pathlib import Path
+
     return Path(pdf_path).exists()
 
 
@@ -56,18 +57,79 @@ def check_edit_scope(
 # Common capitalized words that are NOT proper nouns — these appear at
 # sentence starts or as generic business terms and should not trigger the
 # fabrication detector.
-_COMMON_SKIP_WORDS = frozenset({
-    "product", "senior", "junior", "lead", "manager", "platform", "team",
-    "data", "engineering", "operations", "business", "strategy", "growth",
-    "marketing", "technical", "analytics", "design", "development",
-    "customer", "revenue", "sales", "cross", "functional", "built",
-    "drove", "launched", "designed", "implemented", "defined", "managed",
-    "developed", "created", "established", "optimized", "reduced",
-    "increased", "improved", "integrated", "automated", "delivered",
-    "streamlined", "scaled", "led", "spearheaded", "architected",
-    "orchestrated", "partnered", "collaborated", "mentored", "owned",
-    "leveraged", "utilized", "facilitated", "coordinated", "analyzed",
-})
+_COMMON_SKIP_WORDS = frozenset(
+    {
+        "product",
+        "senior",
+        "junior",
+        "lead",
+        "manager",
+        "platform",
+        "team",
+        "data",
+        "engineering",
+        "operations",
+        "business",
+        "strategy",
+        "growth",
+        "marketing",
+        "technical",
+        "analytics",
+        "design",
+        "development",
+        "customer",
+        "revenue",
+        "sales",
+        "cross",
+        "functional",
+        "built",
+        "drove",
+        "launched",
+        "designed",
+        "implemented",
+        "defined",
+        "managed",
+        "developed",
+        "created",
+        "established",
+        "optimized",
+        "reduced",
+        "increased",
+        "improved",
+        "integrated",
+        "automated",
+        "delivered",
+        "streamlined",
+        "scaled",
+        "led",
+        "spearheaded",
+        "architected",
+        "orchestrated",
+        "partnered",
+        "collaborated",
+        "mentored",
+        "owned",
+        "leveraged",
+        "utilized",
+        "facilitated",
+        "coordinated",
+        "analyzed",
+        "conducted",
+    }
+)
+
+
+def _normalize_latex(text: str) -> str:
+    """Strip common LaTeX escaping so numeric/entity comparisons match."""
+    import re as _re
+
+    text = text.replace("\\%", "%")
+    text = text.replace("\\$", "$")
+    text = text.replace("\\&", "&")
+    text = text.replace("\\sim", "")
+    text = _re.sub(r"(?<!-)--(?!-)", "-", text)  # em-dash to hyphen
+    text = text.replace("~", " ")
+    return text
 
 
 def check_forbidden_claims_per_bullet(
@@ -85,16 +147,18 @@ def check_forbidden_claims_per_bullet(
     """
     import re
 
-    # Build the allowed corpus
-    allowed_text = (
+    # Build the allowed corpus (LaTeX-normalized so metrics match)
+    allowed_text = _normalize_latex(
         " ".join(original_bullets + bullet_bank).lower()
-        + " " + jd_text.lower()
-        + " " + profile_text.lower()
+        + " "
+        + jd_text.lower()
+        + " "
+        + profile_text.lower()
     )
 
     # Build skip set: common words + allowed tools
     skip_words = set(_COMMON_SKIP_WORDS)
-    for tool in (allowed_tools or []):
+    for tool in allowed_tools or []:
         skip_words.add(tool.lower())
 
     results: list[dict] = []
@@ -110,22 +174,28 @@ def check_forbidden_claims_per_bullet(
         # (catches "Goldman Sachs", skips "Product")
         for entity in re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b", bullet):
             if entity.lower() not in allowed_text:
-                reasons.append(f"ent:{entity.lower()}")
+                # Only flag if there are unknown words after removing skip words
+                unknown = [
+                    w
+                    for w in entity.lower().split()
+                    if w not in skip_words and w not in allowed_text
+                ]
+                if unknown:
+                    reasons.append(f"ent:{entity.lower()}")
 
         # Single capitalized words — only flag if NOT in skip set
         for word in re.findall(r"\b[A-Z][a-z]+\b", bullet):
-            if (
-                word.lower() not in skip_words
-                and word.lower() not in allowed_text
-            ):
+            if word.lower() not in skip_words and word.lower() not in allowed_text:
                 reasons.append(f"ent:{word.lower()}")
 
-        results.append({
-            "bullet": bullet,
-            "index": idx,
-            "flagged": len(reasons) > 0,
-            "reasons": reasons,
-        })
+        results.append(
+            {
+                "bullet": bullet,
+                "index": idx,
+                "flagged": len(reasons) > 0,
+                "reasons": reasons,
+            }
+        )
 
     return results
 
@@ -144,8 +214,12 @@ def check_forbidden_claims(
     a single int for backward compatibility with CI gate and existing tests.
     """
     per_bullet = check_forbidden_claims_per_bullet(
-        original_bullets, mutated_bullets, bullet_bank,
-        jd_text=jd_text, allowed_tools=allowed_tools, profile_text=profile_text,
+        original_bullets,
+        mutated_bullets,
+        bullet_bank,
+        jd_text=jd_text,
+        allowed_tools=allowed_tools,
+        profile_text=profile_text,
     )
     return sum(1 for b in per_bullet if b["flagged"])
 

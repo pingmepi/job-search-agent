@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS run_steps (
 
 RUN_STEPS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps (run_id);"
 
+ARTICLE_SIGNALS_DDL = """\
+CREATE TABLE IF NOT EXISTS article_signals (
+    id          SERIAL PRIMARY KEY,
+    run_id      TEXT NOT NULL,
+    signal_text TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+"""
+
 WEBHOOK_EVENTS_DDL = """\
 CREATE TABLE IF NOT EXISTS webhook_events (
     event_id          TEXT PRIMARY KEY,
@@ -96,6 +105,7 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 
 # ── Helpers ───────────────────────────────────────────────────────
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -113,6 +123,10 @@ def _apply_migrations(cur: Any) -> None:
     jobs_cols = _table_columns(cur, "jobs")
     if "last_follow_up_at" not in jobs_cols:
         cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_follow_up_at TEXT")
+    if "calendar_apply_event_id" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS calendar_apply_event_id TEXT")
+    if "calendar_followup_event_id" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS calendar_followup_event_id TEXT")
 
     runs_cols = _table_columns(cur, "runs")
     for col, col_type in {
@@ -136,6 +150,7 @@ def init_db() -> None:
         cur.execute(RUN_STEPS_DDL)
         cur.execute(RUN_STEPS_INDEX_DDL)
         cur.execute(WEBHOOK_EVENTS_DDL)
+        cur.execute(ARTICLE_SIGNALS_DDL)
         _apply_migrations(cur)
 
 
@@ -161,6 +176,7 @@ def get_conn() -> Generator[Any, None, None]:
 
 # ── Job CRUD ──────────────────────────────────────────────────────
 
+
 def insert_job(
     company: str,
     role: str,
@@ -169,6 +185,8 @@ def insert_job(
     fit_score: int | None = None,
     resume_used: str | None = None,
     drive_link: str | None = None,
+    calendar_apply_event_id: str | None = None,
+    calendar_followup_event_id: str | None = None,
     db_path: Any = None,  # ignored, kept for call-site compatibility during transition
 ) -> int:
     """Insert a new job row and return its id."""
@@ -177,10 +195,22 @@ def insert_job(
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO jobs
-               (company, role, jd_hash, fit_score, resume_used, drive_link, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               (company, role, jd_hash, fit_score, resume_used, drive_link,
+                calendar_apply_event_id, calendar_followup_event_id, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (company, role, jd_hash, fit_score, resume_used, drive_link, now, now),
+            (
+                company,
+                role,
+                jd_hash,
+                fit_score,
+                resume_used,
+                drive_link,
+                calendar_apply_event_id,
+                calendar_followup_event_id,
+                now,
+                now,
+            ),
         )
         row = cur.fetchone()
         return row["id"]
@@ -221,6 +251,7 @@ def update_job(job_id: int, *, db_path: Any = None, **fields: Any) -> None:
 
 
 # ── Run CRUD ──────────────────────────────────────────────────────
+
 
 def insert_run(
     run_id: str,
@@ -327,6 +358,7 @@ def list_runs(*, limit: int = 20, db_path: Any = None) -> list[dict[str, Any]]:
 
 
 # ── Run Steps (audit trail) ──────────────────────────────────────
+
 
 def insert_step(
     run_id: str,
@@ -449,7 +481,31 @@ def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
     }
 
 
+# ── Article Signals ──────────────────────────────────────────────
+
+
+def insert_article_signals(
+    run_id: str,
+    signals: list[str],
+    *,
+    db_path: Any = None,
+) -> None:
+    """Persist article-extracted job-search signals."""
+    if not signals:
+        return
+    now = _now_iso()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        for signal in signals:
+            cur.execute(
+                """INSERT INTO article_signals (run_id, signal_text, created_at)
+                   VALUES (%s, %s, %s)""",
+                (run_id, signal, now),
+            )
+
+
 # ── Webhook Event CRUD ───────────────────────────────────────────
+
 
 def insert_webhook_event(
     event_id: str,

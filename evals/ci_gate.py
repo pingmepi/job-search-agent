@@ -33,14 +33,15 @@ from core.db import get_conn
 from evals.dataset import fixture_summary, get_fixtures
 
 # ── Threshold constants (PRD §12) ────────────────────────────────
-COMPILE_RATE_THRESHOLD = 0.95   # 95 %
-FORBIDDEN_CLAIMS_MAX   = 0      # zero tolerance
-EDIT_VIOLATIONS_MAX    = 0      # zero tolerance
-COST_THRESHOLD         = 0.15   # USD per run
-LATENCY_THRESHOLD_MS   = 60_000 # 60 seconds
+COMPILE_RATE_THRESHOLD = 0.95  # 95 %
+FORBIDDEN_CLAIMS_MAX = 0  # zero tolerance
+EDIT_VIOLATIONS_MAX = 0  # zero tolerance
+COST_THRESHOLD = 0.15  # USD per run
+LATENCY_THRESHOLD_MS = 60_000  # 60 seconds
 
 
 # ── Fixture-based gate ────────────────────────────────────────────
+
 
 def run_gate_on_fixtures(
     fixtures: list[dict[str, Any]] | None = None,
@@ -86,7 +87,7 @@ def run_gate_on_fixtures(
         print(f"❌ [fixture] Forbidden claims: {total_forbidden} (threshold: 0)")
         passed = False
     else:
-        print(f"✅ [fixture] Forbidden claims: 0")
+        print("✅ [fixture] Forbidden claims: 0")
 
     # ── Edit scope violations ─────────────────────────────────────
     total_violations = stats["total_violations"]
@@ -94,42 +95,37 @@ def run_gate_on_fixtures(
         print(f"❌ [fixture] Edit scope violations: {total_violations} (threshold: 0)")
         passed = False
     else:
-        print(f"✅ [fixture] Edit scope violations: 0")
+        print("✅ [fixture] Edit scope violations: 0")
 
     # ── Avg cost ──────────────────────────────────────────────────
     if stats["avg_cost"] is not None:
         avg_cost = stats["avg_cost"]
         if avg_cost > COST_THRESHOLD:
-            print(
-                f"❌ [fixture] Avg cost: ${avg_cost:.4f}"
-                f" (threshold: ${COST_THRESHOLD:.2f})"
-            )
+            print(f"❌ [fixture] Avg cost: ${avg_cost:.4f} (threshold: ${COST_THRESHOLD:.2f})")
             passed = False
         else:
-            print(
-                f"✅ [fixture] Avg cost: ${avg_cost:.4f}"
-                f" (max: ${stats['max_cost']:.4f})"
-            )
+            print(f"✅ [fixture] Avg cost: ${avg_cost:.4f} (max: ${stats['max_cost']:.4f})")
 
     # ── Avg latency ───────────────────────────────────────────────
     if stats["avg_latency_ms"] is not None:
         avg_lat = stats["avg_latency_ms"]
         if avg_lat > LATENCY_THRESHOLD_MS:
             print(
-                f"❌ [fixture] Avg latency: {avg_lat/1000:.1f}s"
-                f" (threshold: {LATENCY_THRESHOLD_MS/1000:.0f}s)"
+                f"❌ [fixture] Avg latency: {avg_lat / 1000:.1f}s"
+                f" (threshold: {LATENCY_THRESHOLD_MS / 1000:.0f}s)"
             )
             passed = False
         else:
             print(
-                f"✅ [fixture] Avg latency: {avg_lat/1000:.1f}s"
-                f" (max: {stats['max_latency_ms']/1000:.1f}s)"
+                f"✅ [fixture] Avg latency: {avg_lat / 1000:.1f}s"
+                f" (max: {stats['max_latency_ms'] / 1000:.1f}s)"
             )
 
     return passed
 
 
 # ── Live DB informational report ─────────────────────────────────
+
 
 def _report_db_stats() -> None:
     """Print live DB metrics as informational output (non-blocking)."""
@@ -174,7 +170,9 @@ def _report_db_stats() -> None:
     if total_compiles:
         rate = compile_successes / total_compiles
         symbol = "✅" if rate >= COMPILE_RATE_THRESHOLD else "⚠️ "
-        print(f"{symbol} [db] Compile success rate: {rate:.1%} ({compile_successes}/{total_compiles})")
+        print(
+            f"{symbol} [db] Compile success rate: {rate:.1%} ({compile_successes}/{total_compiles})"
+        )
     symbol = "✅" if total_forbidden == 0 else "⚠️ "
     print(f"{symbol} [db] Forbidden claims: {total_forbidden}")
     symbol = "✅" if total_violations == 0 else "⚠️ "
@@ -186,11 +184,12 @@ def _report_db_stats() -> None:
     if latencies:
         avg = sum(latencies) / len(latencies)
         symbol = "✅" if avg <= LATENCY_THRESHOLD_MS else "⚠️ "
-        print(f"{symbol} [db] Avg latency: {avg/1000:.1f}s (n={len(latencies)})")
+        print(f"{symbol} [db] Avg latency: {avg / 1000:.1f}s (n={len(latencies)})")
     print("─────────────────────────────────────────────────────────\n")
 
 
 # ── Legacy DB-only gate (kept for backwards compat / testing) ────
+
 
 def run_gate() -> bool:
     """
@@ -238,6 +237,7 @@ def run_gate() -> bool:
 
 
 # ── Entrypoint ───────────────────────────────────────────────────
+
 
 def main() -> None:
     print("── Fixture-based CI gate (PRD §12) ──────────────────────")

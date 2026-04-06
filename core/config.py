@@ -53,15 +53,11 @@ class Settings:
     telegram_webhook_secret: str = field(
         default_factory=lambda: os.environ.get("TELEGRAM_WEBHOOK_SECRET", "placeholder")
     )
-    public_base_url: str = field(
-        default_factory=lambda: os.environ.get("PUBLIC_BASE_URL", "")
-    )
+    public_base_url: str = field(default_factory=lambda: os.environ.get("PUBLIC_BASE_URL", ""))
     telegram_webhook_path: str = field(
         default_factory=lambda: os.environ.get("TELEGRAM_WEBHOOK_PATH", "/telegram/webhook")
     )
-    webhook_host: str = field(
-        default_factory=lambda: os.environ.get("WEBHOOK_HOST", "0.0.0.0")
-    )
+    webhook_host: str = field(default_factory=lambda: os.environ.get("WEBHOOK_HOST", "0.0.0.0"))
     webhook_port: int = field(
         default_factory=lambda: int(os.environ.get("PORT", os.environ.get("WEBHOOK_PORT", "8000")))
     )
@@ -81,6 +77,15 @@ class Settings:
             "GOOGLE_CREDENTIALS_PATH", "credentials/google_oauth.json"
         )
     )
+    google_token_b64: str = field(default_factory=lambda: os.environ.get("GOOGLE_TOKEN_B64", ""))
+
+    # ── Resume enforcement ─────────────────────────────────────────
+    enforce_single_page: bool = field(
+        default_factory=lambda: _env_bool("ENFORCE_SINGLE_PAGE", default=True)
+    )
+    max_condense_retries: int = field(
+        default_factory=lambda: int(os.environ.get("MAX_CONDENSE_RETRIES", "2"))
+    )
 
     # ── Cost ──────────────────────────────────────────────────────
     max_cost_per_job: float = field(
@@ -99,16 +104,12 @@ class Settings:
     )
 
     # ── Database ──────────────────────────────────────────────────
-    database_url: str = field(
-        default_factory=lambda: os.environ.get("DATABASE_URL", "")
-    )
+    database_url: str = field(default_factory=lambda: os.environ.get("DATABASE_URL", ""))
 
     # ── Paths ─────────────────────────────────────────────────────
     project_root: Path = PROJECT_ROOT
     prompts_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "core" / "prompts")
-    profile_path: Path = field(
-        default_factory=lambda: PROJECT_ROOT / "profile" / "profile.json"
-    )
+    profile_path: Path = field(default_factory=lambda: PROJECT_ROOT / "profile" / "profile.json")
     bullet_bank_path: Path = field(
         default_factory=lambda: PROJECT_ROOT / "profile" / "bullet_bank.json"
     )

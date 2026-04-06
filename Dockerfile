@@ -12,7 +12,7 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e .
 COPY . .
 
-RUN mkdir -p runs/artifacts
+RUN mkdir -p runs/artifacts credentials
 
 EXPOSE 8000
 CMD ["python", "main.py", "webhook"]

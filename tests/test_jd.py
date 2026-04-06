@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from types import SimpleNamespace
+
 import pytest
 
 from agents.inbox.jd import (
-    validate_jd_schema,
-    JDSchema,
     _fill_missing_required_fields,
     _parse_json_object_from_llm_text,
     extract_jd_with_usage,
+    validate_jd_schema,
 )
 
 
@@ -88,14 +87,14 @@ class TestJDSchemaValidation:
 
     def test_parse_json_from_fenced_response(self):
         parsed = _parse_json_object_from_llm_text(
-            "Here you go:\n```json\n{\"company\":\"Acme\",\"role\":\"PM\",\"skills\":[]}\n```"
+            'Here you go:\n```json\n{"company":"Acme","role":"PM","skills":[]}\n```'
         )
         assert parsed["company"] == "Acme"
         assert parsed["role"] == "PM"
 
     def test_parse_json_from_prefixed_response(self):
         parsed = _parse_json_object_from_llm_text(
-            "Result: {\"company\":\"Acme\",\"role\":\"PM\",\"skills\":[]} -- done"
+            'Result: {"company":"Acme","role":"PM","skills":[]} -- done'
         )
         assert parsed["company"] == "Acme"
         assert parsed["role"] == "PM"

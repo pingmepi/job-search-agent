@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
-from agents.inbox.resume import (
-    parse_editable_regions,
-    EditableRegion,
-    apply_mutations,
-    select_base_resume_with_score,
-    select_base_resume_with_details,
-    compute_keyword_overlap,
-)
+import pytest
 
+from agents.inbox.resume import (
+    apply_mutations,
+    compute_keyword_overlap,
+    parse_editable_regions,
+    select_base_resume_with_details,
+    select_base_resume_with_score,
+)
 
 SAMPLE_TEX = r"""
 \section*{Experience}
@@ -52,7 +51,9 @@ class TestEditableRegionParsing:
         assert "Managed product roadmap" in regions[1].content
 
     def test_no_regions(self):
-        regions = parse_editable_regions(r"\documentclass{article}\begin{document}Hello\end{document}")
+        regions = parse_editable_regions(
+            r"\documentclass{article}\begin{document}Hello\end{document}"
+        )
         assert len(regions) == 0
 
     def test_region_has_line_numbers(self):
@@ -67,16 +68,26 @@ class TestMutationBounds:
         """Mutations are no longer capped — model can make as many as needed."""
         # 5+ mutations should work fine (previously capped at 3)
         mutations = [
-            {"original": "Built ML pipeline improving accuracy by 20\\%",
-             "replacement": "Built ML pipeline improving accuracy by 30\\%"},
-            {"original": "Led team of 5 engineers",
-             "replacement": "Led cross-functional team of 5 engineers"},
-            {"original": "Launched recommendation engine",
-             "replacement": "Launched AI-powered recommendation engine"},
-            {"original": "Managed product roadmap",
-             "replacement": "Owned end-to-end product roadmap"},
-            {"original": "Drove 15\\% increase in retention",
-             "replacement": "Drove 15\\% improvement in user retention"},
+            {
+                "original": "Built ML pipeline improving accuracy by 20\\%",
+                "replacement": "Built ML pipeline improving accuracy by 30\\%",
+            },
+            {
+                "original": "Led team of 5 engineers",
+                "replacement": "Led cross-functional team of 5 engineers",
+            },
+            {
+                "original": "Launched recommendation engine",
+                "replacement": "Launched AI-powered recommendation engine",
+            },
+            {
+                "original": "Managed product roadmap",
+                "replacement": "Owned end-to-end product roadmap",
+            },
+            {
+                "original": "Drove 15\\% increase in retention",
+                "replacement": "Drove 15\\% improvement in user retention",
+            },
         ]
         result = apply_mutations(SAMPLE_TEX, mutations)
         assert "accuracy by 30" in result
@@ -102,10 +113,12 @@ Built ML pipeline improving accuracy by 20\%
 """
         updated = apply_mutations(
             tex,
-            [{
-                "original": "Built ML pipeline improving accuracy by 20\\%",
-                "replacement": "Built ML pipeline improving accuracy by 30\\%",
-            }],
+            [
+                {
+                    "original": "Built ML pipeline improving accuracy by 20\\%",
+                    "replacement": "Built ML pipeline improving accuracy by 30\\%",
+                }
+            ],
         )
 
         # Non-editable summary line must remain unchanged.

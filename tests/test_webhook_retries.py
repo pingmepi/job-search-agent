@@ -117,6 +117,7 @@ class _SlowTelegramApp:
 
 async def time_async_sleep(seconds: float) -> None:
     import asyncio
+
     await asyncio.sleep(seconds)
 
 

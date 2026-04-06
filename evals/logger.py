@@ -7,11 +7,10 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from core.config import get_settings
-from core.db import insert_run, complete_run
+from core.db import complete_run, insert_run
 
 
 def generate_run_id() -> str:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
@@ -8,7 +7,7 @@ import psycopg2.extras
 import pytest
 
 from agents.followup.runner import run_followup_cycle, run_scheduler
-from core.db import get_run, init_db
+from core.db import get_run
 
 
 def _insert_old_job(database_url: str, company: str, *, follow_up_count: int = 0) -> None:
