@@ -53,3 +53,46 @@ def test_fetch_url_text_success(monkeypatch) -> None:
     assert result.ok is True
     assert "job description" in result.extracted_text.lower()
     assert result.error_type is None
+
+
+class TestSSRFProtection:
+    def test_blocks_localhost(self, monkeypatch):
+        monkeypatch.setattr(
+            "agents.inbox.url_ingest.socket.getaddrinfo",
+            lambda *args, **kwargs: [(2, 1, 0, "", ("127.0.0.1", 80))],
+        )
+        result = fetch_url_text("http://localhost/evil")
+        assert result.ok is False
+        assert result.error_type == "ssrf_blocked"
+
+    def test_blocks_cloud_metadata(self, monkeypatch):
+        monkeypatch.setattr(
+            "agents.inbox.url_ingest.socket.getaddrinfo",
+            lambda *args, **kwargs: [(2, 1, 0, "", ("169.254.169.254", 80))],
+        )
+        result = fetch_url_text("http://metadata.internal/latest/")
+        assert result.ok is False
+        assert result.error_type == "ssrf_blocked"
+
+    def test_blocks_private_ip(self, monkeypatch):
+        monkeypatch.setattr(
+            "agents.inbox.url_ingest.socket.getaddrinfo",
+            lambda *args, **kwargs: [(2, 1, 0, "", ("10.0.0.1", 80))],
+        )
+        result = fetch_url_text("http://internal-service.local/api")
+        assert result.ok is False
+        assert result.error_type == "ssrf_blocked"
+
+    def test_allows_public_ip(self, monkeypatch):
+        monkeypatch.setattr(
+            "agents.inbox.url_ingest.socket.getaddrinfo",
+            lambda *args, **kwargs: [(2, 1, 0, "", ("93.184.216.34", 80))],
+        )
+        # Still need to mock urlopen since we're not actually fetching
+        monkeypatch.setattr(
+            "agents.inbox.url_ingest.urlopen",
+            lambda *a, **kw: (_ for _ in ()).throw(Exception("not testing fetch")),
+        )
+        result = fetch_url_text("https://example.com/job")
+        # Should get past SSRF check (fail on fetch mock, not SSRF)
+        assert result.error_type != "ssrf_blocked"
