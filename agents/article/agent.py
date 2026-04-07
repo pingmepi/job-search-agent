@@ -48,7 +48,11 @@ def summarize_with_telemetry(text: str) -> tuple[str, list[str], LLMResponse]:
     Returns: (formatted_summary, signals, llm_response)
     """
     response = chat_text(_SYSTEM_PROMPT, text, json_mode=True)
-    data = json.loads(response.text)
+    try:
+        data = json.loads(response.text)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Article agent got malformed JSON: %s", response.text[:200])
+        data = {}
     bullets = data.get("summary_bullets", [])
     signals = data.get("signals", [])
     summary = "\n".join(f"• {b}" for b in bullets)

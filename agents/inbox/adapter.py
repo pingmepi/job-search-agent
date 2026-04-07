@@ -141,6 +141,8 @@ async def _run_and_respond(
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command."""
+    if not update.message:
+        return
     await update.message.reply_text(
         "👋 Hi! I'm your Job Application Agent.\n\n"
         "Send me:\n"
@@ -153,6 +155,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /help command."""
+    if not update.message:
+        return
     await update.message.reply_text(
         "Commands:\n"
         "/start — Welcome message\n"
@@ -165,6 +169,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /status command — check pending follow-ups."""
+    if not update.message:
+        return
     from agents.followup.agent import detect_followups
 
     jobs = detect_followups()
@@ -184,6 +190,8 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle photo messages (JD screenshots)."""
+    if not update.message:
+        return
     logger.info("Handling photo message via OCR path")
     await update.message.reply_text("📸 Got your screenshot.")
 
@@ -211,6 +219,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages — route to the appropriate agent."""
+    if not update.message:
+        return
     text = update.message.text
     pending_request = context.user_data.get("pending_inbox_request")
     if pending_request:
