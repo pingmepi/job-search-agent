@@ -7,6 +7,8 @@ import re
 
 def _normalize(text: str) -> str:
     """Lowercase and normalize hyphens/underscores to spaces."""
+    if not text:
+        return ""
     return re.sub(r"[-_]", " ", text.lower().strip())
 
 
@@ -23,6 +25,7 @@ def score_bullet_relevance(
 
     Returns a float in [0.0, 1.0].
     """
+    jd_skills = [s for s in jd_skills if s]
     if not jd_skills:
         return 0.0
 
