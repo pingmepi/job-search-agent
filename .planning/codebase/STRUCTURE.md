@@ -18,7 +18,7 @@
 ## Key Code Locations
 
 ### Entry and Runtime
-- `main.py`: CLI command dispatcher (`webhook`, `init-db`, `ci-gate`, `db-stats`, `followup-runner`)
+- `main.py`: CLI command dispatcher (`webhook`, `init-db`, `ci-gate`, `db-stats`, `followup-runner`, `auth-google`, `replay-webhook`, `runs`)
 - `app.py`: FastAPI app creation and webhook runtime lifecycle
 
 ### Agent Domain
@@ -44,8 +44,9 @@
 - `core/prompts/`: versioned prompt text files (`*_v{n}.txt`)
 
 ### External Integrations
-- `integrations/drive.py`: Drive OAuth and PDF upload
-- `integrations/calendar.py`: Calendar OAuth and event creation
+- `integrations/google_auth.py`: shared OAuth module (headless-safe, env-var bootstrap, tenacity retry)
+- `integrations/drive.py`: Drive folder creation and PDF upload (uses shared auth)
+- `integrations/calendar.py`: Calendar event creation (uses shared auth)
 
 ### Evaluation and QA
 - `evals/hard.py`, `evals/soft.py`: rule-based checks
@@ -64,7 +65,7 @@
 - Files: snake_case module names (example: `url_ingest.py`, `extract_pdfs.py`)
 - Tests: `tests/test_<module_or_flow>.py`
 - Prompts: `<prompt_name>_v<version>.txt` (example: `jd_extract_v1.txt`)
-- Shell utilities: `.sh` scripts under `scripts/` or root helper scripts
+- Shell utilities: `.sh` scripts under `scripts/` (e.g., `pre-commit`, `install-hooks.sh`)
 
 ### Runtime Data Locations
 - DB: PostgreSQL via `DATABASE_URL` env var (previously `data/inbox_agent.db`)
@@ -80,6 +81,14 @@
 - Infrastructure concern: `core/config.py`, `core/db.py`, `core/llm.py`
 - Integration concern: `integrations/*.py`
 - Verification concern: `evals/*.py`, `tests/*.py`
+- Code quality: `scripts/pre-commit`, `scripts/install-hooks.sh`, `.claude/commands/review-fix.md`, `.claude/commands/review-check.md`
+
+## Database Tables
+- `jobs`: job applications (company, role, fit_score, calendar_apply_event_id, etc.)
+- `runs`: per-agent-invocation telemetry (run_id, agent, tokens, cost, latency, eval_results)
+- `run_steps`: per-step audit trail within a run
+- `webhook_events`: raw Telegram webhook envelopes
+- `article_signals`: job-search signals extracted by ArticleAgent (run_id, signal_text)
 
 ## Notable Structural Characteristics
 - The project is intentionally flat at top-level for quick discoverability.
