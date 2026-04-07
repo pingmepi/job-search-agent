@@ -37,6 +37,25 @@ class TestScoreBulletRelevance:
         bullet = {"bullet": "irrelevant content", "tags": []}
         assert score_bullet_relevance(bullet, ["python"], "") == 0.0
 
+    def test_none_in_skills_does_not_crash(self):
+        bullet = {"bullet": "Built python automation", "tags": ["python"]}
+        score = score_bullet_relevance(bullet, ["python", None, "sql"], "")
+        assert score > 0.0
+
+    def test_all_none_skills_returns_zero(self):
+        bullet = {"bullet": "anything", "tags": ["ml"]}
+        assert score_bullet_relevance(bullet, [None, None], "") == 0.0
+
+    def test_none_bullet_text_does_not_crash(self):
+        bullet = {"bullet": None, "tags": ["python"]}
+        score = score_bullet_relevance(bullet, ["python"], "")
+        assert score >= 0.0
+
+    def test_none_tag_does_not_crash(self):
+        bullet = {"bullet": "test", "tags": [None, "python"]}
+        score = score_bullet_relevance(bullet, ["python"], "")
+        assert score >= 0.0
+
 
 class TestSelectRelevantBullets:
     def _make_bank(self, n: int) -> list[dict]:
