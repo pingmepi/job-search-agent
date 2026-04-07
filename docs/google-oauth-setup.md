@@ -73,7 +73,6 @@ In your Railway project settings, add:
 
 | Variable | Value |
 |----------|-------|
-| `GOOGLE_CREDENTIALS_PATH` | `credentials/google_oauth.json` |
 | `GOOGLE_TOKEN_B64` | *(paste base64 token)* |
 | `TELEGRAM_ENABLE_DRIVE_UPLOAD` | `true` |
 | `TELEGRAM_ENABLE_CALENDAR_EVENTS` | `true` |

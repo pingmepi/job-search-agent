@@ -65,6 +65,10 @@ Features shipped between Phase 3 completion and Phase 4 planning:
 - **V2 mutation pipeline** (2026-04-02) — REWRITE/SWAP/GENERATE ops, profile context, selective revert on flagged bullets.
 - **Executor simplification** (2026-04-02) — `_load_profile` extraction, `reverted_count` scope fix, `Counter` usage.
 - **KAR-73: ArticleAgent** (2026-04-03) — article summarization and job-search signal extraction.
+- **Google Drive & Calendar operational** (2026-04-06) — shared OAuth module, headless-safe, env-var bootstrap, tenacity retry.
+- **Pre-commit hooks + ruff linting** (2026-04-07) — ruff lint/format/pytest on staged files. 62 lint issues fixed. Codex review loop commands.
+- **Agent observability** (2026-04-07) — Profile + Article agents log runs to `runs` table. Article signals persisted to `article_signals` table.
+- **Edge case hardening** (2026-04-07) — 6 bugfixes: None in skills, Drive query injection, JSON parse safety, adapter None guards, profile load warning.
 
 ### Phase 4: Eval Gates and Release Quality
 **Goal**: Release decisions are consistently blocked or passed by measurable quality gates across representative job-processing scenarios.

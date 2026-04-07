@@ -46,10 +46,12 @@
 - Logs use structured message templates and include runtime identifiers where possible (`update_id`, `attempt`, `latency_ms`).
 - Logging levels align with severity (`info` for state transitions, `warning` for degraded behavior, `error/exception` for failures).
 
-## Consistency Notes and Gaps
-- No committed linter config (`ruff`, `flake8`, `pylint`) or formatter config (`black`, `isort`) was found in `pyproject.toml`.
-- No pre-commit config was found; conventions are mostly enforced socially and by tests.
-- Type checking is style-oriented (good annotations) but no mypy/pyright config was found.
+## Code Quality Enforcement
+- **Linting:** `ruff` (rules: E, F, W, I) configured in `pyproject.toml`. Line length 100.
+- **Formatting:** `ruff format` enforced via pre-commit hook.
+- **Pre-commit hook:** `scripts/pre-commit` runs ruff lint + format check + pytest on staged `.py` files. Install: `bash scripts/install-hooks.sh`.
+- **Codex review:** GitHub App auto-reviews PRs on open. Claude commands `.claude/commands/review-fix.md` and `review-check.md` for feedback loop.
+- Type checking is style-oriented (good annotations) but no mypy/pyright config is committed.
 - String interpolation style is mixed (`f"..."` and logger `%s` formatting), with `%s` used in many logging callsites.
 
 ## Practical Convention Summary

@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-04-03
+Last updated: 2026-04-08
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -10,13 +10,28 @@ Last updated: 2026-04-03
   - https://linear.app/karans/document/tracker-2026-02-16-20e846e0ca54
 
 ## Current Status
-- Phase: Phase 3 complete. V2 mutation pipeline + ArticleAgent shipped. Phase 4 planning.
+- Phase: Phase 3 complete. Post-phase hardening + observability. Phase 4 planning.
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
-- Test status: `222+ passed` (new test files added since last count for ArticleAgent and bullet relevance).
+- Test status: `219 passed, 35 skipped` (ruff lint clean, pre-commit hooks active).
 - CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
+- Pre-commit: ruff lint + format + pytest. Install: `bash scripts/install-hooks.sh`.
 - Active issue: `KAR-62` (Pending).
 
-## Latest Progress (2026-04-03)
+## Latest Progress (2026-04-08)
+- Made Google Drive & Calendar integration operational — shared OAuth module, headless-safe, `GOOGLE_TOKEN_B64` env-var bootstrap, tenacity retry, `python main.py auth-google` CLI command.
+- Added pre-commit hooks — `scripts/pre-commit` runs ruff lint + format + pytest on staged files. `scripts/install-hooks.sh` for portable install. ruff added as dev dependency.
+- Fixed 62 ruff lint issues (unused imports, unsorted imports, dead variable, empty f-strings). Reformatted 40 files.
+- Added Codex review loop — `.claude/commands/review-fix.md` (auto-fix) and `review-check.md` (read-only).
+- Profile Agent run logging — `run_profile_agent()` with insert_run/complete_run, tracks tokens, latency, ungrounded claims. 2 new tests.
+- Article Agent run logging + signal persistence — `run_article_agent()` logs runs, persists signals to new `article_signals` table. 3 new tests.
+- Bugfix: None in JD skills crashes `bullet_relevance.py` — guard `_normalize()`, filter None from skills list (`8abced8`).
+- Bugfix: Company names with `'` break Drive API query — escape quotes (`1b9d822`).
+- Bugfix: Malformed JSON from LLM crashes article agent — catch JSONDecodeError (`1b9d822`).
+- Bugfix: `update.message` None on edge-case Telegram updates — early return guards (`1b9d822`).
+- Bugfix: Executor `_parse_json_object` unhandled JSONDecodeError — wrap in try/except (`1b9d822`).
+- Bugfix: Profile load failure silently degrades mutation quality — log warning (`1b9d822`).
+
+## Previous Progress (2026-04-03)
 - Implemented `KAR-73` ArticleAgent — `agents/article/agent.py` summarizes articles and surfaces job-search signals. Router integration + 4 unit tests.
 - Added bullet bank relevance scoring (`agents/inbox/bullet_relevance.py`) — JD-aware pre-filtering with tag overlap (60%) + keyword overlap (40%).
 - Built v2 mutation pipeline — REWRITE/SWAP/GENERATE ops, top-12 bullet pre-selection, profile context injection, selective revert on truthfulness failure (`43d56bf`).

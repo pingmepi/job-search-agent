@@ -139,7 +139,8 @@ def _extract_bullets(text: str) -> list[str]:
 def _load_profile(ctx: "ExecutionContext") -> dict:
     try:
         return json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to load profile: %s — mutations will lack profile context", exc)
         return {}
 
 
@@ -212,9 +213,12 @@ def _parse_json_object(text: str) -> dict:
             pass
     extracted = _extract_first_json_object(candidate)
     if extracted:
-        parsed = json.loads(extracted)
-        if isinstance(parsed, dict):
-            return parsed
+        try:
+            parsed = json.loads(extracted)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
     raise ValueError(f"No parseable JSON object. Preview: {candidate[:180]!r}")
 
 

@@ -2,7 +2,7 @@
 
 Chronological record of how the Job Search Agent was built — decisions, issues, solutions, and milestones. Updated as the codebase evolves.
 
-Last updated: 2026-04-03
+Last updated: 2026-04-08
 
 ---
 
@@ -178,6 +178,70 @@ When the router detects article-style content (2+ indicators like "newsletter", 
 - Adapter integration with graceful error handling
 - 4 unit tests covering happy path, empty signals, missing keys, malformed JSON
 
+### Google Drive & Calendar Integration (2026-04-06)
+
+**Commits:** `8814640`, `03886ee`
+
+Made the existing Drive/Calendar code operational for headless Railway deployment:
+
+- `integrations/google_auth.py` — shared OAuth module with three modes: headless (load/refresh), interactive (browser), env-var bootstrap (GOOGLE_TOKEN_B64 decoded to disk on startup)
+- Consolidated from two separate token files to a single `google_token.pickle` with both Drive + Calendar scopes, one env var
+- `python main.py auth-google` CLI command for local token bootstrap
+- Tenacity retry on Google API calls (429/500/503)
+- Executor captures calendar event IDs and stores them in `jobs` table
+- `docs/google-oauth-setup.md` — step-by-step setup guide
+
+### Pre-commit Hooks & Code Quality (2026-04-07)
+
+**Commit:** `61de9ea`
+
+Zero automated code quality gates existed. Added two-layer self-correction loop:
+
+**Layer 1 — Local pre-commit hook:**
+- `scripts/pre-commit` — runs ruff lint, ruff format check, and pytest on staged `.py` files
+- `scripts/install-hooks.sh` — portable installer (works from worktrees via `--git-common-dir`)
+- `ruff>=0.4.0` added as dev dependency with config: `E/F/W/I` rules, line-length 100
+- Fixed 62 lint issues (33 unused imports, 25 unsorted imports, 3 empty f-strings, 1 dead variable, 1 unused import)
+- Reformatted 40 files for consistent style
+
+**Layer 2 — Codex review loop:**
+- `.claude/commands/review-fix.md` — reads Codex PR comments via `gh api`, applies fixes, pushes
+- `.claude/commands/review-check.md` — read-only version showing comments grouped by file
+
+### Agent Run Logging (2026-04-07)
+
+**Commit:** `1580c49`
+
+Profile and Article agents had zero observability. Added run logging to match Inbox Agent patterns:
+
+**Profile Agent:**
+- `answer_with_telemetry()` — returns LLMResponse alongside results (backward-compat preserved)
+- `run_profile_agent()` — generates run_id, calls `insert_run`/`complete_run` with tokens, latency, ungrounded claim count as eval result
+- Adapter wired to use logged version
+
+**Article Agent:**
+- `summarize_with_telemetry()` — returns LLMResponse alongside results
+- `run_article_agent()` — generates run_id, logs run, persists signals to new `article_signals` table
+- New `article_signals` table in `core/db.py` for job-search signal persistence
+- Adapter now shows run_id to user
+
+5 new tests (2 profile, 3 article) covering success and failure paths.
+
+### Bugfixes (2026-04-07)
+
+**Commits:** `8abced8`, `1b9d822`
+
+Production crash and edge case hardening from python-patterns audit:
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| `resume_mutate` crash: `'in <string>' requires string as left operand, not NoneType` | LLM-extracted JD skills can contain None values | Guard `_normalize()` against None, filter None from skills list |
+| Company names with `'` break Drive API query (e.g., O'Reilly) | Unescaped single quotes in query string interpolation | Escape quotes before interpolation |
+| Malformed JSON from LLM crashes article agent | Unguarded `json.loads` on LLM response | Catch JSONDecodeError, return empty results |
+| `update.message` could be None on edge-case Telegram updates | Certain update types have no message attribute | Early return guard on all 5 handlers |
+| Executor `_parse_json_object` unhandled JSONDecodeError | Final fallback `json.loads` not wrapped in try/except | Wrap so it falls through to ValueError (expected by retry logic) |
+| Profile load failure silently degrades mutation quality | Bare except returns empty dict | Log warning so it's visible in telemetry |
+
 ---
 
 ## Issues & Solutions
@@ -195,6 +259,10 @@ When the router detects article-style content (2+ indicators like "newsletter", 
 | 2026-04-02 | Truthfulness flags JD terms as fabricated | JD not in allowed corpus | Add JD text to corpus | `22eb3bf` |
 | 2026-04-02 | reverted_count NameError in edge case | Variable scoped inside conditional | Extract to outer scope | `cfccfa3` |
 | 2026-04-03 | Article content hits dead-end rejection | No article handler | ArticleAgent with summarization | `d8f21e4` |
+| 2026-04-07 | resume_mutate crash on None JD skills | LLM returns None in skills list | Guard _normalize(), filter None | `8abced8` |
+| 2026-04-07 | Drive API breaks on O'Reilly-style names | Unescaped single quotes in query | Escape quotes before interpolation | `1b9d822` |
+| 2026-04-07 | Article agent crash on malformed JSON | Unguarded json.loads on LLM response | Catch JSONDecodeError, return empty | `1b9d822` |
+| 2026-04-07 | Telegram handler crash on edge-case updates | update.message can be None | Early return guard on all handlers | `1b9d822` |
 
 ## Architectural Decisions
 
@@ -202,6 +270,8 @@ When the router detects article-style content (2+ indicators like "newsletter", 
 |---|------|----------|-----------|
 | 1 | 2026-02-16 | Webhook-first (no polling) | Lower latency, Railway-compatible, production-grade |
 | 2 | 2026-02-25 | Unlimited mutations with density rules | 3-cap was too restrictive; density rules prevent bloat |
+| 9 | 2026-04-06 | Single OAuth token for Drive + Calendar | Two separate tokens/env vars was unnecessary duplication |
+| 10 | 2026-04-07 | Pre-commit hooks over CI-only checks | Catch lint/test issues before they're pushed; faster feedback |
 | 3 | 2026-02-25 | Deferred cost resolution | Inline cost API calls added 1-2s latency per LLM call |
 | 4 | 2026-03-05 | Sprint all 3 phases in 2 days | Small codebase, faster than context-switching |
 | 5 | 2026-03-16 | Deterministic planner (zero LLM calls) | Testable without mocks, reproducible plans |
@@ -221,3 +291,7 @@ When the router detects article-style content (2+ indicators like "newsletter", 
 | Production deployment | 2026-03-31 | PostgreSQL + Railway + Docker |
 | V2 mutation pipeline | 2026-04-02 | REWRITE/SWAP/GENERATE, per-bullet truthfulness |
 | ArticleAgent | 2026-04-03 | 4th agent type, article summarization |
+| Google integration operational | 2026-04-06 | Shared OAuth, headless-safe, env-var bootstrap |
+| Pre-commit hooks + linting | 2026-04-07 | ruff enforced, 62 issues fixed, Codex review loop |
+| Agent observability | 2026-04-07 | Profile + Article agents log to runs table |
+| Edge case hardening | 2026-04-07 | 6 bugfixes from python-patterns audit, 219 tests |

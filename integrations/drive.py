@@ -26,7 +26,8 @@ def _get_drive_service():
 @google_api_retry()
 def _find_or_create_folder(service, name: str, parent_id: Optional[str] = None) -> str:
     """Find or create a folder in Drive. Returns folder ID."""
-    query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder'"
+    escaped_name = name.replace("\\", "\\\\").replace("'", "\\'")
+    query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder'"
     if parent_id:
         query += f" and '{parent_id}' in parents"
     query += " and trashed = false"

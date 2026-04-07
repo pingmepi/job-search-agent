@@ -47,12 +47,13 @@ class TestSummarize:
         assert summary == ""
         assert signals == []
 
-    def test_malformed_json_raises(self):
+    def test_malformed_json_returns_empty(self):
         bad = MagicMock()
         bad.text = "not json at all"
         with patch("agents.article.agent.chat_text", return_value=bad):
-            with pytest.raises(json.JSONDecodeError):
-                summarize("some article text")
+            summary, signals = summarize("some article text")
+        assert summary == ""
+        assert signals == []
 
 
 def _mock_llm_response(payload: dict) -> MagicMock:

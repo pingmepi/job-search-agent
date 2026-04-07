@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: between_phases
-stopped_at: Phase 3 complete. Post-phase features shipped (KAR-73 ArticleAgent, v2 mutations, bullet relevance, PostgreSQL migration, Railway deployment). Phase 4 not yet started.
-last_updated: "2026-04-03T00:00:00.000Z"
-last_activity: 2026-04-03 - Documentation sync after post-Phase-3 feature work
+stopped_at: Phase 3 complete. Post-phase hardening and observability shipped. Phase 4 not yet started.
+last_updated: "2026-04-08T00:00:00.000Z"
+last_activity: 2026-04-08 - Documentation sync after pre-commit hooks, agent observability, and bugfixes
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Given a job posting from Telegram, produce a truthful, ATS-safe, submission-ready application package with minimal manual effort.
-**Current focus:** Phase 3 complete. Post-phase feature work shipped. Phase 4 planning next.
+**Current focus:** Phase 3 complete. Post-phase hardening + observability done. Phase 4 planning next.
 
 ## Current Position
 
 Phase: 3 complete, Phase 4 not yet started (Eval Gates and Release Quality)
 Plan: 0 of TBD in current phase
-Status: Post-phase features shipped outside phase structure. Ready to plan Phase 4.
-Last activity: 2026-04-03 - Documentation sync; KAR-73, v2 mutations, PostgreSQL migration, Railway deployment all shipped
+Status: Post-phase features, hardening, and observability shipped. Ready to plan Phase 4.
+Last activity: 2026-04-08 - Docs sync; pre-commit hooks, agent run logging, 6 bugfixes, ruff linting
 
 Progress: [██████░░░░] 60%
 
@@ -63,6 +63,8 @@ Recent decisions affecting current work:
 - Maintain webhook-first runtime and deterministic routing for reliability.
 - Keep draft-first collateral generation and human review in control loop.
 - Prioritize brownfield hardening before planner/executor and SaaS expansion.
+- Single OAuth token for Drive + Calendar (consolidated from two).
+- Pre-commit hooks over CI-only checks (faster feedback loop).
 
 ### Pending Todos
 
@@ -78,14 +80,22 @@ Recent decisions affecting current work:
 - Post-Phase-3: run_steps audit trail for per-step I/O logging.
 - Post-Phase-3: Persistence migrated from SQLite to PostgreSQL. Deployed on Railway.
 - Post-Phase-3: Executor simplified — `_load_profile` helper, `reverted_count` scope fix.
+- Post-Phase-3: Google Drive & Calendar integration operational (shared OAuth, headless-safe, env-var bootstrap).
+- Post-Phase-3: Pre-commit hooks + ruff linting (62 issues fixed, 40 files reformatted).
+- Post-Phase-3: Profile Agent run logging (tokens, latency, ungrounded claims tracked in `runs` table).
+- Post-Phase-3: Article Agent run logging + signal persistence (`article_signals` table).
+- Post-Phase-3: 6 bugfixes from python-patterns audit (None handling, Drive query injection, JSON parse safety, adapter None guards).
+- Post-Phase-3: Codex review loop (`.claude/commands/review-fix.md`, `review-check.md`).
 
 ### Blockers/Concerns
 
 - CI gate now uses fixture-based gating (all 5 thresholds green). Historical live-DB noise is non-blocking.
 - URL ingestion behavior incomplete relative to PRD (readability fallback, field extraction hardening).
+- Follow-Up Agent adapter only shows status — doesn't generate/show drafts to user (P2).
+- Draft LLM costs never tracked (generation_id not captured from draft calls).
 
 ## Session Continuity
 
-Last session: 2026-04-03
-Stopped at: Documentation sync after post-Phase-3 feature work
+Last session: 2026-04-08
+Stopped at: Documentation sync after pre-commit hooks, agent observability, and bugfixes
 Resume file: None
