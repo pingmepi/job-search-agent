@@ -44,6 +44,8 @@ class ApplicationPack:
     referral_draft: Optional[str] = None
     job_id: Optional[int] = None
     run_id: Optional[str] = None
+    calendar_apply_event_id: Optional[str] = None
+    calendar_followup_event_id: Optional[str] = None
     eval_results: dict = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 

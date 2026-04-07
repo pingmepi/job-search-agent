@@ -20,6 +20,9 @@ def load_prompt(name: str, *, version: int = 1) -> str:
     filename = f"{name}_v{version}.txt"
     path = prompts_dir / filename
 
+    if not path.resolve().is_relative_to(prompts_dir.resolve()):
+        raise ValueError(f"Prompt name '{name}' escapes prompts directory")
+
     if not path.exists():
         raise FileNotFoundError(
             f"Prompt '{filename}' not found in {prompts_dir}. "

@@ -37,7 +37,7 @@ def test_fetch_url_text_success(monkeypatch) -> None:
             return False
 
         @staticmethod
-        def read():
+        def read(size=-1):
             body = (
                 "<html><body><h1>JD</h1>"
                 + ("This is a long job description sentence. " * 20)
@@ -48,6 +48,7 @@ def test_fetch_url_text_success(monkeypatch) -> None:
     monkeypatch.setattr(
         "agents.inbox.url_ingest.urlopen", lambda *_args, **_kwargs: _FakeResponse()
     )
+    monkeypatch.setattr("agents.inbox.url_ingest._is_safe_url", lambda url: (True, ""))
     result = fetch_url_text("https://example.com/job")
     assert result.ok is True
     assert "job description" in result.extracted_text.lower()
