@@ -9,14 +9,18 @@ This file is the short-lived operational handoff between sessions/windows when c
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
 - Active phase: Phase 3 complete. Post-phase hardening and observability work done. Phase 4 planning.
-- Current test baseline: `219 passed, 35 skipped` with `.venv/bin/pytest -q`
+- Current test baseline: `251 passed, 37 skipped` with `.venv/bin/pytest -q -m "not live"`
 - Current CI gate: `PASSED` with `.venv/bin/python main.py ci-gate` (fixture-based; all 5 thresholds green)
 - Active execution ticket: `KAR-62` (Pending)
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
 - Pre-commit hooks: Active (ruff lint + format + pytest). Install with `bash scripts/install-hooks.sh`.
 - Codex: GitHub App auto-reviews PRs. Use `/review-check` and `/review-fix` commands.
 
-## What Was Just Completed (2026-04-06 — 2026-04-08)
+## What Was Just Completed (2026-04-08)
+- **Full codebase hardening (17 fixes).** Security: pickle→JSON token, SSRF protection, 5MB response cap, webhook secret redaction, chat_id allowlist, path traversal guard, URL encoding. Performance: connection pooling, parallel cost resolution. Correctness: Drive closure bug, lock race condition, dataclass fields, column validation, shared JSON util. Maintainability: decomposed eval handler, removed dead db_path, moved stale script.
+- **32 new tests (251 total).** JSON utils (10), drafts (5), Google auth (6), SSRF (4), E2E pipeline (7 mock + 2 live). Live tests opt-in: `OPENROUTER_API_KEY=... pytest -m live`.
+
+## Previously Completed (2026-04-06 — 2026-04-07)
 - **Google Drive & Calendar operational.** Shared OAuth module (`integrations/google_auth.py`), headless-safe with env-var bootstrap (`GOOGLE_TOKEN_B64`). CLI: `python main.py auth-google`. Tenacity retry on API calls.
 - **Pre-commit hooks + ruff.** `scripts/pre-commit` runs lint, format check, and pytest on staged files. 62 lint issues fixed, 40 files reformatted. Codex review loop via `.claude/commands/review-fix.md`.
 - **Profile Agent run logging.** `run_profile_agent()` logs tokens, latency, and ungrounded claim count to `runs` table. 2 new tests.

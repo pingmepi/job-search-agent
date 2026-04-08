@@ -349,3 +349,9 @@ except Exception as exc:
 | 15 | Agent run logging | 2026-04-07 | Zero observability | `1580c49` |
 | 16 | LLM outputs as untrusted data | 2026-04-07 | 3 production bugs | `8abced8` |
 | 17 | Graceful degradation + visibility | 2026-04-07 | Silent quality loss | `1b9d822` |
+| 18 | Connection pooling | 2026-04-08 | Per-query TCP churn | `aa7d491` |
+| 19 | SSRF protection on URL fetch | 2026-04-08 | Cloud metadata exposure risk | `aa7d491` |
+| 20 | Chat ID allowlist | 2026-04-08 | Unauthorized bot usage/cost | `aa7d491` |
+| 21 | JSON token storage (not pickle) | 2026-04-08 | RCE via pickle deserialization | `aa7d491` |
+| 22 | Shared JSON extraction utility | 2026-04-08 | Duplicated logic, divergent bugfixes | `aa7d491` |
+| 23 | Decompose eval handler | 2026-04-08 | 240-line function, untestable parts | `aa7d491` |
