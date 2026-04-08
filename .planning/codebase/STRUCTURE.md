@@ -40,6 +40,7 @@
 - `core/config.py`: environment-backed immutable settings singleton
 - `core/router.py`: deterministic routing engine
 - `core/db.py`: PostgreSQL schema, migrations, and CRUD helpers (`psycopg2`)
+- `core/json_utils.py`: shared JSON extraction utility (used by jd.py + executor.py)
 - `core/llm.py`: OpenRouter-backed LLM gateway
 - `core/prompts/`: versioned prompt text files (`*_v{n}.txt`)
 

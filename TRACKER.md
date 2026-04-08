@@ -12,12 +12,17 @@ Last updated: 2026-04-08
 ## Current Status
 - Phase: Phase 3 complete. Post-phase hardening + observability. Phase 4 planning.
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
-- Test status: `219 passed, 35 skipped` (ruff lint clean, pre-commit hooks active).
+- Test status: `251 passed, 37 skipped` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
 - CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
 - Pre-commit: ruff lint + format + pytest. Install: `bash scripts/install-hooks.sh`.
 - Active issue: `KAR-62` (Pending).
 
 ## Latest Progress (2026-04-08)
+- Full codebase hardening: 17 fixes across security (7), performance (2), correctness (5), maintainability (3). Key: pickle→JSON tokens, SSRF protection, connection pooling, Drive closure bug, chat_id allowlist (`TELEGRAM_ALLOWED_CHAT_IDS`).
+- 32 new tests (251 total): JSON utils, drafts, Google auth, SSRF, E2E pipeline. Live E2E opt-in with `pytest -m live`.
+- `core/json_utils.py` — shared JSON extraction utility (deduplicated from jd.py + executor.py).
+- `_handle_eval_log` decomposed into 5 focused helpers: `_resolve_costs`, `_run_hard_evals`, `_run_soft_evals`, `_persist_artifacts`, `_complete_run_record`.
+- Removed dead `db_path` parameter from all DB function signatures.
 - Made Google Drive & Calendar integration operational — shared OAuth module, headless-safe, `GOOGLE_TOKEN_B64` env-var bootstrap, tenacity retry, `python main.py auth-google` CLI command.
 - Added pre-commit hooks — `scripts/pre-commit` runs ruff lint + format + pytest on staged files. `scripts/install-hooks.sh` for portable install. ruff added as dev dependency.
 - Fixed 62 ruff lint issues (unused imports, unsorted imports, dead variable, empty f-strings). Reformatted 40 files.

@@ -3,66 +3,336 @@
         "id": "ai-001",
         "role_family": "ai",
         "bullet": "Led cross-functional team to ship ML-powered recommendation engine, improving engagement by 25%",
-        "tags": [
-            "ml",
-            "recommendation",
-            "engagement",
-            "cross-functional"
-        ]
+        "tags": ["ml", "recommendation", "engagement", "cross-functional"]
     },
     {
         "id": "ai-002",
         "role_family": "ai",
         "bullet": "Defined product requirements for LLM-based customer support automation, reducing ticket resolution time by 40%",
-        "tags": [
-            "llm",
-            "automation",
-            "customer-support",
-            "requirements"
-        ]
+        "tags": ["llm", "automation", "customer-support", "requirements"]
     },
     {
         "id": "growth-001",
         "role_family": "growth",
         "bullet": "Designed and executed A/B testing framework that increased conversion rate by 18% across key funnels",
-        "tags": [
-            "ab-testing",
-            "conversion",
-            "experimentation",
-            "funnel"
-        ]
+        "tags": ["ab-testing", "conversion", "experimentation", "funnel"]
     },
     {
         "id": "growth-002",
         "role_family": "growth",
         "bullet": "Drove user acquisition strategy resulting in 3x growth in monthly active users over 6 months",
-        "tags": [
-            "acquisition",
-            "mau",
-            "growth-strategy"
-        ]
+        "tags": ["acquisition", "mau", "growth-strategy"]
     },
     {
         "id": "martech-001",
         "role_family": "martech",
         "bullet": "Built and launched marketing automation pipeline integrating CRM, email, and analytics platforms",
-        "tags": [
-            "marketing-automation",
-            "crm",
-            "email",
-            "analytics",
-            "integration"
-        ]
+        "tags": ["marketing-automation", "crm", "email", "analytics", "integration"]
     },
     {
         "id": "martech-002",
         "role_family": "martech",
         "bullet": "Implemented customer data platform unifying 5+ data sources for personalized campaign targeting",
-        "tags": [
-            "cdp",
-            "data-platform",
-            "personalization",
-            "campaign"
-        ]
+        "tags": ["cdp", "data-platform", "personalization", "campaign"]
+    },
+    {
+        "id": "martech-003",
+        "role_family": "martech",
+        "bullet": "Architected modular comms platform on n8n + Netcore + WATI, consolidating WhatsApp and email journeys and reducing funnel drop-offs by 30%",
+        "tags": ["n8n", "netcore", "wati", "whatsapp", "email", "comms-architecture", "automation"]
+    },
+    {
+        "id": "product-001",
+        "role_family": "product",
+        "bullet": "Designed and shipped a scheduling microservice with NextJS SPA and role-based admin panel, reducing lead-to-meeting cycle time by 25%",
+        "tags": ["microservice", "nextjs", "scheduling", "api-first", "admin-panel"]
+    },
+    {
+        "id": "program-001",
+        "role_family": "program",
+        "bullet": "Migrated content development workflows from Google Sheets to Jira with custom scrum boards and automation, reducing content errors by 90% and extending prep lead from 1 to 7 weeks",
+        "tags": ["jira", "scrum", "content-ops", "automation", "process-improvement"]
+    },
+    {
+        "id": "growth-003",
+        "role_family": "growth",
+        "bullet": "Led events charter from scratch, scaling average enrollment from 400 to 760 and driving ₹9M direct revenue in one quarter at ₹45K avg spend per event",
+        "tags": ["events", "enrollment", "revenue", "roi", "process-setup"]
+    },
+    {
+        "id": "ai-003",
+        "role_family": "ai",
+        "bullet": "Built NLP-to-SQL reporting agent with n8n backend, enabling 60% of business users to self-serve data queries via natural language",
+        "tags": ["nlp2sql", "n8n", "self-serve", "reporting", "ai-agent"]
+    },
+    {
+        "id": "martech-004",
+        "role_family": "martech",
+        "bullet": "Rolled out CleverTap as marketing automation CDP, standardizing event schemas and enabling self-serve campaign execution, cutting go-live time by 50%",
+        "tags": ["clevertap", "cdp", "event-schema", "campaign", "self-serve"]
+    },
+    {
+        "id": "martech-005",
+        "role_family": "martech",
+        "bullet": "Designed invisible-character UTM tracking on WhatsApp messages to attribute marketing spend to conversions across channels",
+        "tags": ["utm", "whatsapp", "attribution", "tracking", "martech"]
+    },
+    {
+        "id": "martech-006",
+        "role_family": "martech",
+        "bullet": "Reduced WhatsApp comms costs by reclassifying marketing templates to utility category while improving deliverability and reducing spam rates",
+        "tags": ["whatsapp", "cost-optimization", "deliverability", "spam", "template-management"]
+    },
+    {
+        "id": "product-002",
+        "role_family": "product",
+        "bullet": "Built SEO blogs CMS on Django + NextJS with dynamic sitemaps and modular admin panel, reversing traffic decline and growing organic traffic 3x with 10x impressions",
+        "tags": ["cms", "django", "nextjs", "seo", "organic-traffic", "admin-panel"]
+    },
+    {
+        "id": "product-003",
+        "role_family": "product",
+        "bullet": "Delivered Event CMS on Strapi + NextJS with Zoom API and CRM integration, reducing event creation turnaround from 3-4 days to under 1 day",
+        "tags": ["cms", "strapi", "nextjs", "zoom", "crm", "events"]
+    },
+    {
+        "id": "product-004",
+        "role_family": "product",
+        "bullet": "Designed Learn CMS as a knowledge hub with customizable metadata, dynamic sitemaps, and rich-text editing to scale SEO content publishing",
+        "tags": ["cms", "knowledge-hub", "seo", "metadata", "content-publishing"]
+    },
+    {
+        "id": "program-002",
+        "role_family": "program",
+        "bullet": "Established scrum ceremonies, sprint planning parameters, and documentation guidelines for a 10+ person content development team at AlmaBetter",
+        "tags": ["scrum", "sprint-planning", "documentation", "team-management", "agile"]
+    },
+    {
+        "id": "program-003",
+        "role_family": "program",
+        "bullet": "Set up ticket management system by categorizing issue types, creating FAQ docs, restructuring Slack channels, and automating error capture via Slack workflows",
+        "tags": ["ticket-management", "slack", "automation", "process-design", "support-ops"]
+    },
+    {
+        "id": "program-004",
+        "role_family": "program",
+        "bullet": "Led placement assistance program, defining processes, stakeholder assignments, and compensation structures, reducing avg interviews-to-offer from 7 to 5",
+        "tags": ["placement", "process-design", "stakeholder-management", "learner-outcomes"]
+    },
+    {
+        "id": "growth-004",
+        "role_family": "growth",
+        "bullet": "Identified and eliminated 50% registration drop-off by replacing Google login redirect with popup form and introducing 1-click registration for logged-in users",
+        "tags": ["conversion", "registration", "ux", "funnel-optimization", "drop-off"]
+    },
+    {
+        "id": "growth-005",
+        "role_family": "growth",
+        "bullet": "Optimized event marketing spend by analyzing UTM data, shifting budget from paid ads to organic channels, then reintroducing ads after stabilizing organic baseline at 450+ registrations",
+        "tags": ["marketing-spend", "utm", "organic", "paid", "channel-optimization"]
+    },
+    {
+        "id": "growth-006",
+        "role_family": "growth",
+        "bullet": "Increased technical blog session duration by 30% and decreased bounce rate by 40% through data-driven topic selection and structured content workflows",
+        "tags": ["seo", "content-marketing", "session-duration", "bounce-rate", "blogs"]
+    },
+    {
+        "id": "analytics-001",
+        "role_family": "analytics",
+        "bullet": "Built Metabase dashboards for cross-functional teams, automating performance tracking and cutting reporting turnaround time by 50%",
+        "tags": ["metabase", "dashboards", "reporting", "automation", "analytics"]
+    },
+    {
+        "id": "analytics-002",
+        "role_family": "analytics",
+        "bullet": "Unified lead funnel reporting across two separate databases, saving 2+ hours/day of manual effort and enabling real-time sales visibility for ₹2Cr+/month ad spend",
+        "tags": ["funnel", "reporting", "sales", "data-unification", "manual-effort-reduction"]
+    },
+    {
+        "id": "analytics-003",
+        "role_family": "analytics",
+        "bullet": "Standardized UTM framework and campaign tracking across marketing channels, enabling accurate attribution and data-driven spend reallocation",
+        "tags": ["utm", "attribution", "campaign-tracking", "standardization"]
+    },
+    {
+        "id": "analytics-004",
+        "role_family": "analytics",
+        "bullet": "Analyzed WhatsApp journey data to optimize message cadence, shortening user journeys from 10 messages to optimal length after finding sub-1% delivery on tail messages",
+        "tags": ["whatsapp", "journey-optimization", "delivery-rate", "data-analysis"]
+    },
+    {
+        "id": "platform-001",
+        "role_family": "platform",
+        "bullet": "Led website development as program manager, introducing design componentization, code review workflows, and JIRA-based sprint tracking, doubling team delivery velocity",
+        "tags": ["website", "program-management", "jira", "code-review", "delivery-velocity"]
+    },
+    {
+        "id": "platform-002",
+        "role_family": "platform",
+        "bullet": "Designed end-to-end JIRA workflow for website development covering business approval, LoFi/HiFi design, dev, code review, QC, and UAT stages with automated email notifications",
+        "tags": ["jira", "workflow", "website-development", "qa", "uat", "automation"]
+    },
+    {
+        "id": "platform-003",
+        "role_family": "platform",
+        "bullet": "Introduced code review branch strategy and linter enforcement after a production code deletion incident, establishing single-point-of-control for all merges to prod",
+        "tags": ["code-review", "git", "linter", "production-safety", "devops"]
+    },
+    {
+        "id": "platform-004",
+        "role_family": "platform",
+        "bullet": "Reduced average design iterations from 11 to 2 per page by creating modular design component repository and standardizing approval workflows",
+        "tags": ["design-system", "componentization", "approval-workflow", "iteration-reduction"]
+    },
+    {
+        "id": "product-005",
+        "role_family": "product",
+        "bullet": "Built marketer-facing frontend for comms architecture, enabling teams to fetch templates, define events, map comms, and track performance without engineering dependency",
+        "tags": ["internal-tooling", "frontend", "self-serve", "marketing-enablement"]
+    },
+    {
+        "id": "product-006",
+        "role_family": "product",
+        "bullet": "Managed blog platform migration including internal link replacement, DNS-level 301 redirects, and routing changes, limiting traffic dip to under 5%",
+        "tags": ["migration", "seo", "redirects", "dns", "traffic-preservation"]
+    },
+    {
+        "id": "ai-004",
+        "role_family": "ai",
+        "bullet": "Deployed GenAI-powered website chatbot using knowledge base for automated query resolution, deflecting 25% of inbound support queries",
+        "tags": ["genai", "chatbot", "knowledge-base", "support-deflection"]
+    },
+    {
+        "id": "ai-005",
+        "role_family": "ai",
+        "bullet": "Built AI video generation workflow stitching Veo3 8-sec clips into long-form content by auto-decomposing prompts into scripted segments via LLM planning",
+        "tags": ["genai", "video-generation", "veo3", "workflow", "content-automation"]
+    },
+    {
+        "id": "ai-006",
+        "role_family": "ai",
+        "bullet": "Created RSS-to-push-notification pipeline using LLM to fetch news, deduplicate against database, generate supportive content, and queue for app distribution",
+        "tags": ["rss", "llm", "content-generation", "push-notifications", "automation"]
+    },
+    {
+        "id": "ai-007",
+        "role_family": "ai",
+        "bullet": "Built AI collateral generation workflows enabling marketing team to self-serve videos, images, and news content, significantly reducing go-live time",
+        "tags": ["genai", "collateral", "marketing", "self-serve", "content-automation"]
+    },
+    {
+        "id": "ai-008",
+        "role_family": "ai",
+        "bullet": "Architected RAG framework app with Supabase + Pinecone + OpenAI, supporting multi-agent creation, session memory, confidence-scored citations, and TDD workflow",
+        "tags": ["rag", "supabase", "pinecone", "openai", "multi-agent", "citations"]
+    },
+    {
+        "id": "ai-009",
+        "role_family": "ai",
+        "bullet": "Designed CoS Bot that extracts tasks from WhatsApp group conversations using LLM parsing, stores them with vector embeddings, and enables semantic querying by leadership",
+        "tags": ["cos-bot", "whatsapp", "task-extraction", "vector-search", "pgvector", "llm"]
+    },
+    {
+        "id": "ops-001",
+        "role_family": "ops",
+        "bullet": "Managed L3 support for Disney's reservation system (Team Box), triaging with Splunk and coordinating issue resolution across onshore and client teams",
+        "tags": ["l3-support", "disney", "splunk", "triage", "incident-management"]
+    },
+    {
+        "id": "ops-002",
+        "role_family": "ops",
+        "bullet": "Resolved critical Disney booking outage by tracing API call logs and identifying misconfigured hotel availability dates for holiday packages, preventing direct revenue loss",
+        "tags": ["incident-resolution", "api-debugging", "revenue-impact", "root-cause-analysis"]
+    },
+    {
+        "id": "ops-003",
+        "role_family": "ops",
+        "bullet": "Automated daily status reports and weekly stakeholder updates using VBA macros during Capgemini CMS migration project",
+        "tags": ["vba", "automation", "reporting", "stakeholder-communication"]
+    },
+    {
+        "id": "ops-004",
+        "role_family": "ops",
+        "bullet": "Built Kantu automation to replicate web pages across CMS platforms during Willis Towers Watson migration, reducing delivery timeline by 2 weeks out of 5 months",
+        "tags": ["kantu", "automation", "cms-migration", "delivery-acceleration"]
+    },
+    {
+        "id": "growth-007",
+        "role_family": "growth",
+        "bullet": "Introduced virtual meeting booking on website as experiment, validating hypothesis that geography-neutral scheduling boosts conversions, then pivoted sales messaging from 'visit office' to 'schedule meeting'",
+        "tags": ["experimentation", "virtual-meetings", "conversion", "messaging", "sales-process"]
+    },
+    {
+        "id": "growth-008",
+        "role_family": "growth",
+        "bullet": "Targeted high-intent website visitors (5+ sessions) via GA client_id tracking and measurement protocol, achieving higher conversion rates than form-fill leads",
+        "tags": ["ga4", "retargeting", "measurement-protocol", "conversion", "high-intent"]
+    },
+    {
+        "id": "growth-009",
+        "role_family": "growth",
+        "bullet": "Shifted marketing spend from LinkedIn to YouTube after data revealed similar conversion rates at lower acquisition cost, and redirected budget to remarketing",
+        "tags": ["channel-optimization", "linkedin", "youtube", "remarketing", "cost-per-lead"]
+    },
+    {
+        "id": "martech-007",
+        "role_family": "martech",
+        "bullet": "Set up WebEngage onboarding journeys for 10,000+ new learners, delivering 5 structured emails in the first week covering schedules, joining process, and learning paths",
+        "tags": ["webengage", "onboarding", "email-journey", "learner-engagement"]
+    },
+    {
+        "id": "martech-008",
+        "role_family": "martech",
+        "bullet": "Integrated HubSpot for B2B org with custom object relations, lead forms with funnel tracking, workflow automations, and RingCentral calling integration",
+        "tags": ["hubspot", "b2b", "crm", "ringcentral", "workflow-automation", "forms"]
+    },
+    {
+        "id": "martech-009",
+        "role_family": "martech",
+        "bullet": "Integrated Fireflink automated testing for WhatsApp and website flows, building a testing matrix that reduced live errors by 60% and QA cycle from 2 days to 3 hours",
+        "tags": ["fireflink", "qa-automation", "testing-matrix", "whatsapp", "regression"]
+    },
+    {
+        "id": "platform-005",
+        "role_family": "platform",
+        "bullet": "Championed mobile-first website redesign after presenting data showing 90%+ traffic from mobile devices, changing creative direction and improving page speed",
+        "tags": ["mobile-first", "data-driven", "website", "ux", "page-speed"]
+    },
+    {
+        "id": "platform-006",
+        "role_family": "platform",
+        "bullet": "Reworked GA/GTM setup to capture client_id, session_count, and session_id, feeding conversion data back into GA via measurement protocol for closed-loop attribution",
+        "tags": ["ga4", "gtm", "measurement-protocol", "attribution", "tracking"]
+    },
+    {
+        "id": "program-005",
+        "role_family": "program",
+        "bullet": "Managed video production liaison across learning, marketing, and production teams, achieving 100% on-time delivery across all video content types",
+        "tags": ["video-production", "cross-functional", "liaison", "delivery", "content"]
+    },
+    {
+        "id": "program-006",
+        "role_family": "program",
+        "bullet": "Oversaw capacity planning, budget discussions, SME quality reviews, and specialization launch planning as program management office lead for the learning team",
+        "tags": ["capacity-planning", "budget", "sme", "specialization-launch", "pmo"]
+    },
+    {
+        "id": "product-007",
+        "role_family": "product",
+        "bullet": "Built MereKapade, an AI-powered e-commerce platform using DALL-E 3 and fabric.js that generates personalized t-shirt designs through a theme-based questionnaire flow",
+        "tags": ["ecommerce", "dalle", "fabricjs", "supabase", "side-project", "genai"]
+    },
+    {
+        "id": "product-008",
+        "role_family": "product",
+        "bullet": "Co-created MyThirdPlace, a community discovery platform with event management, discussion system, payment integration, and 230+ automated tests across unit, integration, and RLS layers",
+        "tags": ["community", "events", "supabase", "rls", "testing", "side-project"]
+    },
+    {
+        "id": "ops-005",
+        "role_family": "ops",
+        "bullet": "Set up error handlers and mobile alerts across n8n automation flows for template blocks, payment failures, and system issues, ensuring real-time incident awareness",
+        "tags": ["n8n", "error-handling", "alerting", "monitoring", "reliability"]
     }
 ]

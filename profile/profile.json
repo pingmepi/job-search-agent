@@ -3,18 +3,82 @@
         "name": "Karan Mandalam",
         "roles": [
             "AI PM",
+            "Technical PM",
             "Growth PM",
-            "Martech PM"
+            "Agentic AI Implementation"
         ],
-        "headline": "Product Manager with expertise in AI, Growth, and Marketing Technology",
-        "years_of_experience": 5
+        "headline": "Product Manager with 7+ years building production-grade AI systems, agentic workflows, and platform products across SaaS, growth, and automation.",
+        "years_of_experience": 7,
+        "location": "Bangalore, India",
+        "email": "kmandalam@gmail.com",
+        "phone": "+91-9460596406",
+        "education": {
+            "degree": "B.E. Computer Science & Engineering",
+            "university": "BITS Pilani",
+            "years": "2014-2018"
+        }
     },
+    "companies": [
+        {
+            "name": "Independent / Consulting",
+            "role": "AI Product & Systems Consultant",
+            "years": "2025",
+            "context": "Consulting for early-stage teams on AI product and systems implementation"
+        },
+        {
+            "name": "Miles Education",
+            "role": "Product Manager, CTO's Office",
+            "years": "2023-2025",
+            "context": "EdTech, CPA/CMA exam prep platform"
+        },
+        {
+            "name": "AlmaBetter",
+            "role": "Program Manager / Growth & Operations",
+            "years": "2022-2023",
+            "context": "EdTech, bootcamp-style learning platform"
+        },
+        {
+            "name": "upGrad",
+            "role": "Product Strategist",
+            "years": "2020-2022",
+            "context": "EdTech, online higher education platform"
+        },
+        {
+            "name": "Capgemini",
+            "role": "Associate Consultant",
+            "years": "2018-2020",
+            "context": "IT consulting, enterprise systems"
+        }
+    ],
+    "personal_products": [
+        {
+            "name": "MyThirdPlace",
+            "description": "Community and events discovery platform — built end-to-end with API-first backend, role-based access, webhook subscriptions, payments, analytics"
+        },
+        {
+            "name": "MereKapade",
+            "description": "AI-powered custom apparel platform"
+        },
+        {
+            "name": "Job Search Agent",
+            "description": "Multi-agent Telegram bot that converts job postings into tailored application packages — deterministic planner, 12-step executor, eval-gated CI"
+        }
+    ],
     "positioning": {
-        "ai": "Product Manager driving AI/ML product strategy, from ideation through launch. Experienced in LLM applications, recommendation systems, and data-driven product development.",
-        "growth": "Growth-focused Product Manager with a track record of driving user acquisition, activation, and retention through data-driven experimentation.",
-        "martech": "Martech Product Manager specializing in marketing automation, analytics platforms, and customer data infrastructure."
+        "ai": "AI Product Manager with 7+ years building production-grade AI systems. Experienced in LLM applications, agentic workflows, RAG systems, recommendation engines, and eval-driven development. Built and shipped a multi-agent job application system with deterministic planning, per-bullet truthfulness guards, and fixture-based CI gating.",
+        "technical": "Technical Product Manager building API-first, cloud-native integration platforms. Experienced in RESTful APIs, webhook-driven architectures, event-driven systems, authentication layers, schema governance, and backward-compatible versioning. Shipped platforms that reduced lead-to-meeting time by 25% and cut campaign go-live by 50%.",
+        "growth": "Growth-focused Product Manager with a track record of driving 3x MAU growth, 18% conversion improvement via A/B testing frameworks, and 5x organic growth through modular CMS and analytics platforms.",
+        "agentic": "Implementation-focused PM designing, deploying, and scaling agentic workflows using n8n orchestration, LLM-powered pipelines, and structured integration layers across CRM, communication, CMS, and analytics platforms."
     },
-    "allowed_companies": [],
+    "allowed_companies": [
+        "Miles Education",
+        "AlmaBetter",
+        "upGrad",
+        "Capgemini",
+        "Independent",
+        "MyThirdPlace",
+        "MereKapade"
+    ],
     "allowed_tools": [
         "Python",
         "SQL",
@@ -25,16 +89,46 @@
         "Linear",
         "Figma",
         "dbt",
-        "BigQuery"
+        "BigQuery",
+        "n8n",
+        "HubSpot",
+        "Netcore",
+        "CleverTap",
+        "WebEngage",
+        "GA4",
+        "Google Tag Manager",
+        "Metabase",
+        "Postman",
+        "Swagger",
+        "GitHub",
+        "Splunk",
+        "Datadog",
+        "Confluence",
+        "AWS",
+        "GCP",
+        "LangChain",
+        "OpenAI API",
+        "Anthropic API",
+        "OpenRouter",
+        "FastAPI",
+        "PostgreSQL",
+        "Docker",
+        "Railway",
+        "Tesseract",
+        "LaTeX"
     ],
     "resume_bases": {
-        "ai": "resumes/master_ai.tex",
-        "growth": "resumes/master_growth.tex",
-        "martech": "resumes/master_martech.tex"
+        "ai": "resumes/master_ai_pm.tex",
+        "technical": "resumes/master_technical_pm.tex",
+        "growth": "resumes/master_product.tex",
+        "agentic": "resumes/master_agentic_ai.tex",
+        "founders": "resumes/master_founders_office.tex"
     },
     "forbidden_claims": [
-        "Do not claim experience at companies not listed in resume",
-        "Do not invent metrics or revenue numbers",
-        "Do not claim skills not supported by bullet bank or resume"
+        "Do not claim experience at companies not listed in allowed_companies",
+        "Do not invent metrics or revenue numbers not present in bullet bank or resumes",
+        "Do not claim skills not supported by bullet bank, resumes, or allowed_tools",
+        "Do not fabricate project names or product names",
+        "Do not claim degrees or certifications not listed"
     ]
 }

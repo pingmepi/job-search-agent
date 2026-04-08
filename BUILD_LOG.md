@@ -295,3 +295,5 @@ Production crash and edge case hardening from python-patterns audit:
 | Pre-commit hooks + linting | 2026-04-07 | ruff enforced, 62 issues fixed, Codex review loop |
 | Agent observability | 2026-04-07 | Profile + Article agents log to runs table |
 | Edge case hardening | 2026-04-07 | 6 bugfixes from python-patterns audit, 219 tests |
+| Full codebase hardening | 2026-04-08 | 17 fixes (security/perf/correctness/maintainability) |
+| Test coverage expansion | 2026-04-08 | 251 tests, 32 new (JSON utils, drafts, auth, SSRF, E2E) |
