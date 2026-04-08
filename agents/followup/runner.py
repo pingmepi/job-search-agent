@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 from uuid import uuid4
 
 from agents.followup.agent import detect_followups, generate_all_followups
@@ -19,17 +18,16 @@ def _next_run_id() -> str:
 
 def run_followup_cycle(
     *,
-    db_path: Path | None = None,
     dry_run: bool = False,
     persist_progress: bool = True,
 ) -> dict:
     """Execute a single follow-up scan/generation cycle and persist telemetry."""
     run_id = _next_run_id()
-    insert_run(run_id, "followup_runner", db_path=db_path)
+    insert_run(run_id, "followup_runner")
 
     try:
         if dry_run:
-            jobs = detect_followups(db_path=db_path)
+            jobs = detect_followups()
             payload = [
                 {
                     "job_id": job["id"],
@@ -41,7 +39,6 @@ def run_followup_cycle(
             ]
         else:
             payload = generate_all_followups(
-                db_path=db_path,
                 persist_progress=persist_progress,
             )
 
@@ -61,7 +58,6 @@ def run_followup_cycle(
                 "persist_progress": persist_progress,
             },
             context={"jobs": payload[:20]},
-            db_path=db_path,
         )
         return summary
     except Exception as exc:
@@ -70,7 +66,6 @@ def run_followup_cycle(
             run_id,
             status="failed",
             errors=[str(exc)],
-            db_path=db_path,
         )
         raise
 
@@ -79,7 +74,6 @@ def run_scheduler(
     *,
     interval_minutes: int,
     max_cycles: int | None = None,
-    db_path: Path | None = None,
     dry_run: bool = False,
     persist_progress: bool = True,
     sleep_fn=time.sleep,
@@ -92,7 +86,6 @@ def run_scheduler(
     cycles = 0
     while True:
         result = run_followup_cycle(
-            db_path=db_path,
             dry_run=dry_run,
             persist_progress=persist_progress,
         )

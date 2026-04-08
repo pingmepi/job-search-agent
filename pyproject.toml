@@ -46,3 +46,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live: tests that hit real external APIs (OpenRouter, Google). Opt-in only.",
+]

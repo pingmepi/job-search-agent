@@ -566,6 +566,7 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         lambda: SimpleNamespace(
             telegram_enable_drive_upload=False,
             telegram_enable_calendar_events=False,
+            telegram_allowed_chat_ids="",
         ),
     )
 
@@ -647,6 +648,7 @@ async def test_text_handler_reports_failure_when_no_valid_pdf(monkeypatch) -> No
         lambda: SimpleNamespace(
             telegram_enable_drive_upload=False,
             telegram_enable_calendar_events=False,
+            telegram_allowed_chat_ids="",
         ),
     )
 
@@ -818,6 +820,7 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
         lambda: SimpleNamespace(
             telegram_enable_drive_upload=True,
             telegram_enable_calendar_events=True,
+            telegram_allowed_chat_ids="",
         ),
     )
 
@@ -937,6 +940,7 @@ async def test_text_handler_reprompts_on_invalid_collateral_selection(monkeypatc
         lambda: SimpleNamespace(
             telegram_enable_drive_upload=False,
             telegram_enable_calendar_events=False,
+            telegram_allowed_chat_ids="",
         ),
     )
     monkeypatch.setattr(adapter, "extract_first_url", lambda _text: None)

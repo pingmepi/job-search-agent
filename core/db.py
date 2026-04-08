@@ -17,8 +17,13 @@ from typing import Any, Generator
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 
 from core.config import get_settings
+
+# ── Connection pool ──────────────────────────────────────────────
+
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 # ── Schema DDL ────────────────────────────────────────────────────
 
@@ -154,16 +159,35 @@ def init_db() -> None:
         _apply_migrations(cur)
 
 
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    """Return the module-level connection pool, creating it on first call."""
+    global _pool
+    if _pool is None or _pool.closed:
+        database_url = get_settings().database_url
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not set")
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=10,
+            dsn=database_url,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _pool
+
+
+def close_pool() -> None:
+    """Close all pooled connections. Call on graceful shutdown."""
+    global _pool
+    if _pool is not None and not _pool.closed:
+        _pool.closeall()
+        _pool = None
+
+
 @contextmanager
 def get_conn() -> Generator[Any, None, None]:
-    """Yield an auto-committing psycopg2 connection with RealDictCursor as default."""
-    database_url = get_settings().database_url
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is not set")
-    conn = psycopg2.connect(
-        database_url,
-        cursor_factory=psycopg2.extras.RealDictCursor,
-    )
+    """Yield a pooled psycopg2 connection with RealDictCursor."""
+    pool = _get_pool()
+    conn = pool.getconn()
     try:
         yield conn
         conn.commit()
@@ -171,7 +195,7 @@ def get_conn() -> Generator[Any, None, None]:
         conn.rollback()
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 
 # ── Job CRUD ──────────────────────────────────────────────────────
@@ -187,7 +211,6 @@ def insert_job(
     drive_link: str | None = None,
     calendar_apply_event_id: str | None = None,
     calendar_followup_event_id: str | None = None,
-    db_path: Any = None,  # ignored, kept for call-site compatibility during transition
 ) -> int:
     """Insert a new job row and return its id."""
     now = _now_iso()
@@ -216,7 +239,7 @@ def insert_job(
         return row["id"]
 
 
-def get_job(job_id: int, *, db_path: Any = None) -> dict[str, Any] | None:
+def get_job(job_id: int) -> dict[str, Any] | None:
     """Fetch a single job by id."""
     with get_conn() as conn:
         cur = conn.cursor()
@@ -225,7 +248,7 @@ def get_job(job_id: int, *, db_path: Any = None) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
-def get_jobs_needing_followup(*, db_path: Any = None) -> list[dict[str, Any]]:
+def get_jobs_needing_followup() -> list[dict[str, Any]]:
     """Return jobs where status='applied' and created_at is > 7 days ago."""
     with get_conn() as conn:
         cur = conn.cursor()
@@ -238,10 +261,29 @@ def get_jobs_needing_followup(*, db_path: Any = None) -> list[dict[str, Any]]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def update_job(job_id: int, *, db_path: Any = None, **fields: Any) -> None:
+_ALLOWED_JOB_COLUMNS = {
+    "company",
+    "role",
+    "jd_hash",
+    "fit_score",
+    "resume_used",
+    "drive_link",
+    "status",
+    "follow_up_count",
+    "last_follow_up_at",
+    "updated_at",
+    "calendar_apply_event_id",
+    "calendar_followup_event_id",
+}
+
+
+def update_job(job_id: int, **fields: Any) -> None:
     """Update arbitrary columns on a job row."""
     if not fields:
         return
+    bad_cols = set(fields) - _ALLOWED_JOB_COLUMNS - {"updated_at"}
+    if bad_cols:
+        raise ValueError(f"Disallowed columns in update_job: {bad_cols}")
     fields["updated_at"] = _now_iso()
     set_clause = ", ".join(f"{k} = %s" for k in fields)
     values = list(fields.values()) + [job_id]
@@ -258,7 +300,6 @@ def insert_run(
     agent: str,
     *,
     job_id: int | None = None,
-    db_path: Any = None,
 ) -> None:
     """Start a new run record."""
     with get_conn() as conn:
@@ -283,7 +324,6 @@ def complete_run(
     skip_calendar: bool | None = None,
     errors: list[str] | None = None,
     context: dict[str, Any] | None = None,
-    db_path: Any = None,
 ) -> None:
     """Mark a run as completed with eval results."""
     error_count = len(errors) if errors else 0
@@ -314,7 +354,7 @@ def complete_run(
         )
 
 
-def get_run(run_id: str, *, db_path: Any = None) -> dict[str, Any] | None:
+def get_run(run_id: str) -> dict[str, Any] | None:
     """Fetch a single run by run_id."""
     with get_conn() as conn:
         cur = conn.cursor()
@@ -332,7 +372,7 @@ def get_run(run_id: str, *, db_path: Any = None) -> dict[str, Any] | None:
         return None
 
 
-def list_runs(*, limit: int = 20, db_path: Any = None) -> list[dict[str, Any]]:
+def list_runs(*, limit: int = 20) -> list[dict[str, Any]]:
     """List recent runs with full audit data, newest first."""
     with get_conn() as conn:
         cur = conn.cursor()
@@ -429,7 +469,7 @@ def get_run_steps(run_id: str) -> list[dict[str, Any]]:
         return results
 
 
-def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
+def get_db_stats() -> dict[str, Any]:
     """Return a lightweight summary of persisted jobs/runs for quick debugging."""
     with get_conn() as conn:
         cur = conn.cursor()
@@ -487,8 +527,6 @@ def get_db_stats(*, db_path: Any = None) -> dict[str, Any]:
 def insert_article_signals(
     run_id: str,
     signals: list[str],
-    *,
-    db_path: Any = None,
 ) -> None:
     """Persist article-extracted job-search signals."""
     if not signals:
@@ -515,7 +553,6 @@ def insert_webhook_event(
     headers: dict[str, Any] | None = None,
     secret_valid: bool = True,
     processing_status: str = "received",
-    db_path: Any = None,
 ) -> None:
     """Persist an inbound webhook envelope."""
     now = _now_iso()
@@ -546,7 +583,6 @@ def update_webhook_event(
     route_target: str | None = None,
     error_text: str | None = None,
     mark_processed: bool = False,
-    db_path: Any = None,
 ) -> None:
     """Update lifecycle fields for a persisted webhook event."""
     fields: dict[str, Any] = {}
@@ -576,7 +612,6 @@ def get_webhook_event(
     *,
     event_id: str | None = None,
     update_id: int | None = None,
-    db_path: Any = None,
 ) -> dict[str, Any] | None:
     """Fetch one webhook event by event_id or latest by update_id."""
     if event_id is None and update_id is None:
@@ -604,7 +639,7 @@ def get_webhook_event(
         return data
 
 
-def list_webhook_events(*, limit: int = 50, db_path: Any = None) -> list[dict[str, Any]]:
+def list_webhook_events(*, limit: int = 50) -> list[dict[str, Any]]:
     """List recent webhook events."""
     with get_conn() as conn:
         cur = conn.cursor()

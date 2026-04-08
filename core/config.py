@@ -64,6 +64,9 @@ class Settings:
     webhook_process_timeout_seconds: float = field(
         default_factory=lambda: float(os.environ.get("WEBHOOK_PROCESS_TIMEOUT_SECONDS", "10"))
     )
+    telegram_allowed_chat_ids: str = field(
+        default_factory=lambda: os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS", "")
+    )
     telegram_enable_drive_upload: bool = field(
         default_factory=lambda: _env_bool("TELEGRAM_ENABLE_DRIVE_UPLOAD", default=False)
     )

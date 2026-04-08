@@ -8,7 +8,6 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 import uvicorn
@@ -31,7 +30,7 @@ class TelegramWebhookRuntime:
         self.processing_update_ids: set[int] = set()
         self.update_attempts: dict[int, int] = {}
         self.background_update_tasks: dict[int, asyncio.Task[Any]] = {}
-        self.lock: asyncio.Lock | None = None
+        self.lock: asyncio.Lock = asyncio.Lock()
 
 
 async def _start_telegram_app(runtime: TelegramWebhookRuntime) -> None:
@@ -63,9 +62,6 @@ def create_webhook_app(
     """Create a FastAPI app that processes Telegram webhook updates."""
     resolved_settings = settings or get_settings()
     runtime = TelegramWebhookRuntime(telegram_app)
-    resolved_db_path = (
-        Path(resolved_settings.db_path) if hasattr(resolved_settings, "db_path") else None
-    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -107,8 +103,6 @@ def create_webhook_app(
         request: Request,
         x_telegram_bot_api_secret_token: Optional[str] = Header(default=None),
     ) -> dict[str, bool]:
-        if runtime.lock is None:
-            runtime.lock = asyncio.Lock()
         expected_secret = resolved_settings.telegram_webhook_secret
         client_host = request.client.host if request.client else "unknown"
         payload = await request.json()
@@ -134,7 +128,7 @@ def create_webhook_app(
             raise HTTPException(status_code=401, detail="Invalid webhook secret token")
 
         request_headers = {
-            "x_telegram_bot_api_secret_token": x_telegram_bot_api_secret_token,
+            "x_telegram_bot_api_secret_token": "[REDACTED]",
             "content_type": request.headers.get("content-type"),
             "user_agent": request.headers.get("user-agent"),
             "client_host": client_host,
@@ -147,7 +141,6 @@ def create_webhook_app(
             headers=request_headers,
             secret_valid=True,
             processing_status="received",
-            db_path=resolved_db_path,
         )
 
         started = time.perf_counter()
@@ -166,7 +159,6 @@ def create_webhook_app(
                 processing_status="failed",
                 error_text=f"payload-parse-error: {exc}",
                 mark_processed=True,
-                db_path=resolved_db_path,
             )
             raise HTTPException(status_code=400, detail="Invalid Telegram update payload") from exc
         if update is None:
@@ -176,7 +168,6 @@ def create_webhook_app(
                 processing_status="failed",
                 error_text="payload-parse-error: update is None",
                 mark_processed=True,
-                db_path=resolved_db_path,
             )
             raise HTTPException(status_code=400, detail="Invalid Telegram update payload")
 
@@ -190,7 +181,6 @@ def create_webhook_app(
                         event_id,
                         processing_status="processed",
                         mark_processed=True,
-                        db_path=resolved_db_path,
                     )
                     return {"ok": True}
                 if update_id in runtime.processing_update_ids:
@@ -230,7 +220,6 @@ def create_webhook_app(
                     processing_status=status,
                     error_text=error_text,
                     mark_processed=True,
-                    db_path=resolved_db_path,
                 )
 
         max_attempts = 3
@@ -241,7 +230,6 @@ def create_webhook_app(
                 update_webhook_event,
                 event_id,
                 processing_status="processing",
-                db_path=resolved_db_path,
             )
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -265,7 +253,6 @@ def create_webhook_app(
                         event_id,
                         processing_status="processed",
                         mark_processed=True,
-                        db_path=resolved_db_path,
                     )
                     break
                 except asyncio.TimeoutError:
@@ -300,7 +287,6 @@ def create_webhook_app(
                         processing_status="processing",
                         error_text="processing timeout; continuing in background",
                         mark_processed=False,
-                        db_path=resolved_db_path,
                     )
                     break
                 except Exception as exc:
@@ -323,7 +309,6 @@ def create_webhook_app(
                             processing_status="failed",
                             error_text=str(exc),
                             mark_processed=True,
-                            db_path=resolved_db_path,
                         )
                     else:
                         await asyncio.sleep(0.2)

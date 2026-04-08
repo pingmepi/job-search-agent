@@ -91,10 +91,11 @@ def resolve_generation_cost(generation_id: str) -> float:
     """
     import json as _json
     import time
+    import urllib.parse
     import urllib.request
 
     settings = get_settings()
-    url = f"{settings.openrouter_base_url.rstrip('/')}/generation?id={generation_id}"
+    url = f"{settings.openrouter_base_url.rstrip('/')}/generation?id={urllib.parse.quote(generation_id, safe='')}"
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "Content-Type": "application/json",
@@ -130,11 +131,11 @@ def resolve_costs_batch(generation_ids: list[str]) -> dict[str, float]:
     Resolve real costs for a batch of generation IDs.
 
     Waits 1s before starting to give OpenRouter time to populate costs,
-    then fetches all costs sequentially (no per-ID wait needed after
-    the initial delay).
+    then fetches all costs in parallel.
 
     Returns a dict mapping generation_id → cost in USD.
     """
+    import concurrent.futures
     import time
 
     if not generation_ids:
@@ -143,10 +144,17 @@ def resolve_costs_batch(generation_ids: list[str]) -> dict[str, float]:
     # One upfront wait covers the propagation delay for all IDs
     time.sleep(1.0)
 
-    costs: dict[str, float] = {}
-    for gen_id in generation_ids:
-        costs[gen_id] = resolve_generation_cost(gen_id)
-
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        future_to_id = {
+            pool.submit(resolve_generation_cost, gen_id): gen_id for gen_id in generation_ids
+        }
+        costs: dict[str, float] = {}
+        for future in concurrent.futures.as_completed(future_to_id):
+            gen_id = future_to_id[future]
+            try:
+                costs[gen_id] = future.result()
+            except Exception:
+                costs[gen_id] = 0.0
     return costs
 
 

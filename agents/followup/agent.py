@@ -40,13 +40,13 @@ MAX_FOLLOW_UPS = 3
 # ── Follow-up detection ──────────────────────────────────────────
 
 
-def detect_followups(*, db_path=None) -> list[dict]:
+def detect_followups() -> list[dict]:
     """
     Find all jobs that need a follow-up.
 
     Returns list of job dicts enriched with `escalation_tier` info.
     """
-    jobs = get_jobs_needing_followup(db_path=db_path)
+    jobs = get_jobs_needing_followup()
 
     enriched = []
     for job in jobs:
@@ -109,20 +109,19 @@ def generate_followup_draft(job: dict) -> str:
     return response.text
 
 
-def _persist_followup_progress(job: dict, *, db_path=None) -> int:
+def _persist_followup_progress(job: dict) -> int:
     """Increment follow-up count and persist follow-up timestamp. Returns new count."""
     current_count = int(job.get("follow_up_count", 0) or 0)
     next_count = current_count + 1
     update_job(
         job["id"],
-        db_path=db_path,
         follow_up_count=next_count,
         last_follow_up_at=datetime.now(timezone.utc).isoformat(),
     )
     return next_count
 
 
-def generate_all_followups(*, db_path=None, persist_progress: bool = True) -> list[dict]:
+def generate_all_followups(*, persist_progress: bool = True) -> list[dict]:
     """
     Detect all pending follow-ups and generate drafts.
 
@@ -131,14 +130,16 @@ def generate_all_followups(*, db_path=None, persist_progress: bool = True) -> li
     If persist_progress=True, increments `follow_up_count` and updates
     `last_follow_up_at` for each successfully generated draft.
     """
-    jobs = detect_followups(db_path=db_path)
+    jobs = detect_followups()
     results = []
 
     for job in jobs:
         draft = generate_followup_draft(job)
         next_count = int(job.get("follow_up_count", 0) or 0)
         if persist_progress:
-            next_count = _persist_followup_progress(job, db_path=db_path)
+            next_count = _persist_followup_progress(
+                job,
+            )
         results.append(
             {
                 "job_id": job["id"],

@@ -49,6 +49,7 @@ from agents.inbox.resume import (
     parse_editable_regions,
     select_base_resume_with_details,
 )
+from core.json_utils import extract_first_json_object as _extract_first_json_object
 from core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -163,34 +164,6 @@ def _keyword_coverage(skills: list[str], text: str) -> float:
 def _slugify(value: str, fallback: str) -> str:
     text = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
     return text or fallback
-
-
-def _extract_first_json_object(text: str) -> Optional[str]:
-    start = text.find("{")
-    if start < 0:
-        return None
-    depth = 0
-    in_string = False
-    escaped = False
-    for idx in range(start, len(text)):
-        ch = text[idx]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : idx + 1]
-    return None
 
 
 def _parse_json_object(text: str) -> dict:
@@ -777,30 +750,8 @@ def _handle_db_log(
     return pack
 
 
-def _handle_eval_log(
-    step: ToolStep,
-    pack: "ApplicationPack",
-    ctx: ExecutionContext,
-) -> "ApplicationPack":
-    from core.artifacts import write_json_artifact
-    from core.contracts import (
-        build_eval_output_artifact,
-        build_job_extraction_artifact,
-        build_resume_output_artifact,
-    )
-    from evals.hard import (
-        check_cost,
-        check_draft_length,
-        check_edit_scope,
-        check_forbidden_claims,
-        check_jd_schema,
-    )
-    from evals.logger import log_run
-
-    jd = pack.jd
-    latency_ms = int((time.time() - ctx.start_time) * 1000)
-
-    # ── Resolve real costs ────────────────────────────────────────
+def _resolve_costs(pack: "ApplicationPack", ctx: ExecutionContext) -> None:
+    """Batch-resolve LLM costs from OpenRouter generation IDs."""
     try:
         from core.llm import resolve_costs_batch
 
@@ -814,9 +765,11 @@ def _handle_eval_log(
     except Exception as cost_err:
         pack.errors.append(f"Cost resolution failed: {cost_err}")
 
-    # ── Hard evals ────────────────────────────────────────────────
-    original_bullets: list[str] = []
-    mutated_bullets: list[str] = []
+
+def _run_hard_evals(pack: "ApplicationPack", ctx: ExecutionContext) -> tuple[int, int]:
+    """Run hard evals (edit scope, forbidden claims). Returns (forbidden_count, violations)."""
+    from evals.hard import check_edit_scope, check_forbidden_claims
+
     forbidden_claims_count = 0
     edit_scope_violations = 0
 
@@ -834,6 +787,7 @@ def _handle_eval_log(
             bullet_bank = [b.get("bullet", "") for b in bb_raw if isinstance(b, dict)]
         except Exception:
             bullet_bank = []
+        jd = pack.jd
         jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
         profile = _load_profile(ctx)
         forbidden_claims_count = check_forbidden_claims(
@@ -848,12 +802,19 @@ def _handle_eval_log(
     if ctx.truthfulness_fallback_used and forbidden_claims_count == 0:
         forbidden_claims_count = 1
 
-    # ── Soft evals ────────────────────────────────────────────────
+    return forbidden_claims_count, edit_scope_violations
+
+
+def _run_soft_evals(
+    pack: "ApplicationPack", ctx: ExecutionContext
+) -> tuple[Optional[float], Optional[float]]:
+    """Run LLM-based soft evals. Returns (resume_relevance, jd_accuracy)."""
     soft_resume_relevance: Optional[float] = None
     soft_jd_accuracy: Optional[float] = None
     try:
         from evals.soft import score_jd_accuracy, score_resume_relevance
 
+        jd = pack.jd
         if pack.mutated_tex:
             soft_resume_relevance = score_resume_relevance(jd.description, pack.mutated_tex)
         soft_jd_accuracy = score_jd_accuracy(
@@ -869,47 +830,22 @@ def _handle_eval_log(
         )
     except Exception as soft_err:
         pack.errors.append(f"Soft eval failed: {soft_err}")
+    return soft_resume_relevance, soft_jd_accuracy
 
-    eval_results = {
-        "compile_success": bool(pack.pdf_path and pack.pdf_path.exists()),
-        "forbidden_claims_count": forbidden_claims_count,
-        "edit_scope_violations": edit_scope_violations,
-        "draft_length_ok": check_draft_length(pack.linkedin_draft or "", max_chars=300),
-        "cost_ok": check_cost(ctx.total_cost, threshold=ctx.settings.max_cost_per_job),
-        "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
-        "compile_rollback_used": ctx.compile_rollback_used,
-        "truthfulness_fallback_used": ctx.truthfulness_fallback_used,
-        "condense_retries": ctx.condense_retries,
-        "single_page_target_met": ctx.single_page_target_met,
-        "single_page_status": ctx.single_page_status,
-        "compile_outcome": ctx.compile_outcome,
-        "selected_collateral": pack.selected_collateral,
-        "generated_collateral": pack.generated_collateral,
-        "collateral_generation_status": pack.collateral_generation_status,
-        "collateral_generation_reason": pack.collateral_generation_reason,
-        "collateral_files": pack.collateral_files,
-        "application_context_id": pack.application_context_id,
-        "drive_uploads": pack.drive_uploads,
-        "llm_total_tokens": ctx.total_tokens,
-        "llm_total_cost": ctx.total_cost,
-        "llm_usage_breakdown": ctx.llm_usage_breakdown,
-        "jd_schema_valid": check_jd_schema(
-            {
-                "company": jd.company,
-                "role": jd.role,
-                "location": jd.location,
-                "experience_required": jd.experience_required,
-                "skills": jd.skills,
-                "description": jd.description,
-            }
-        ),
-        "soft_resume_relevance": soft_resume_relevance,
-        "soft_jd_accuracy": soft_jd_accuracy,
-    }
-    pack.eval_results = eval_results
 
-    # ── Artifact persistence ──────────────────────────────────────
+def _persist_artifacts(
+    pack: "ApplicationPack", ctx: ExecutionContext, eval_results: dict
+) -> dict[str, str]:
+    """Write JSON artifacts to disk. Returns artifact path map."""
+    from core.artifacts import write_json_artifact
+    from core.contracts import (
+        build_eval_output_artifact,
+        build_job_extraction_artifact,
+        build_resume_output_artifact,
+    )
+
     artifact_paths: dict[str, str] = {}
+    jd = pack.jd
     try:
         job_artifact = build_job_extraction_artifact(
             run_id=ctx.run_id,
@@ -970,8 +906,20 @@ def _handle_eval_log(
         )
     except Exception as ae:
         pack.errors.append(f"Artifact persistence failed: {ae}")
+    return artifact_paths
 
-    # ── DB run log ────────────────────────────────────────────────
+
+def _complete_run_record(
+    pack: "ApplicationPack",
+    ctx: ExecutionContext,
+    eval_results: dict,
+    artifact_paths: dict[str, str],
+    latency_ms: int,
+) -> None:
+    """Write the final run record to the database."""
+    from evals.logger import log_run
+
+    jd = pack.jd
     run_context = {
         "company": jd.company,
         "role": jd.role,
@@ -1010,6 +958,63 @@ def _handle_eval_log(
         errors=pack.errors,
         context=run_context,
     )
+
+
+def _handle_eval_log(
+    step: ToolStep,
+    pack: "ApplicationPack",
+    ctx: ExecutionContext,
+) -> "ApplicationPack":
+    from evals.hard import check_cost, check_draft_length, check_jd_schema
+
+    jd = pack.jd
+    latency_ms = int((time.time() - ctx.start_time) * 1000)
+
+    _resolve_costs(pack, ctx)
+    forbidden_claims_count, edit_scope_violations = _run_hard_evals(pack, ctx)
+    soft_resume_relevance, soft_jd_accuracy = _run_soft_evals(pack, ctx)
+
+    eval_results = {
+        "compile_success": bool(pack.pdf_path and pack.pdf_path.exists()),
+        "forbidden_claims_count": forbidden_claims_count,
+        "edit_scope_violations": edit_scope_violations,
+        "draft_length_ok": check_draft_length(pack.linkedin_draft or "", max_chars=300),
+        "cost_ok": check_cost(ctx.total_cost, threshold=ctx.settings.max_cost_per_job),
+        "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
+        "compile_rollback_used": ctx.compile_rollback_used,
+        "truthfulness_fallback_used": ctx.truthfulness_fallback_used,
+        "condense_retries": ctx.condense_retries,
+        "single_page_target_met": ctx.single_page_target_met,
+        "single_page_status": ctx.single_page_status,
+        "compile_outcome": ctx.compile_outcome,
+        "selected_collateral": pack.selected_collateral,
+        "generated_collateral": pack.generated_collateral,
+        "collateral_generation_status": pack.collateral_generation_status,
+        "collateral_generation_reason": pack.collateral_generation_reason,
+        "collateral_files": pack.collateral_files,
+        "application_context_id": pack.application_context_id,
+        "drive_uploads": pack.drive_uploads,
+        "llm_total_tokens": ctx.total_tokens,
+        "llm_total_cost": ctx.total_cost,
+        "llm_usage_breakdown": ctx.llm_usage_breakdown,
+        "jd_schema_valid": check_jd_schema(
+            {
+                "company": jd.company,
+                "role": jd.role,
+                "location": jd.location,
+                "experience_required": jd.experience_required,
+                "skills": jd.skills,
+                "description": jd.description,
+            }
+        ),
+        "soft_resume_relevance": soft_resume_relevance,
+        "soft_jd_accuracy": soft_jd_accuracy,
+    }
+    pack.eval_results = eval_results
+
+    artifact_paths = _persist_artifacts(pack, ctx, eval_results)
+    _complete_run_record(pack, ctx, eval_results, artifact_paths, latency_ms)
+
     logger.info(
         "Run logged run_id=%s jd_hash=%s pdf_path=%s errors=%d",
         pack.run_id,

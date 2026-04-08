@@ -32,6 +32,18 @@ from core.router import AgentTarget, route
 
 logger = logging.getLogger(__name__)
 
+
+def _is_chat_allowed(update: Update) -> bool:
+    """Check if the chat is in the allowlist (empty list = allow all)."""
+    settings = get_settings()
+    allowlist = settings.telegram_allowed_chat_ids.strip()
+    if not allowlist:
+        return True
+    allowed = {int(cid.strip()) for cid in allowlist.split(",") if cid.strip()}
+    chat = getattr(update, "effective_chat", None)
+    return chat is not None and chat.id in allowed
+
+
 URL_FALLBACK_PROMPT = (
     "⚠️ I couldn't reliably extract the job description from that URL. "
     "Please send a screenshot of the job posting so I can continue."
@@ -192,6 +204,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handle photo messages (JD screenshots)."""
     if not update.message:
         return
+    if not _is_chat_allowed(update):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
     logger.info("Handling photo message via OCR path")
     await update.message.reply_text("📸 Got your screenshot.")
 
@@ -220,6 +235,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages — route to the appropriate agent."""
     if not update.message:
+        return
+    if not _is_chat_allowed(update):
+        await update.message.reply_text("⛔ Unauthorized.")
         return
     text = update.message.text
     pending_request = context.user_data.get("pending_inbox_request")

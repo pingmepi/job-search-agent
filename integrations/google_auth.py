@@ -13,9 +13,9 @@ Headless-safe credential loading for Railway deployment:
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
-import pickle
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ ALL_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
 ]
 
-TOKEN_FILENAME = "google_token.pickle"
+TOKEN_FILENAME = "google_token.json"
 TOKEN_ENV_VAR = "GOOGLE_TOKEN_B64"
 
 
@@ -102,12 +102,13 @@ def get_google_credentials(*, interactive: bool = False) -> Any:
         )
 
     from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
 
     creds = None
     if token_path.exists():
         try:
-            with open(token_path, "rb") as f:
-                creds = pickle.load(f)
+            token_data = json.loads(token_path.read_text(encoding="utf-8"))
+            creds = Credentials.from_authorized_user_info(token_data, ALL_SCOPES)
         except Exception as exc:
             logger.warning("Failed to load token from %s: %s", token_path, exc)
 
@@ -117,8 +118,7 @@ def get_google_credentials(*, interactive: bool = False) -> Any:
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            with open(token_path, "wb") as f:
-                pickle.dump(creds, f)
+            token_path.write_text(creds.to_json(), encoding="utf-8")
             logger.info("Refreshed Google token")
             return creds
         except Exception as exc:
@@ -146,8 +146,7 @@ def get_google_credentials(*, interactive: bool = False) -> Any:
     creds = flow.run_local_server(port=0)
 
     token_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(token_path, "wb") as f:
-        pickle.dump(creds, f)
+    token_path.write_text(creds.to_json(), encoding="utf-8")
 
     logger.info("Saved Google token with scopes: %s", ALL_SCOPES)
     return creds

@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import html
+import ipaddress
+import logging
 import re
+import socket
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+logger = logging.getLogger(__name__)
+
+MAX_RESPONSE_BYTES = 5_000_000  # 5 MB
 
 _URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
@@ -40,6 +47,28 @@ def _html_to_text(raw_html: str) -> str:
     return _WS_RE.sub(" ", content).strip()
 
 
+def _is_safe_url(url: str) -> tuple[bool, str]:
+    """Check that a URL doesn't resolve to a private/internal IP address."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "No hostname"
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        return False, f"Cannot resolve hostname: {hostname}"
+
+    for family, _, _, _, sockaddr in resolved:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            return False, f"URL resolves to non-public IP: {ip_str}"
+    return True, ""
+
+
 def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult:
     """Fetch URL content and return extracted plain text."""
     parsed = urlparse(url)
@@ -52,6 +81,11 @@ def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult
         )
     if not parsed.netloc:
         return URLIngestResult(url=url, ok=False, error="Invalid URL", error_type="invalid_url")
+
+    safe, reason = _is_safe_url(url)
+    if not safe:
+        logger.warning("SSRF blocked: %s — %s", url, reason)
+        return URLIngestResult(url=url, ok=False, error=reason, error_type="ssrf_blocked")
 
     req = Request(
         url,
@@ -66,7 +100,7 @@ def fetch_url_text(url: str, *, timeout_seconds: float = 8.0) -> URLIngestResult
     try:
         with urlopen(req, timeout=timeout_seconds) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
-            body = resp.read().decode(charset, errors="replace")
+            body = resp.read(MAX_RESPONSE_BYTES).decode(charset, errors="replace")
     except HTTPError as e:
         return URLIngestResult(url=url, ok=False, error=f"HTTP {e.code}", error_type="http_error")
     except URLError as e:

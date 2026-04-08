@@ -102,10 +102,10 @@ def upload_application_artifacts(
             media = MediaFileUpload(str(path), mimetype=_mime_for_file(path))
 
             @_upload_with_retry
-            def _do_upload():
+            def _do_upload(meta=file_metadata, m=media):
                 return (
                     service.files()
-                    .create(body=file_metadata, media_body=media, fields="id,webViewLink,name")
+                    .create(body=meta, media_body=m, fields="id,webViewLink,name")
                     .execute()
                 )
 
