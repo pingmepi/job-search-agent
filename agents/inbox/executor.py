@@ -283,9 +283,13 @@ def _handle_resume_select(
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
+    from agents.inbox.resume import load_skill_index
+
+    skill_index = load_skill_index(ctx.settings.skill_index_path)
     base_path, fit_score, details = select_base_resume_with_details(
         pack.jd.skills,
         ctx.settings.resumes_dir,
+        skill_index=skill_index,
     )
     ctx.base_path = base_path
     ctx.fit_score = fit_score

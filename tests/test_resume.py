@@ -202,6 +202,88 @@ class TestSkillMatchingImprovements:
         assert score == pytest.approx(0.0)
 
 
+class TestSkillIndexMatching:
+    """Verify skill index integration with synonym expansion."""
+
+    SAMPLE_INDEX = {
+        "version": 1,
+        "synonyms": {
+            "sdlc": ["software development lifecycle"],
+            "ci/cd": ["continuous integration", "continuous deployment"],
+            "llms": ["large language models", "llm"],
+        },
+        "resumes": {
+            "master_ai_pm.tex": [
+                "ai", "ml", "llm", "python", "sql", "product management",
+                "automation", "analytics", "crm", "cross functional",
+            ],
+        },
+    }
+
+    def test_index_matches_skill_not_in_text(self):
+        """Index-based match when text doesn't contain the skill."""
+        score = compute_keyword_overlap(
+            ["Python"],
+            "No python mentioned here at all",
+            skill_index=self.SAMPLE_INDEX,
+            resume_name="master_ai_pm.tex",
+        )
+        # "python" is in the index even though text says "No python mentioned"
+        # — wait, "python" IS in the text as substring. Use a cleaner example:
+        score = compute_keyword_overlap(
+            ["Python"],
+            "This resume has no programming languages listed",
+            skill_index=self.SAMPLE_INDEX,
+            resume_name="master_ai_pm.tex",
+        )
+        assert score == pytest.approx(1.0)
+
+    def test_synonym_expansion_matches(self):
+        """SDLC should match via synonym 'software development lifecycle'."""
+        index = {
+            "version": 1,
+            "synonyms": {"sdlc": ["software development lifecycle"]},
+            "resumes": {
+                "test.tex": ["software development lifecycle"],
+            },
+        }
+        score = compute_keyword_overlap(
+            ["SDLC"],
+            "no sdlc text here",
+            skill_index=index,
+            resume_name="test.tex",
+        )
+        assert score == pytest.approx(1.0)
+
+    def test_no_index_falls_back_to_text(self):
+        """Without index, only text matching is used."""
+        score = compute_keyword_overlap(
+            ["Python"],
+            "This resume has no programming languages listed",
+        )
+        assert score == pytest.approx(0.0)
+
+    def test_unknown_resume_falls_back_to_text(self):
+        """If resume isn't in index, only text matching is used."""
+        score = compute_keyword_overlap(
+            ["Python"],
+            "This resume mentions Python explicitly",
+            skill_index=self.SAMPLE_INDEX,
+            resume_name="unknown_resume.tex",
+        )
+        assert score == pytest.approx(1.0)  # matched via text
+
+    def test_combined_text_and_index(self):
+        """Skills matched by either text or index count."""
+        score = compute_keyword_overlap(
+            ["Python", "Docker"],  # Python in index, Docker not in text or index
+            "No skills mentioned here",
+            skill_index=self.SAMPLE_INDEX,
+            resume_name="master_ai_pm.tex",
+        )
+        assert score == pytest.approx(0.5)  # Python via index, Docker misses
+
+
 class TestResumeSelection:
     def test_compute_keyword_overlap(self):
         score = compute_keyword_overlap(["python", "sql", "ml"], "Python and ML systems")
