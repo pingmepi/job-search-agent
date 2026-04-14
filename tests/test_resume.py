@@ -127,6 +127,81 @@ Built ML pipeline improving accuracy by 20\%
         assert "  \\item Built ML pipeline improving accuracy by 30\\%" in updated
 
 
+class TestApplyMutationsDefensiveness:
+    """Ensure apply_mutations handles malformed LLM output gracefully."""
+
+    def test_skips_none_original(self):
+        mutations = [{"original": None, "replacement": "something"}]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "Built ML pipeline" in result
+
+    def test_skips_none_replacement(self):
+        mutations = [{"original": "Built ML pipeline", "replacement": None}]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "Built ML pipeline" in result
+
+    def test_skips_both_none(self):
+        mutations = [{"original": None, "replacement": None}]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "Built ML pipeline" in result
+
+    def test_skips_missing_keys(self):
+        mutations = [{"replacement": "only replacement"}, {"original": "only original"}, {}]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "Built ML pipeline" in result
+
+    def test_skips_empty_original(self):
+        mutations = [{"original": "", "replacement": "injected"}]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "injected" not in result
+
+    def test_valid_mutations_still_work(self):
+        mutations = [
+            {"original": None, "replacement": "bad"},
+            {
+                "original": "Built ML pipeline improving accuracy by 20\\%",
+                "replacement": "Built ML pipeline improving accuracy by 30\\%",
+            },
+        ]
+        result = apply_mutations(SAMPLE_TEX, mutations)
+        assert "accuracy by 30" in result
+
+
+class TestSkillMatchingImprovements:
+    """Verify smarter skill matching: slash splitting, normalization, word boundaries."""
+
+    def test_slash_splitting(self):
+        score = compute_keyword_overlap(["AI/ML"], "We use machine learning and ai agents")
+        assert score == pytest.approx(1.0)
+
+    def test_hyphen_normalization(self):
+        score = compute_keyword_overlap(
+            ["Cross-functional Collaboration"],
+            "Led cross functional collaboration across teams",
+        )
+        assert score == pytest.approx(1.0)
+
+    def test_bidirectional_containment(self):
+        score = compute_keyword_overlap(["Process Automation"], "Built workflow automation tools")
+        assert score == pytest.approx(1.0)
+
+    def test_short_token_word_boundary_no_false_positive(self):
+        score = compute_keyword_overlap(["SQL"], "Handled employee dismissal cases")
+        assert score == pytest.approx(0.0)
+
+    def test_short_token_real_match(self):
+        score = compute_keyword_overlap(["SQL"], "Proficient in SQL and Python")
+        assert score == pytest.approx(1.0)
+
+    def test_multi_word_token_fallback(self):
+        score = compute_keyword_overlap(["Data Analytics"], "Built analytics dashboards")
+        assert score == pytest.approx(1.0)
+
+    def test_short_token_ai_not_in_maintain(self):
+        score = compute_keyword_overlap(["AI"], "Help maintain the servers")
+        assert score == pytest.approx(0.0)
+
+
 class TestResumeSelection:
     def test_compute_keyword_overlap(self):
         score = compute_keyword_overlap(["python", "sql", "ml"], "Python and ML systems")

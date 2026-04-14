@@ -9,6 +9,7 @@ Key constraints (PRD §10):
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,9 +94,11 @@ def apply_mutations(
         region_text = "\n".join(lines[start_idx:end_idx])
 
         for m in mutations:
-            original = m["original"]
-            replacement = m["replacement"]
-            if original in region_text:
+            original = m.get("original")
+            replacement = m.get("replacement")
+            if not isinstance(original, str) or not isinstance(replacement, str):
+                continue
+            if original and original in region_text:
                 region_text = region_text.replace(original, replacement, 1)
 
         lines[start_idx:end_idx] = region_text.split("\n")
@@ -106,12 +109,55 @@ def apply_mutations(
 # ── Resume selection ──────────────────────────────────────────────
 
 
+def _normalize_text(text: str) -> str:
+    """Lowercase, convert hyphens/underscores to spaces."""
+    return re.sub(r"[-_]", " ", text.lower())
+
+
+def _skill_matches(skill_raw: str, text_normalized: str) -> bool:
+    """Check if a JD skill appears in normalized resume text.
+
+    Handles slash splitting, phrase normalization, word-boundary matching
+    for short tokens, and token fallback for multi-word skills.
+    """
+    skill = _normalize_text(skill_raw.strip())
+    if not skill:
+        return False
+
+    # Slash splitting: "AI/ML" → check "ai" and "ml" individually
+    if "/" in skill:
+        parts = [p.strip() for p in skill.split("/") if p.strip()]
+        return any(_skill_matches(part, text_normalized) for part in parts)
+
+    # Short tokens (≤3 chars): require word boundaries to avoid false positives
+    if len(skill) <= 3:
+        return bool(re.search(r"\b" + re.escape(skill) + r"\b", text_normalized))
+
+    # Direct substring match
+    if skill in text_normalized:
+        return True
+
+    # Token fallback: for multi-word skills, match if any substantial token appears
+    tokens = skill.split()
+    if len(tokens) > 1:
+        for token in tokens:
+            if len(token) <= 2:
+                continue
+            if len(token) <= 3:
+                if re.search(r"\b" + re.escape(token) + r"\b", text_normalized):
+                    return True
+            elif token in text_normalized:
+                return True
+
+    return False
+
+
 def compute_keyword_overlap(jd_skills: list[str], tex_content: str) -> float:
     """Compute fraction of JD skills found in resume text."""
     if not jd_skills:
         return 0.0
-    tex_lower = tex_content.lower()
-    matches = sum(1 for skill in jd_skills if skill.lower() in tex_lower)
+    tex_normalized = _normalize_text(tex_content)
+    matches = sum(1 for skill in jd_skills if _skill_matches(skill, tex_normalized))
     return matches / len(jd_skills)
 
 
@@ -153,10 +199,10 @@ def select_base_resume_with_details(
     if best_path is None:
         raise FileNotFoundError(f"No master_*.tex files found in {resumes_dir}")
 
-    jd_skills_normalized = [s.strip().lower() for s in jd_skills if s and s.strip()]
-    chosen_text = best_path.read_text(encoding="utf-8").lower()
-    matched_skills = sorted([s for s in jd_skills_normalized if s in chosen_text])
-    missing_skills = sorted([s for s in jd_skills_normalized if s not in chosen_text])
+    jd_skills_clean = [s.strip() for s in jd_skills if s and s.strip()]
+    chosen_text_normalized = _normalize_text(best_path.read_text(encoding="utf-8"))
+    matched_skills = sorted([s for s in jd_skills_clean if _skill_matches(s, chosen_text_normalized)])
+    missing_skills = sorted([s for s in jd_skills_clean if not _skill_matches(s, chosen_text_normalized)])
 
     top_candidates = [path.name for path, score in candidate_scores if score == best_score]
     tie_break_reason = (
