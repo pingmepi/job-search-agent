@@ -8,6 +8,7 @@ Usage:
     python main.py db-stats                      # Show DB summary for debugging
     python main.py followup-runner [options]     # Run scheduled follow-up detection
     python main.py replay-webhook [options]      # Replay persisted webhook event
+    python main.py build-skill-index             # Rebuild profile/skill_index.json
 """
 
 from __future__ import annotations
@@ -271,6 +272,11 @@ def main() -> None:
 
     elif command == "replay-webhook":
         _run_replay_webhook(sys.argv[2:])
+
+    elif command == "build-skill-index":
+        from scripts.build_skill_index import build_skill_index
+
+        build_skill_index()
 
     elif command == "auth-google":
         from integrations.google_auth import TOKEN_FILENAME, get_google_credentials

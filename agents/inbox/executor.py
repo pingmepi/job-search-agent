@@ -166,6 +166,22 @@ def _slugify(value: str, fallback: str) -> str:
     return text or fallback
 
 
+def _sanitize_mutations(raw: list[dict]) -> list[dict]:
+    """Drop mutations where original/replacement is not a non-empty string."""
+    clean = []
+    for m in raw:
+        orig = m.get("original")
+        repl = m.get("replacement")
+        if not isinstance(orig, str) or not isinstance(repl, str):
+            logger.warning("Dropping invalid mutation (original=%r, replacement=%r)", orig, repl)
+            continue
+        if not orig:
+            logger.warning("Dropping mutation with empty original string")
+            continue
+        clean.append(m)
+    return clean
+
+
 def _parse_json_object(text: str) -> dict:
     candidate = (text or "").strip()
     if not candidate:
@@ -267,9 +283,13 @@ def _handle_resume_select(
     pack: "ApplicationPack",
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
+    from agents.inbox.resume import load_skill_index
+
+    skill_index = load_skill_index(ctx.settings.skill_index_path)
     base_path, fit_score, details = select_base_resume_with_details(
         pack.jd.skills,
         ctx.settings.resumes_dir,
+        skill_index=skill_index,
     )
     ctx.base_path = base_path
     ctx.fit_score = fit_score
@@ -348,7 +368,7 @@ def _handle_resume_mutate(
         "cost_estimate": response.cost_estimate,
     }
 
-    mutations = mutations_data.get("mutations", [])
+    mutations = _sanitize_mutations(mutations_data.get("mutations", []))
     mutated_tex = apply_mutations(original_tex, mutations)
 
     mutation_types = dict(Counter(m.get("type", "REWRITE") for m in mutations))
@@ -363,7 +383,7 @@ def _handle_resume_mutate(
 
     original_bullets = _extract_bullets(original_tex)
     mutated_bullets = _extract_bullets(mutated_tex)
-    jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
+    jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(s for s in jd.skills if s)}"
     profile_text = json.dumps(positioning)
 
     per_bullet = check_forbidden_claims_per_bullet(
@@ -378,7 +398,7 @@ def _handle_resume_mutate(
 
     if flagged:
         flagged_texts = {r["bullet"] for r in flagged}
-        clean_mutations = [m for m in mutations if m.get("replacement", "") not in flagged_texts]
+        clean_mutations = [m for m in mutations if (m.get("replacement") or "") not in flagged_texts]
 
         reverted_count = len(mutations) - len(clean_mutations)
         if reverted_count > 0:
@@ -463,7 +483,7 @@ def _handle_compile(
             editable_content = "\n".join(r.content for r in regions)
             condense_user = (
                 f"JD context: {jd.company} — {jd.role}\n"
-                f"Skills: {', '.join(jd.skills)}\n\n"
+                f"Skills: {', '.join(s for s in jd.skills if s)}\n\n"
                 f"Current editable content:\n{editable_content}\n\n"
                 f"Current page count: {page_count}"
             )
@@ -487,10 +507,11 @@ def _handle_compile(
             for removed in data.get("bullets_removed", []):
                 mutations.append(
                     {
-                        "original": removed["original"],
+                        "original": removed.get("original"),
                         "replacement": "",
                     }
                 )
+            mutations = _sanitize_mutations(mutations)
             return apply_mutations(tex, mutations)
         except Exception as exc:
             pack.errors.append(f"Resume condense failed: {exc}")
@@ -788,7 +809,7 @@ def _run_hard_evals(pack: "ApplicationPack", ctx: ExecutionContext) -> tuple[int
         except Exception:
             bullet_bank = []
         jd = pack.jd
-        jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(jd.skills)}"
+        jd_text = f"{jd.company} {jd.role} {jd.description} {' '.join(s for s in jd.skills if s)}"
         profile = _load_profile(ctx)
         forbidden_claims_count = check_forbidden_claims(
             original_bullets,

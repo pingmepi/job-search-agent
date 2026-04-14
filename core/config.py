@@ -116,6 +116,9 @@ class Settings:
     bullet_bank_path: Path = field(
         default_factory=lambda: PROJECT_ROOT / "profile" / "bullet_bank.json"
     )
+    skill_index_path: Path = field(
+        default_factory=lambda: PROJECT_ROOT / "profile" / "skill_index.json"
+    )
     resumes_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "resumes")
     runs_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "runs")
 
