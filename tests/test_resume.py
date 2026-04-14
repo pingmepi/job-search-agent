@@ -201,6 +201,26 @@ class TestSkillMatchingImprovements:
         score = compute_keyword_overlap(["AI"], "Help maintain the servers")
         assert score == pytest.approx(0.0)
 
+    def test_slash_single_char_segments_no_false_positive(self):
+        """A/B Testing should not match just because 'a' appears in text."""
+        score = compute_keyword_overlap(["A/B Testing"], "This is a normal sentence")
+        assert score == pytest.approx(0.0)
+
+    def test_slash_single_char_matches_ab_testing(self):
+        """A/B Testing should match when 'ab testing' or 'a/b testing' appears."""
+        score = compute_keyword_overlap(["A/B Testing"], "We run A/B testing experiments")
+        assert score == pytest.approx(1.0)
+
+    def test_symbol_skill_cpp(self):
+        """C++ should match even though + isn't a word character."""
+        score = compute_keyword_overlap(["C++"], "Proficient in C++ and Java")
+        assert score == pytest.approx(1.0)
+
+    def test_symbol_skill_csharp(self):
+        """C# should match via substring fallback."""
+        score = compute_keyword_overlap(["C#"], "Experience with C# and .NET")
+        assert score == pytest.approx(1.0)
+
 
 class TestSkillIndexMatching:
     """Verify skill index integration with synonym expansion."""

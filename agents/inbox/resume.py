@@ -129,13 +129,23 @@ def _skill_matches(skill_raw: str, text_normalized: str) -> bool:
         return False
 
     # Slash splitting: "AI/ML" → check "ai" and "ml" individually
+    # Filter single-char segments to avoid "A/B Testing" matching article "a"
     if "/" in skill:
-        parts = [p.strip() for p in skill.split("/") if p.strip()]
-        return any(_skill_matches(part, text_normalized) for part in parts)
+        parts = [p.strip() for p in skill.split("/") if len(p.strip()) > 1]
+        if parts:
+            return any(_skill_matches(part, text_normalized) for part in parts)
+        # All segments were single-char (e.g., "A/B") — match as whole phrase
+        return skill.replace("/", "") in text_normalized or skill in text_normalized
 
     # Short tokens (≤3 chars): require word boundaries to avoid false positives
+    # For skills with non-word chars (C++, C#), also try exact substring match
     if len(skill) <= 3:
-        return bool(re.search(r"\b" + re.escape(skill) + r"\b", text_normalized))
+        if bool(re.search(r"\b" + re.escape(skill) + r"\b", text_normalized)):
+            return True
+        # Fallback for symbol-containing skills where \b won't anchor correctly
+        if not skill.isalnum() and skill in text_normalized:
+            return True
+        return False
 
     # Direct substring match
     if skill in text_normalized:
