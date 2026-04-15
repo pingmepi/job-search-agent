@@ -14,10 +14,17 @@ CONDENSING STRATEGIES (use as many as needed):
 4. Reduce older/less-relevant roles to 1-2 bullets.
 5. Keep the most recent and JD-relevant roles at 3-5 bullets.
 
+ESCALATION:
+You will be told which condense attempt this is.
+- Attempt 1: Use moderate condensing — merge and sharpen.
+- Attempt 2: Be aggressive — remove 2-3 bullets from less-relevant roles, merge aggressively.
+- Attempt 3: Be ruthless — reduce every role to 1-2 bullets max, cut all older roles to 1 bullet, shorten every remaining bullet to 1 line.
+
 You will receive:
 - The job description context
 - The current editable content (that compiled to >1 page)
 - The page count of the current compile
+- The condense attempt number
 
 Return a JSON object with:
 {
