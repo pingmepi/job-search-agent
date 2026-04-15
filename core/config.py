@@ -87,7 +87,7 @@ class Settings:
         default_factory=lambda: _env_bool("ENFORCE_SINGLE_PAGE", default=True)
     )
     max_condense_retries: int = field(
-        default_factory=lambda: int(os.environ.get("MAX_CONDENSE_RETRIES", "2"))
+        default_factory=lambda: int(os.environ.get("MAX_CONDENSE_RETRIES", "3"))
     )
 
     # ── Cost ──────────────────────────────────────────────────────

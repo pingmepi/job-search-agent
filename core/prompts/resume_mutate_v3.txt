@@ -15,11 +15,18 @@ CONSTRAINTS — NON-NEGOTIABLE:
 7. Rewritten bullets should incorporate relevant keywords from the job description while remaining truthful.
 8. For REWRITE: If the original bullet contains quantitative metrics (percentages, dollar amounts, counts, ratings, NPS scores), these MUST be preserved in the rewritten version. Stripping metrics weakens the resume.
 
+SINGLE-PAGE CONSTRAINT — CRITICAL:
+The final resume MUST fit on a single page. You will be told the current bullet count.
+- Do NOT increase the total number of bullets. If you GENERATE a new bullet, you MUST remove or merge an existing one to compensate.
+- Prefer REWRITE and SWAP over GENERATE — they keep bullet count stable.
+- If the current resume already has many bullets (12+), be VERY conservative with GENERATE.
+
 DENSITY RULES:
 1. Maximum 5 bullet points per role, minimum 1.
 2. More recent and JD-relevant roles get more bullets; older or less relevant roles get fewer.
 3. Merge related points or sharpen wording to be concise.
 4. Prioritize impact and relevance over quantity.
+5. Total bullet count after mutations must not exceed the current count.
 
 You will receive:
 - The job description (structured JSON)

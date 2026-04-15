@@ -344,10 +344,14 @@ def _handle_resume_mutate(
         f"Allowed tools: {', '.join(allowed_tools)}"
     )
 
+    current_bullet_count = len(_extract_bullets(original_tex))
+
     system = load_prompt("resume_mutate", version=3)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
         f"Current editable bullets:\n{editable_content}\n\n"
+        f"Current bullet count: {current_bullet_count}. "
+        f"Do NOT exceed {current_bullet_count} total bullets — the resume must fit on 1 page.\n\n"
         f"Relevant bullet bank entries:\n{bullet_bank_formatted}\n\n"
         f"Profile context:\n{profile_context}"
     )
@@ -473,7 +477,7 @@ def _handle_compile(
     enforce = getattr(ctx.settings, "enforce_single_page", True)
     max_condense = getattr(ctx.settings, "max_condense_retries", 2)
 
-    def _run_condense(tex: str, page_count: int) -> Optional[str]:
+    def _run_condense(tex: str, page_count: int, attempt: int = 1) -> Optional[str]:
         """Call the condense LLM and return condensed TeX, or None on failure."""
         try:
             condense_system = load_prompt("resume_condense", version=1)
@@ -481,11 +485,15 @@ def _handle_compile(
             if not regions:
                 return None
             editable_content = "\n".join(r.content for r in regions)
+            bullet_count = len(_extract_bullets(tex))
             condense_user = (
                 f"JD context: {jd.company} — {jd.role}\n"
                 f"Skills: {', '.join(s for s in jd.skills if s)}\n\n"
                 f"Current editable content:\n{editable_content}\n\n"
-                f"Current page count: {page_count}"
+                f"Current page count: {page_count}\n"
+                f"Current bullet count: {bullet_count}\n"
+                f"Condense attempt: {attempt} of {max_condense}\n"
+                f"{'BE MORE AGGRESSIVE — previous attempt did not reduce enough.' if attempt > 1 else ''}"
             )
             data, response = _chat_json_with_retry(
                 system=condense_system,
@@ -534,7 +542,7 @@ def _handle_compile(
                 condensed_ok = False
                 for retry in range(1, max_condense + 1):
                     ctx.condense_retries = retry
-                    condensed = _run_condense(current_tex, pages)
+                    condensed = _run_condense(current_tex, pages, attempt=retry)
                     if condensed is None:
                         break
                     try:
