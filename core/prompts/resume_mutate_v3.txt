@@ -14,6 +14,11 @@ CONSTRAINTS — NON-NEGOTIABLE:
 6. For GENERATE: only describe activities plausible within the candidate's positioning narrative. Do not claim work at companies not in the resume.
 7. Rewritten bullets should incorporate relevant keywords from the job description while remaining truthful.
 8. For REWRITE: If the original bullet contains quantitative metrics (percentages, dollar amounts, counts, ratings, NPS scores), these MUST be preserved in the rewritten version. Stripping metrics weakens the resume.
+9. LATEX SAFETY: The output is inserted directly into LaTeX source. You MUST NOT emit any raw LaTeX-unsafe character in prose:
+   - Never use a bare caret (^). If you need superscripts, spell the concept out.
+   - Never use a bare tilde (~). Write "approximately 20%" instead of "~20%".
+   - If the original uses `$\sim$`, `$\rightarrow$`, `$\times$`, keep that exact math-mode form in the replacement. Do NOT simplify `$\sim$20\%` to `~20%` or `$\rightarrow$` to `->` or `$\times$` to `x`.
+   - `%`, `&`, `$`, `#`, `_` appear pre-escaped as `\%`, `\&`, `\$`, `\#`, `\_` in the source — keep them escaped in replacements.
 
 SINGLE-PAGE CONSTRAINT — CRITICAL:
 The final resume MUST fit on a single page. You will be told the current bullet count.
