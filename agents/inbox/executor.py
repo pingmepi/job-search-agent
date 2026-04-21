@@ -315,6 +315,22 @@ def _handle_resume_mutate(
 
     regions = parse_editable_regions(original_tex)
     if not regions:
+        logger.error(
+            "No editable regions (%%BEGIN_EDITABLE / %%END_EDITABLE markers) found in %s — "
+            "mutation skipped and the base resume will be delivered unchanged. "
+            "Add markers around summary/bullets/product descriptions.",
+            ctx.base_path.name,
+        )
+        pack.errors.append(
+            f"No editable regions in {ctx.base_path.name}; resume was NOT tailored "
+            "(base delivered as-is). Missing %%BEGIN_EDITABLE markers."
+        )
+        ctx.last_step_audit = {
+            "mutations_count": 0,
+            "mutations": [],
+            "skipped_reason": "no_editable_regions",
+            "base_resume": ctx.base_path.name,
+        }
         pack.mutated_tex = original_tex
         return pack
 
