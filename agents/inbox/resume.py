@@ -72,6 +72,39 @@ def parse_editable_regions(tex_content: str) -> list[EditableRegion]:
 # ── Mutation validation ───────────────────────────────────────────
 
 
+# LaTeX special chars that break compilation when unescaped in plain text.
+# Excludes \ { } ~ ^ because those may appear in intentional TeX commands
+# the LLM includes on purpose (e.g. \textbf{...}). The five below almost
+# never appear intentionally unescaped in bullet prose.
+_LATEX_SPECIALS = {
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+}
+
+
+def escape_latex_specials(text: str) -> str:
+    """Escape LaTeX special chars in plain-text mutation replacements.
+
+    Skips characters already preceded by a backslash (already escaped).
+    """
+    if not text:
+        return text
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        prev = text[i - 1] if i > 0 else ""
+        if ch in _LATEX_SPECIALS and prev != "\\":
+            out.append(_LATEX_SPECIALS[ch])
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def apply_mutations(
     tex_content: str,
     mutations: list[dict],
@@ -103,7 +136,8 @@ def apply_mutations(
             if not isinstance(original, str) or not isinstance(replacement, str):
                 continue
             if original and original in region_text:
-                region_text = region_text.replace(original, replacement, 1)
+                safe_replacement = escape_latex_specials(replacement)
+                region_text = region_text.replace(original, safe_replacement, 1)
 
         lines[start_idx:end_idx] = region_text.split("\n")
 
@@ -302,7 +336,8 @@ def select_base_resume_with_details(
     for tex_file in sorted(resumes_dir.glob("master_*.tex")):
         content = tex_file.read_text(encoding="utf-8")
         score = compute_keyword_overlap(
-            jd_skills, content,
+            jd_skills,
+            content,
             skill_index=skill_index,
             resume_name=tex_file.name,
         )
