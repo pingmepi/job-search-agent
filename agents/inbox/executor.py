@@ -596,7 +596,7 @@ def _handle_compile(
                             committed = _use_committed_master_pdf()
                             if committed is not None:
                                 pack.pdf_path = committed
-                                ctx.compile_outcome = "committed_master_used"
+                                ctx.compile_outcome = "fallback_success"
                                 ctx.single_page_target_met = True
                                 ctx.single_page_status = "committed_master_used"
                                 pack.errors.append(
@@ -619,7 +619,7 @@ def _handle_compile(
                         committed = _use_committed_master_pdf()
                         if committed is not None:
                             pack.pdf_path = committed
-                            ctx.compile_outcome = "committed_master_used"
+                            ctx.compile_outcome = "fallback_success"
                             ctx.single_page_target_met = True
                             ctx.single_page_status = "committed_master_used"
                             pack.errors.append(
@@ -651,7 +651,7 @@ def _handle_compile(
                 committed = _use_committed_master_pdf()
                 if committed is not None:
                     pack.pdf_path = committed
-                    ctx.compile_outcome = "committed_master_used"
+                    ctx.compile_outcome = "fallback_success"
                     ctx.single_page_target_met = True
                     ctx.single_page_status = "committed_master_used"
                     pack.errors.append(
@@ -672,7 +672,7 @@ def _handle_compile(
             committed = _use_committed_master_pdf()
             if committed is not None:
                 pack.pdf_path = committed
-                ctx.compile_outcome = "committed_master_used"
+                ctx.compile_outcome = "fallback_success"
                 ctx.single_page_target_met = True
                 ctx.single_page_status = "committed_master_used"
                 pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
