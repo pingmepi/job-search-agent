@@ -56,18 +56,57 @@ class GoogleAuthExpired(GoogleAuthError):
 
 
 def _bootstrap_token_from_env(token_path: Path) -> None:
-    """Decode a base64-encoded token from env var to disk if not already present."""
-    b64 = os.environ.get(TOKEN_ENV_VAR, "")
-    if not b64 or token_path.exists():
+    """Decode a base64-encoded token from env var to disk if not already present.
+
+    Validates the decoded content is parseable JSON so a malformed env var
+    fails loudly instead of masquerading as "no valid token".
+    """
+    b64_raw = os.environ.get(TOKEN_ENV_VAR, "")
+    if not b64_raw or token_path.exists():
         return
+
+    # Strip whitespace and accidental surrounding quotes from Railway UI paste.
+    b64 = b64_raw.strip().strip("'\"")
 
     token_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        data = base64.b64decode(b64)
-        token_path.write_bytes(data)
-        logger.info("Bootstrapped %s from %s", token_path.name, TOKEN_ENV_VAR)
+        data = base64.b64decode(b64, validate=False)
     except Exception as exc:
-        logger.warning("Failed to decode %s: %s", TOKEN_ENV_VAR, exc)
+        logger.error(
+            "%s base64 decode failed (env var len=%d, stripped len=%d): %s",
+            TOKEN_ENV_VAR,
+            len(b64_raw),
+            len(b64),
+            exc,
+        )
+        return
+
+    try:
+        parsed = json.loads(data.decode("utf-8"))
+    except Exception as exc:
+        preview = data[:80].decode("utf-8", errors="replace")
+        logger.error(
+            "%s decoded bytes (%d) are not valid JSON: %s | preview=%r",
+            TOKEN_ENV_VAR,
+            len(data),
+            exc,
+            preview,
+        )
+        return
+
+    required = {"refresh_token", "client_id", "client_secret"}
+    missing = required - set(parsed.keys())
+    if missing:
+        logger.error(
+            "%s JSON is missing required fields: %s. "
+            "Re-run 'python main.py auth-google' locally and re-encode.",
+            TOKEN_ENV_VAR,
+            sorted(missing),
+        )
+        return
+
+    token_path.write_bytes(data)
+    logger.info("Bootstrapped %s from %s (%d bytes)", token_path.name, TOKEN_ENV_VAR, len(data))
 
 
 # ── Core credential loader ────────────────────────────────────────

@@ -278,6 +278,26 @@ def main() -> None:
 
         build_skill_index()
 
+    elif command == "encode-token":
+        import base64 as _b64
+        from pathlib import Path as _Path
+
+        from integrations.google_auth import TOKEN_FILENAME
+
+        token_path = _Path("credentials") / TOKEN_FILENAME
+        if not token_path.exists():
+            print(f"Token file not found at {token_path}.")
+            print("Run 'python main.py auth-google' first.")
+            sys.exit(1)
+        data = token_path.read_bytes()
+        encoded = _b64.b64encode(data).decode("ascii")
+        print(encoded)
+        print(
+            f"\n↑ Copy the single line above and paste it into Railway as "
+            f"GOOGLE_TOKEN_B64 (no quotes, no wrapping). Length: {len(encoded)} chars.",
+            file=sys.stderr,
+        )
+
     elif command == "auth-google":
         from integrations.google_auth import TOKEN_FILENAME, get_google_credentials
 
