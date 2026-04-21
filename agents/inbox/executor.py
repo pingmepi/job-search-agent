@@ -457,7 +457,14 @@ def _handle_compile(
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_tex = Path(tmp_dir) / base_path.name
             tmp_tex.write_text(tex_content, encoding="utf-8")
-            compiled = compile_latex(tmp_tex, Path(tmp_dir))
+            try:
+                compiled = compile_latex(tmp_tex, Path(tmp_dir))
+            except Exception:
+                # Persist the failing tex so post-mortem is possible —
+                # tempdir gets wiped on exit otherwise.
+                failing_tex = app_output_dir / f"{base_path.stem}{suffix}_FAILED.tex"
+                failing_tex.write_text(tex_content, encoding="utf-8")
+                raise
             dest = app_output_dir / f"{base_path.stem}{suffix}.pdf"
             shutil.copy2(compiled, dest)
             return dest

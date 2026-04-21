@@ -415,9 +415,16 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     )
 
     if result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, "pdflatex", result.stdout, result.stderr
-        )
+        # pdflatex writes errors to stdout, not stderr. Surface the first
+        # actionable "! ..." line + a short tail so failures are debuggable.
+        stdout = result.stdout or ""
+        error_lines = [ln for ln in stdout.splitlines() if ln.startswith("!")]
+        first_error = error_lines[0] if error_lines else ""
+        tail = "\n".join(stdout.splitlines()[-15:])
+        msg = f"pdflatex exited {result.returncode}"
+        if first_error:
+            msg += f" — {first_error}"
+        raise RuntimeError(f"{msg}\n--- pdflatex tail ---\n{tail}")
 
     pdf_path = output_dir / tex_path.with_suffix(".pdf").name
     if not pdf_path.exists():
