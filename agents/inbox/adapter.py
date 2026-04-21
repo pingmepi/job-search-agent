@@ -115,21 +115,43 @@ async def _run_and_respond(
             f"✉️ Collateral generated: {generated_label}\n"
             f"🧪 Run ID: {pack.run_id or 'n/a'}"
         )
-        # Send the PDF resume if compile succeeded
+
+        # Send the PDF resume if compile succeeded. Isolate failures so a
+        # Telegram upload/network blip does not trigger the outer
+        # "❌ Error: Timed out" reply after the pipeline itself succeeded.
+        async def _send_safe(coro_factory, label: str) -> None:
+            try:
+                await coro_factory()
+            except Exception as send_err:
+                logger.warning("Failed to send %s: %s", label, send_err)
+                pack.errors.append(f"{label} send failed: {send_err}")
+
         if pack.pdf_path and pack.pdf_path.exists():
-            with open(pack.pdf_path, "rb") as pdf_file:
-                await update.message.reply_document(
-                    document=pdf_file,
-                    filename=pack.pdf_path.name,
-                    caption=f"📄 Tailored resume for {jd.company} — {jd.role}",
-                )
-        # Send collateral drafts as text
+
+            async def _send_pdf() -> None:
+                with open(pack.pdf_path, "rb") as pdf_file:
+                    await update.message.reply_document(
+                        document=pdf_file,
+                        filename=pack.pdf_path.name,
+                        caption=f"📄 Tailored resume for {jd.company} — {jd.role}",
+                    )
+
+            await _send_safe(_send_pdf, "Resume PDF")
         if pack.email_draft:
-            await update.message.reply_text(f"✉️ Email draft:\n\n{pack.email_draft}")
+            await _send_safe(
+                lambda: update.message.reply_text(f"✉️ Email draft:\n\n{pack.email_draft}"),
+                "Email draft",
+            )
         if pack.linkedin_draft:
-            await update.message.reply_text(f"💬 LinkedIn DM:\n\n{pack.linkedin_draft}")
+            await _send_safe(
+                lambda: update.message.reply_text(f"💬 LinkedIn DM:\n\n{pack.linkedin_draft}"),
+                "LinkedIn draft",
+            )
         if pack.referral_draft:
-            await update.message.reply_text(f"🤝 Referral note:\n\n{pack.referral_draft}")
+            await _send_safe(
+                lambda: update.message.reply_text(f"🤝 Referral note:\n\n{pack.referral_draft}"),
+                "Referral draft",
+            )
         if pack.errors:
             await update.message.reply_text(
                 "⚠️ Completed with issues:\n" + "\n".join(f"• {e}" for e in pack.errors[:5])
@@ -377,7 +399,18 @@ def create_bot() -> Application:
             "⚠️  Telegram token is 'placeholder'. Set TELEGRAM_TOKEN in .env to use the bot."
         )
 
-    app = Application.builder().token(settings.telegram_token).build()
+    # Default PTB write_timeout=5s is too short for reply_document uploads
+    # of tailored resume PDFs; raise all HTTP timeouts to tolerate slow
+    # Railway egress and Telegram API blips.
+    app = (
+        Application.builder()
+        .token(settings.telegram_token)
+        .connect_timeout(15.0)
+        .read_timeout(30.0)
+        .write_timeout(60.0)
+        .pool_timeout(5.0)
+        .build()
+    )
 
     # Register handlers
     app.add_handler(CommandHandler("start", start_handler))
