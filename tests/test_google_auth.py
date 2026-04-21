@@ -24,7 +24,14 @@ class TestBootstrapTokenFromEnv:
     def test_decodes_b64_to_disk(self, tmp_path, monkeypatch):
         import base64
 
-        token_data = json.dumps({"token": "test123", "refresh_token": "ref"})
+        token_data = json.dumps(
+            {
+                "token": "test123",
+                "refresh_token": "ref",
+                "client_id": "id",
+                "client_secret": "sec",
+            }
+        )
         b64 = base64.b64encode(token_data.encode()).decode()
         monkeypatch.setenv("GOOGLE_TOKEN_B64", b64)
 
