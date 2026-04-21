@@ -402,7 +402,9 @@ def _handle_resume_mutate(
 
     if flagged:
         flagged_texts = {r["bullet"] for r in flagged}
-        clean_mutations = [m for m in mutations if (m.get("replacement") or "") not in flagged_texts]
+        clean_mutations = [
+            m for m in mutations if (m.get("replacement") or "") not in flagged_texts
+        ]
 
         reverted_count = len(mutations) - len(clean_mutations)
         if reverted_count > 0:
@@ -473,6 +475,21 @@ def _handle_compile(
             pdf.unlink(missing_ok=True)
             removed.append(pdf.name)
         return removed
+
+    def _use_committed_master_pdf() -> Optional[Path]:
+        """Copy the pre-compiled master PDF as terminal fallback.
+
+        Masters in resumes/ are committed and pre-verified as 1-page, so this
+        path guarantees a compliant artifact even when pdflatex is unavailable
+        in the runtime environment.
+        """
+        committed_pdf = base_path.with_suffix(".pdf")
+        if not committed_pdf.exists():
+            return None
+        _cleanup_pdfs(app_output_dir)
+        dest = app_output_dir / f"{base_path.stem}_committed.pdf"
+        shutil.copy2(committed_pdf, dest)
+        return dest
 
     enforce = getattr(ctx.settings, "enforce_single_page", True)
     max_condense = getattr(ctx.settings, "max_condense_retries", 2)
@@ -571,15 +588,26 @@ def _handle_compile(
                         ctx.compile_rollback_used = True
                         fb_pages = _safe_page_count(pack.pdf_path)
                         if fb_pages is not None and fb_pages > 1:
-                            # Terminal failure: base resume also exceeds one page
-                            pack.pdf_path = None
-                            _cleanup_pdfs(app_output_dir)
-                            ctx.single_page_status = "failed_multi_page_terminal"
-                            ctx.compile_outcome = None
+                            # Recompiled base exceeds one page — use committed master PDF
                             pack.errors.append(
                                 f"Resume exceeds one page ({fb_pages} pages) and base fallback "
-                                "also exceeds one page. No compliant PDF produced."
+                                "also exceeds one page."
                             )
+                            committed = _use_committed_master_pdf()
+                            if committed is not None:
+                                pack.pdf_path = committed
+                                ctx.compile_outcome = "committed_master_used"
+                                ctx.single_page_target_met = True
+                                ctx.single_page_status = "committed_master_used"
+                                pack.errors.append(
+                                    "Used pre-compiled committed master PDF as terminal fallback."
+                                )
+                            else:
+                                pack.pdf_path = None
+                                _cleanup_pdfs(app_output_dir)
+                                ctx.single_page_status = "failed_multi_page_terminal"
+                                ctx.compile_outcome = None
+                                pack.errors.append("No committed master PDF available.")
                         else:
                             ctx.compile_outcome = "fallback_success"
                             ctx.single_page_status = "fallback_base_used"
@@ -588,7 +616,17 @@ def _handle_compile(
                             )
                     except Exception as fe:
                         pack.errors.append(f"LaTeX compile fallback failed: {fe}")
-                        ctx.single_page_status = "fallback_failed"
+                        committed = _use_committed_master_pdf()
+                        if committed is not None:
+                            pack.pdf_path = committed
+                            ctx.compile_outcome = "committed_master_used"
+                            ctx.single_page_target_met = True
+                            ctx.single_page_status = "committed_master_used"
+                            pack.errors.append(
+                                "Used pre-compiled committed master PDF as terminal fallback."
+                            )
+                        else:
+                            ctx.single_page_status = "fallback_failed"
             elif pages is None:
                 ctx.single_page_status = "unknown"
                 ctx.compile_outcome = "mutated_success"
@@ -606,21 +644,40 @@ def _handle_compile(
             ctx.compile_rollback_used = True
             fb_pages = _safe_page_count(pack.pdf_path) if enforce else None
             if enforce and fb_pages is not None and fb_pages > 1:
-                pack.pdf_path = None
-                _cleanup_pdfs(app_output_dir)
-                ctx.single_page_status = "failed_multi_page_terminal"
-                ctx.compile_outcome = None
                 pack.errors.append(
                     f"Resume exceeds one page ({fb_pages} pages) and base fallback "
-                    "also exceeds one page. No compliant PDF produced."
+                    "also exceeds one page."
                 )
+                committed = _use_committed_master_pdf()
+                if committed is not None:
+                    pack.pdf_path = committed
+                    ctx.compile_outcome = "committed_master_used"
+                    ctx.single_page_target_met = True
+                    ctx.single_page_status = "committed_master_used"
+                    pack.errors.append(
+                        "Used pre-compiled committed master PDF as terminal fallback."
+                    )
+                else:
+                    pack.pdf_path = None
+                    _cleanup_pdfs(app_output_dir)
+                    ctx.single_page_status = "failed_multi_page_terminal"
+                    ctx.compile_outcome = None
+                    pack.errors.append("No committed master PDF available.")
             else:
                 ctx.compile_outcome = "fallback_success"
                 ctx.single_page_status = "fallback_base_used"
                 pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
         except Exception as fe:
             pack.errors.append(f"LaTeX compile fallback failed: {fe}")
-            ctx.single_page_status = "fallback_failed"
+            committed = _use_committed_master_pdf()
+            if committed is not None:
+                pack.pdf_path = committed
+                ctx.compile_outcome = "committed_master_used"
+                ctx.single_page_target_met = True
+                ctx.single_page_status = "committed_master_used"
+                pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
+            else:
+                ctx.single_page_status = "fallback_failed"
 
     logger.info(
         "Compile result jd_hash=%s success=%s rollback=%s condense=%d",

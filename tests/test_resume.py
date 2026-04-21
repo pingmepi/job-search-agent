@@ -9,6 +9,7 @@ import pytest
 from agents.inbox.resume import (
     apply_mutations,
     compute_keyword_overlap,
+    escape_latex_specials,
     parse_editable_regions,
     select_base_resume_with_details,
     select_base_resume_with_score,
@@ -234,8 +235,16 @@ class TestSkillIndexMatching:
         },
         "resumes": {
             "master_ai_pm.tex": [
-                "ai", "ml", "llm", "python", "sql", "product management",
-                "automation", "analytics", "crm", "cross functional",
+                "ai",
+                "ml",
+                "llm",
+                "python",
+                "sql",
+                "product management",
+                "automation",
+                "analytics",
+                "crm",
+                "cross functional",
             ],
         },
     }
@@ -331,3 +340,39 @@ class TestResumeSelection:
         assert details["tie_break_reason"] == "highest_score_lexicographic_tie_break"
         assert details["selected_resume"] == "master_a.tex"
         assert details["matched_skills"] == ["python"]
+
+
+class TestEscapeLatexSpecials:
+    def test_escapes_all_five_specials(self):
+        assert escape_latex_specials("a&b") == r"a\&b"
+        assert escape_latex_specials("10%") == r"10\%"
+        assert escape_latex_specials("$1M") == r"\$1M"
+        assert escape_latex_specials("#1") == r"\#1"
+        assert escape_latex_specials("snake_case") == r"snake\_case"
+
+    def test_does_not_double_escape(self):
+        assert escape_latex_specials(r"20\%") == r"20\%"
+        assert escape_latex_specials(r"a\&b") == r"a\&b"
+
+    def test_leaves_backslash_commands_alone(self):
+        assert escape_latex_specials(r"\textbf{bold}") == r"\textbf{bold}"
+
+    def test_empty_and_none_safe(self):
+        assert escape_latex_specials("") == ""
+        assert escape_latex_specials(None) is None
+
+    def test_apply_mutations_escapes_unescaped_specials(self):
+        tex = (
+            "\n%%BEGIN_EDITABLE\n"
+            "\\begin{itemize}\n"
+            "  \\item placeholder\n"
+            "\\end{itemize}\n"
+            "%%END_EDITABLE\n"
+        )
+        mutations = [
+            {"original": "placeholder", "replacement": "Drove $1M & 20% growth in Q1"},
+        ]
+        result = apply_mutations(tex, mutations)
+        assert r"\$1M" in result
+        assert r"\&" in result
+        assert r"20\%" in result
