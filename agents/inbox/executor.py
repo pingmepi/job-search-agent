@@ -315,6 +315,22 @@ def _handle_resume_mutate(
 
     regions = parse_editable_regions(original_tex)
     if not regions:
+        logger.error(
+            "No editable regions (%%BEGIN_EDITABLE / %%END_EDITABLE markers) found in %s — "
+            "mutation skipped and the base resume will be delivered unchanged. "
+            "Add markers around summary/bullets/product descriptions.",
+            ctx.base_path.name,
+        )
+        pack.errors.append(
+            f"No editable regions in {ctx.base_path.name}; resume was NOT tailored "
+            "(base delivered as-is). Missing %%BEGIN_EDITABLE markers."
+        )
+        ctx.last_step_audit = {
+            "mutations_count": 0,
+            "mutations": [],
+            "skipped_reason": "no_editable_regions",
+            "base_resume": ctx.base_path.name,
+        }
         pack.mutated_tex = original_tex
         return pack
 
@@ -797,6 +813,24 @@ def _persist_draft(pack: "ApplicationPack", ctx: ExecutionContext) -> None:
         pack.errors.append(f"Draft file persistence failed: {e}")
 
 
+def _derive_candidate_name(ctx: ExecutionContext) -> str:
+    """Build 'Last_First' prefix from profile.name, falling back to default."""
+    from integrations.drive import DEFAULT_CANDIDATE_NAME
+
+    try:
+        profile = _load_profile(ctx)
+        full_name = (profile.get("identity", {}).get("name") or "").strip()
+        parts = [re.sub(r"[^A-Za-z0-9]+", "", p) for p in full_name.split() if p.strip()]
+        parts = [p for p in parts if p]
+        if len(parts) >= 2:
+            return f"{parts[-1]}_{parts[0]}"
+        if parts:
+            return parts[0]
+    except Exception:
+        pass
+    return DEFAULT_CANDIDATE_NAME
+
+
 def _handle_drive_upload(
     step: ToolStep,
     pack: "ApplicationPack",
@@ -815,6 +849,8 @@ def _handle_drive_upload(
         company=pack.jd.company,
         role=pack.jd.role,
         application_context_id=pack.application_context_id or ctx.run_id,
+        run_id=ctx.run_id,
+        candidate_name=_derive_candidate_name(ctx),
     )
     resume_upload = pack.drive_uploads.get("files", {}).get("resume_pdf", {})
     if isinstance(resume_upload, dict):

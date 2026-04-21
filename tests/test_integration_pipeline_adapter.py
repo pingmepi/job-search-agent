@@ -505,13 +505,17 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
 
     captured: dict[str, object] = {}
 
-    def _upload_artifacts(*, files, company, role, application_context_id):
+    def _upload_artifacts(
+        *, files, company, role, application_context_id, run_id=None, candidate_name=None
+    ):
         captured["files"] = {k: str(v) for k, v in files.items()}
         captured["company"] = company
         captured["role"] = role
         captured["application_context_id"] = application_context_id
+        captured["run_id"] = run_id
+        captured["candidate_name"] = candidate_name
         return {
-            "folder": {"id": "folder-1", "path": "Jobs/DriveCo/PM/context"},
+            "folder": {"id": "folder-1", "path": "Job search agent/driveco_pm_run-x"},
             "files": {
                 "resume_pdf": {"status": "uploaded", "webViewLink": "https://drive/resume"},
                 "email": {"status": "uploaded", "webViewLink": "https://drive/email"},
