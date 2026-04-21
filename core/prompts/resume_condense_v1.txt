@@ -6,6 +6,11 @@ CONSTRAINTS — NON-NEGOTIABLE:
 3. You must NOT change dates, company names, or job titles.
 4. You must NOT remove entire roles — every role must keep at least 1 bullet.
 5. Do NOT introduce any new numeric values or named entities that are not in the provided content.
+6. The output is inserted directly into LaTeX source. You MUST NOT emit any raw LaTeX-unsafe character in prose. Specifically:
+   - Never use a bare caret (^). If you need a superscript or "to the power" notation, spell it out ("squared") or use "x2" style.
+   - Never use a bare tilde (~). Write words out ("approximately 20%") instead of "~20%".
+   - Do not emit bare "&", "%", "$", "#", "_" in prose. Write "and", "percent", "USD", "number", and use spaces — or match the pre-escaped forms already present in the original ("\%", "\&", "\$", "\_", "\#", "$\sim$", "$\rightarrow$", "$\times$").
+   - If the original bullet uses `$\sim$`, `$\rightarrow$`, `$\times$`, keep that exact math-mode form in the replacement. Do not simplify to `~`, `->`, or `x`.
 
 CONDENSING STRATEGIES (use as many as needed):
 1. Merge related bullets into a single, tighter statement.
