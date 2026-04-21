@@ -480,6 +480,33 @@ def _handle_compile(
                 # tempdir gets wiped on exit otherwise.
                 failing_tex = app_output_dir / f"{base_path.stem}{suffix}_FAILED.tex"
                 failing_tex.write_text(tex_content, encoding="utf-8")
+                # Also dump a unified diff against the base into pack.errors so
+                # the offending string surfaces in Telegram / db logs without
+                # needing shell access to the (ephemeral) container FS.
+                try:
+                    import difflib
+
+                    base_text = base_path.read_text(encoding="utf-8")
+                    diff_lines = list(
+                        difflib.unified_diff(
+                            base_text.splitlines(),
+                            tex_content.splitlines(),
+                            fromfile="base.tex",
+                            tofile=f"failing{suffix}.tex",
+                            n=1,
+                            lineterm="",
+                        )
+                    )
+                    if diff_lines:
+                        # Truncate to keep error_text manageable.
+                        diff_blob = "\n".join(diff_lines[:60])
+                        if len(diff_lines) > 60:
+                            diff_blob += f"\n... ({len(diff_lines) - 60} more diff lines)"
+                        pack.errors.append(
+                            f"Failing tex diff vs base (compile {suffix or 'mutated'}):\n{diff_blob}"
+                        )
+                except Exception as diff_err:
+                    logger.warning("Could not build diff for failing tex: %s", diff_err)
                 raise
             dest = app_output_dir / f"{base_path.stem}{suffix}.pdf"
             shutil.copy2(compiled, dest)
