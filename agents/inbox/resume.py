@@ -88,21 +88,44 @@ _LATEX_SPECIALS = {
 def escape_latex_specials(text: str) -> str:
     """Escape LaTeX special chars in plain-text mutation replacements.
 
-    Skips characters already preceded by a backslash (already escaped).
+    Skips characters already preceded by a backslash (already escaped),
+    and preserves intentional math-mode delimiter pairs like `$\\sim$`,
+    `$\\rightarrow$`, `$\\times$` — the opening/closing `$` in those
+    pairs must NOT be escaped to `\\$` or the inner math command
+    (`\\sim`, etc.) runs in text mode and triggers
+    `! Missing $ inserted`.
     """
     if not text:
         return text
+
+    # Protect `$\command$` patterns (math-mode delimiters around a TeX
+    # command) by stashing them behind a placeholder so the per-char
+    # escape loop can't touch their delimiters.
+    placeholder = "\x00MATHPAIR{}\x00"
+    stashed: list[str] = []
+
+    def _stash(match: re.Match) -> str:
+        stashed.append(match.group(0))
+        return placeholder.format(len(stashed) - 1)
+
+    protected = re.sub(r"\$\\[a-zA-Z]+(?:\{[^}]*\})?\$", _stash, text)
+
     out: list[str] = []
     i = 0
-    while i < len(text):
-        ch = text[i]
-        prev = text[i - 1] if i > 0 else ""
+    while i < len(protected):
+        ch = protected[i]
+        prev = protected[i - 1] if i > 0 else ""
         if ch in _LATEX_SPECIALS and prev != "\\":
             out.append(_LATEX_SPECIALS[ch])
         else:
             out.append(ch)
         i += 1
-    return "".join(out)
+    result = "".join(out)
+
+    # Restore stashed math-mode pairs verbatim.
+    for idx, original in enumerate(stashed):
+        result = result.replace(placeholder.format(idx), original)
+    return result
 
 
 def apply_mutations(

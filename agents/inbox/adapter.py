@@ -153,9 +153,19 @@ async def _run_and_respond(
                 "Referral draft",
             )
         if pack.errors:
-            await update.message.reply_text(
-                "⚠️ Completed with issues:\n" + "\n".join(f"• {e}" for e in pack.errors[:5])
+            # Telegram caps messages at 4096 chars. Truncate each error to
+            # ~500 chars and the whole payload to ~3500 so ✨we stay under the
+            # limit even with emojis/markup. Full errors remain in the run's
+            # errors_json for offline inspection.
+            def _trunc(s: str, limit: int = 500) -> str:
+                return s if len(s) <= limit else s[:limit] + f"... [+{len(s) - limit} chars]"
+
+            payload = "⚠️ Completed with issues:\n" + "\n".join(
+                f"• {_trunc(e)}" for e in pack.errors[:5]
             )
+            if len(payload) > 3500:
+                payload = payload[:3500] + "\n... [truncated — see runs.errors_json]"
+            await update.message.reply_text(payload)
     except OCRQualityError as e:
         logger.warning("OCR quality too low: %s", e)
         await update.message.reply_text(

@@ -361,6 +361,20 @@ class TestEscapeLatexSpecials:
         assert escape_latex_specials("") == ""
         assert escape_latex_specials(None) is None
 
+    def test_preserves_math_mode_pair_around_command(self):
+        # $\sim$20% — the outer $ delimiters are intentional math mode.
+        # Only the % should be escaped; the $s around \sim must stay.
+        assert escape_latex_specials(r"improved by $\sim$20%") == r"improved by $\sim$20\%"
+
+    def test_preserves_rightarrow_and_times(self):
+        assert escape_latex_specials(r"NLP $\rightarrow$ SQL") == r"NLP $\rightarrow$ SQL"
+        assert escape_latex_specials(r"$\sim$2$\times$ growth") == r"$\sim$2$\times$ growth"
+
+    def test_still_escapes_stray_dollar(self):
+        # Not a math-mode pair — should be escaped.
+        assert escape_latex_specials("$1M revenue") == r"\$1M revenue"
+        assert escape_latex_specials("cost is $30") == r"cost is \$30"
+
     def test_apply_mutations_escapes_unescaped_specials(self):
         tex = (
             "\n%%BEGIN_EDITABLE\n"
