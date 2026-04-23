@@ -150,6 +150,10 @@ Shared Storage:
 * Run logs
 * Evals dataset
 
+Telegram inbox intake is considered manually vetted input. When a job enters the
+pipeline from Telegram text, URL, or screenshot flow, the persisted job row must
+record that provenance as `user_vetted`.
+
 ---
 
 # 5. Data Models
@@ -203,12 +207,20 @@ jobs(
   company TEXT,
   role TEXT,
   jd_hash TEXT,
+  user_vetted INTEGER,
   fit_score INTEGER,
   resume_used TEXT,
   drive_link TEXT,
   created_at TIMESTAMP
 );
 ```
+
+Semantics:
+
+* `user_vetted = 1` means the job post was explicitly submitted by the user via
+  Telegram inbox flow and should be treated as reviewed/approved source input.
+* `user_vetted = 0` means the job row came from some other path or was not
+  explicitly marked as vetted.
 
 ---
 
@@ -394,13 +406,13 @@ Add:
 
 ---
 
-## Phase 3 — SaaS Readiness
+## Phase 3 — Workflow Product Surface
 
-* Multi-user support
-* OAuth flows
-* Dashboard
-* Billing
-* Usage metering
+* A-F markdown application reports
+* Pipeline integrity checks
+* Portal scanner
+* Operator dashboard
+* Drive-centered artifact visibility
 
 ---
 
@@ -538,7 +550,7 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 | Phase 0 Core Executor hardening | KAR-42..KAR-60 | Done |
 | Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | Done |
 | Phase 2 Planner Mode | KAR-61 | Done |
-| Phase 3 SaaS Readiness | KAR-62 | Todo |
+| Phase 3 Workflow Product Surface | KAR-62 | Todo |
 
 ## 13.4 Sync Rule
 

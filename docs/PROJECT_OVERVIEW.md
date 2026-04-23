@@ -25,10 +25,16 @@ Each application took ~1 hour. The steps are repetitive, the quality inconsisten
 
 A Telegram bot. Send a job description (text, URL, or screenshot) → get back:
 - Tailored resume PDF (LaTeX-compiled, mutations grounded in real experience)
+- Markdown application report with A-F framing, selected base resume, and mutation summary
 - Email draft, LinkedIn DM (<300 chars), referral note
 - Google Drive folder with all artifacts
 - Calendar events (apply deadline + follow-up reminder)
 - Full telemetry: tokens, cost, latency, eval results per step
+
+Operational intake rule:
+- Telegram-originated inbox submissions are treated as manually vetted job posts
+- That provenance is persisted as `jobs.user_vetted = 1`
+- Non-Telegram/direct pipeline calls do not inherit that flag unless passed explicitly
 
 ### System at a Glance
 
@@ -54,7 +60,7 @@ Telegram Message
            │
            ▼
 ┌─────────────────────────────────┐
-│  Executor (12 step handlers)    │  All LLM calls here
+│  Executor (13 step handlers)    │  All LLM calls here
 │  Retry + graceful degradation   │  Errors → pack.errors
 │                                 │
 │  1. OCR (if screenshot)         │
@@ -62,13 +68,14 @@ Telegram Message
 │  3. Resume selection            │
 │  4. Resume mutation             │
 │  5. LaTeX compilation           │
-│  6. Calendar events             │
-│  7. Email draft                 │
-│  8. LinkedIn DM                 │
-│  9. Referral note               │
-│  10. Drive upload               │
-│  11. DB persistence             │
-│  12. Eval logging               │
+│  6. Markdown report generation  │
+│  7. Calendar events             │
+│  8. Email draft                 │
+│  9. LinkedIn DM                 │
+│  10. Referral note              │
+│  11. Drive upload               │
+│  12. DB persistence             │  Persists `user_vetted` provenance
+│  13. Eval logging               │
 └─────────────────────────────────┘
            │
            ▼
@@ -84,7 +91,7 @@ Telegram Message
 
 | Agent | What It Does | Status |
 |-------|-------------|--------|
-| **Inbox Agent** | Full 12-step pipeline: JD → resume → collateral → upload → log | Production, full telemetry |
+| **Inbox Agent** | Full pipeline: JD → resume → report → collateral → upload → log | Production, full telemetry |
 | **Profile Agent** | Answers questions about me, grounded in profile.json + bullet bank. Forbidden-claim enforcement. | Production, run logging |
 | **Follow-Up Agent** | Detects +7 day applications, generates escalation-aware drafts (3 tiers), persists progress | Implemented, UX pending |
 | **Article Agent** | Summarizes articles, extracts job-search signals (hiring, funding, skills in demand) | Functional, signal persistence |
@@ -119,6 +126,10 @@ Not every decision was obvious. Here are the ones that shaped the system:
 **Why:** Routing happens on every message. LLM adds $0.001-0.01 per message, 200-500ms latency, and non-deterministic behavior (same message could route differently). Pattern matching is free, sub-millisecond, and 100% testable.
 
 **Trade-off accepted:** Can't handle ambiguous intent. User sends something that doesn't match → falls to CLARIFY. Worth it for testability and zero cost.
+
+**Related intake assumption:** Once the router sends a Telegram message into the
+Inbox Agent path, that submission is treated as user-vetted source input. This
+is a product choice, not an inference from JD quality.
 
 ### Planner/executor separation — testable plans without mocks
 
@@ -280,6 +291,7 @@ Every pipeline run logs:
 - Input/output per step (run_steps audit trail)
 - Eval results (all hard + soft evals)
 - Errors encountered (with graceful degradation)
+- Markdown report path plus mutation summary in run context / resume artifact
 
 ---
 
@@ -346,7 +358,7 @@ The LLM prompts are maybe 5 files. The other 95% is: error boundaries, retry log
 
 ### Medium-term
 - **Conversion tracking:** The real metric. Are tailored resumes getting more interviews? Need volume to measure.
-- **SaaS readiness:** Multi-user auth, per-user profiles, billing. Currently single-user.
+- **Workflow product surface:** scanner, dashboard, integrity checks, and richer application artifacts for day-to-day operating use.
 
 ### Backlog
 - Persist raw webhook events (KAR-72)

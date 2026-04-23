@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-04-08
+Last updated: 2026-04-23
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -10,14 +10,21 @@ Last updated: 2026-04-08
   - https://linear.app/karans/document/tracker-2026-02-16-20e846e0ca54
 
 ## Current Status
-- Phase: Phase 3 complete. Post-phase hardening + observability. Phase 4 planning.
+- Phase: Phase 3 product workflow expansion in progress.
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
 - Test status: `251 passed, 37 skipped` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
 - CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
 - Pre-commit: ruff lint + format + pytest. Install: `bash scripts/install-hooks.sh`.
-- Active issue: `KAR-62` (Pending).
+- Active issue: `KAR-62` (Phase 3 product workflow expansion).
 
-## Latest Progress (2026-04-08)
+## Latest Progress (2026-04-23)
+- Added `application_report.md` artifact with A-F framing, selected base resume details, mutation summary, collateral status, and execution summary.
+- Wired markdown report upload into the per-application Google Drive folder alongside the resume and generated collateral.
+- Added `python main.py pipeline-check` for DB/artifact integrity checks, including report presence validation.
+- Reframed roadmap work away from SaaS packaging and toward product surface expansion: reports, integrity checks, scanner, and dashboard.
+- Marked Telegram-originated inbox submissions as manually vetted intake and persisted that provenance on `jobs.user_vetted`.
+
+## Previous Progress (2026-04-08)
 - Full codebase hardening: 17 fixes across security (7), performance (2), correctness (5), maintainability (3). Key: pickle→JSON tokens, SSRF protection, connection pooling, Drive closure bug, chat_id allowlist (`TELEGRAM_ALLOWED_CHAT_IDS`).
 - 32 new tests (251 total): JSON utils, drafts, Google auth, SSRF, E2E pipeline. Live E2E opt-in with `pytest -m live`.
 - `core/json_utils.py` — shared JSON extraction utility (deduplicated from jd.py + executor.py).
@@ -120,7 +127,7 @@ Last updated: 2026-04-08
 - [x] KAR-73 ArticleAgent — article summarization and job-search signal surfacing
 
 ## Pending Work
-- [ ] KAR-62 Phase 3 SaaS readiness scoping
+- [ ] KAR-62 Phase 3 product workflow expansion scoping
 - [ ] KAR-72 Persist raw Telegram webhook events to `data/raw_events/`
 - [ ] KAR-74 Implement default memory agent fallback behavior
 - [ ] KAR-75 Define and persist formal JSON artifacts for job/resume/eval outputs
@@ -131,13 +138,13 @@ Last updated: 2026-04-08
 - [ ] Add default memory/fallback agent behavior beyond current clarify response (`KAR-74`).
 - [ ] Define and persist structured JSON artifacts for job posting, resume output, and eval result (partially covered by existing run logs; formal schema artifacts tracked in `KAR-75`).
 - [ ] Auto-create/update Linear issue per generated application (`Apply - {Company} - {Role}` with resume/JD attachments) (`KAR-76`).
-- [ ] Productization/SaaS readiness items (dockerization, configurable backends, public vs paid packaging scope) (`KAR-62`).
+- [ ] Phase 3 product workflow expansion items: scanner, dashboard, richer report artifacts, and operator integrity tooling (`KAR-62`).
 
 ## Milestones (Linear)
 - Phase 0 - Core Executor Hardening (target: 2026-03-01)
 - Phase 1 - Intelligence Layer (target: 2026-03-15)
 - Phase 2 - Planner Mode (target: 2026-04-05)
-- Phase 3 - SaaS Readiness (target: 2026-04-30)
+- Phase 3 - Workflow Product Surface (target: 2026-04-30)
 
 ## Execution Order
 1. KAR-62
@@ -147,6 +154,7 @@ Last updated: 2026-04-08
 - Persistence: PostgreSQL via `psycopg2` (migrated from SQLite at commit `e18a794`).
 - Deployed on Railway with Docker (`python:3.11-slim` + Tesseract + TexLive).
 - Telegram ingestion runs through webhook service endpoint `/telegram/webhook` (no polling).
+- Telegram inbox submissions are treated as vetted job posts and persisted with `jobs.user_vetted = 1`.
 - Telegram handlers derive `skip_upload` / `skip_calendar` from env toggles.
 - Pipeline artifacts persist to `runs/artifacts/`.
 - CI gate: fixture-based, all 5 thresholds green. Historical live-DB noise is non-blocking.

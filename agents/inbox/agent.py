@@ -6,7 +6,7 @@ then delegates execution to the executor.  All step logic lives in executor.py.
 
 Public API (unchanged):
     pack = run_pipeline(raw_text, image_path=..., selected_collateral=...,
-                        skip_upload=..., skip_calendar=...)
+                        skip_upload=..., skip_calendar=..., user_vetted=...)
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ class ApplicationPack:
     mutated_tex: Optional[str] = None
     pdf_path: Optional[Path] = None
     output_dir: Optional[Path] = None
+    report_md_path: Optional[Path] = None
     drive_link: Optional[str] = None
     drive_uploads: dict = field(default_factory=dict)
     application_context_id: Optional[str] = None
@@ -57,6 +58,7 @@ def run_pipeline(
     selected_collateral: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     skip_upload: bool = False,
     skip_calendar: bool = False,
+    user_vetted: bool = False,
 ) -> ApplicationPack:
     """
     Execute the full job application pipeline.
@@ -71,6 +73,7 @@ def run_pipeline(
     selected_collateral : Which outreach drafts to generate
     skip_upload : Skip Google Drive upload
     skip_calendar : Skip Google Calendar event creation
+    user_vetted : Mark this submission as manually vetted by the user
     """
     settings = get_settings()
 
@@ -142,4 +145,4 @@ def run_pipeline(
         pack.errors.append("Collateral generation skipped: explicit selection not provided.")
 
     # ── Execute plan ──────────────────────────────────────────────
-    return execute_plan(plan, pack, settings)
+    return execute_plan(plan, pack, settings, user_vetted=user_vetted)

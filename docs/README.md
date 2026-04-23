@@ -15,12 +15,31 @@ The system ingests job descriptions from Telegram (text, URL, screenshot) and ru
 2. Select best base resume
 3. Mutate editable LaTeX regions
 4. Compile PDF resume
-5. Generate outreach drafts
-6. Log eval and telemetry data
-7. Optionally upload PDF to Google Drive
-8. Optionally create Google Calendar events
+5. Generate A-F markdown application report
+6. Generate outreach drafts
+7. Log eval and telemetry data
+8. Optionally upload PDF/report/drafts to Google Drive
+9. Optionally create Google Calendar events
 
 Primary runtime: FastAPI webhook service (`app.py`) + Telegram handlers (`agents/inbox/adapter.py`).
+
+Telegram-specific intake rule:
+
+- Anything you post into the Telegram inbox flow is treated as a manually vetted job post.
+- The executor persists that as `jobs.user_vetted = 1`.
+- Direct/local pipeline calls still default to `user_vetted = 0` unless explicitly set.
+
+## 1b) Generated Artifacts
+
+For successful inbox runs, the pipeline writes artifacts into the run-scoped output directory and, when Drive upload is enabled, mirrors them into the application Drive folder:
+
+- Resume PDF
+- `application_report.md` with A-F sections
+- Optional `email_draft.txt`
+- Optional `linkedin_dm.txt`
+- Optional `referral.txt`
+
+The markdown report includes the selected base resume, the mutation summary, fit details, collateral generation status, and execution summary.
 
 ## 2) Prerequisites
 
@@ -90,6 +109,10 @@ Notes:
 ```bash
 python main.py init-db
 ```
+
+This is migration-safe and should be re-run after pulling schema changes. Current
+job schema includes `user_vetted` so Telegram intake provenance is queryable in
+PostgreSQL and available to future dashboard/scanner views.
 
 ## 6) Start Webhook Service (No Polling)
 
@@ -170,6 +193,28 @@ Webhook registration verification:
 ```
 
 Expected: `Webhook info` output includes your configured `PUBLIC_BASE_URL`.
+
+## 6c) Pipeline Integrity Check
+
+Run this after setup, after deploys, or when artifacts look inconsistent:
+
+```bash
+python main.py pipeline-check
+```
+
+The command checks for:
+
+- jobs with missing required fields
+- duplicate jobs
+- completed runs missing eval results
+- out-of-range fit scores
+- missing Drive links or calendar IDs when those integrations were expected
+- missing `resume_output.json` artifacts
+- missing markdown report paths or missing report files
+- jobs currently due for follow-up
+
+Manual vetting provenance is not itself a pipeline-check failure today; it is
+stored in `jobs.user_vetted` for filtering, reporting, and future dashboard use.
 
 ## 7) Register Telegram Webhook
 

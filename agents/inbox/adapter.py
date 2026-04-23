@@ -64,6 +64,7 @@ async def _run_and_respond(
     selected_collateral: list[str],
     skip_upload: bool,
     skip_calendar: bool,
+    user_vetted: bool,
 ) -> None:
     from agents.inbox.agent import run_pipeline
     from agents.inbox.ocr import OCRQualityError
@@ -76,6 +77,7 @@ async def _run_and_respond(
             selected_collateral=selected_collateral,
             skip_upload=skip_upload,
             skip_calendar=skip_calendar,
+            user_vetted=user_vetted,
         )
         logger.info(
             "Pipeline result run_id=%s pdf_file=%s pdf_path=%s errors=%s selected=%s generated=%s",
@@ -260,6 +262,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "skip_upload": not settings.telegram_enable_drive_upload,
         "skip_calendar": not settings.telegram_enable_calendar_events,
         "input_mode": "photo",
+        "user_vetted": True,
     }
     await update.message.reply_text(COLLATERAL_PROMPT, parse_mode="Markdown")
 
@@ -292,6 +295,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             selected_collateral=selected_collateral,
             skip_upload=bool(pending_request.get("skip_upload", False)),
             skip_calendar=bool(pending_request.get("skip_calendar", False)),
+            user_vetted=bool(pending_request.get("user_vetted", False)),
         )
         return
 
@@ -344,6 +348,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "skip_upload": skip_upload,
                 "skip_calendar": skip_calendar,
                 "input_mode": input_mode,
+                "user_vetted": True,
             }
             await update.message.reply_text(COLLATERAL_PROMPT, parse_mode="Markdown")
         except Exception as e:
