@@ -15,12 +15,25 @@ The system ingests job descriptions from Telegram (text, URL, screenshot) and ru
 2. Select best base resume
 3. Mutate editable LaTeX regions
 4. Compile PDF resume
-5. Generate outreach drafts
-6. Log eval and telemetry data
-7. Optionally upload PDF to Google Drive
-8. Optionally create Google Calendar events
+5. Generate A-F markdown application report
+6. Generate outreach drafts
+7. Log eval and telemetry data
+8. Optionally upload PDF/report/drafts to Google Drive
+9. Optionally create Google Calendar events
 
 Primary runtime: FastAPI webhook service (`app.py`) + Telegram handlers (`agents/inbox/adapter.py`).
+
+## 1b) Generated Artifacts
+
+For successful inbox runs, the pipeline writes artifacts into the run-scoped output directory and, when Drive upload is enabled, mirrors them into the application Drive folder:
+
+- Resume PDF
+- `application_report.md` with A-F sections
+- Optional `email_draft.txt`
+- Optional `linkedin_dm.txt`
+- Optional `referral.txt`
+
+The markdown report includes the selected base resume, the mutation summary, fit details, collateral generation status, and execution summary.
 
 ## 2) Prerequisites
 
@@ -170,6 +183,25 @@ Webhook registration verification:
 ```
 
 Expected: `Webhook info` output includes your configured `PUBLIC_BASE_URL`.
+
+## 6c) Pipeline Integrity Check
+
+Run this after setup, after deploys, or when artifacts look inconsistent:
+
+```bash
+python main.py pipeline-check
+```
+
+The command checks for:
+
+- jobs with missing required fields
+- duplicate jobs
+- completed runs missing eval results
+- out-of-range fit scores
+- missing Drive links or calendar IDs when those integrations were expected
+- missing `resume_output.json` artifacts
+- missing markdown report paths or missing report files
+- jobs currently due for follow-up
 
 ## 7) Register Telegram Webhook
 

@@ -31,6 +31,7 @@ class ApplicationPack:
     mutated_tex: Optional[str] = None
     pdf_path: Optional[Path] = None
     output_dir: Optional[Path] = None
+    report_md_path: Optional[Path] = None
     drive_link: Optional[str] = None
     drive_uploads: dict = field(default_factory=dict)
     application_context_id: Optional[str] = None

@@ -531,7 +531,7 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
         skip_calendar=True,
     )
 
-    assert set(captured["files"]) == {"resume_pdf", "email"}
+    assert set(captured["files"]) == {"resume_pdf", "report_md", "email"}
     assert "linkedin" not in captured["files"]
     assert "referral" not in captured["files"]
     assert pack.drive_link == "https://drive/resume"

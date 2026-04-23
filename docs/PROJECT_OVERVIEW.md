@@ -25,6 +25,7 @@ Each application took ~1 hour. The steps are repetitive, the quality inconsisten
 
 A Telegram bot. Send a job description (text, URL, or screenshot) → get back:
 - Tailored resume PDF (LaTeX-compiled, mutations grounded in real experience)
+- Markdown application report with A-F framing, selected base resume, and mutation summary
 - Email draft, LinkedIn DM (<300 chars), referral note
 - Google Drive folder with all artifacts
 - Calendar events (apply deadline + follow-up reminder)
@@ -54,7 +55,7 @@ Telegram Message
            │
            ▼
 ┌─────────────────────────────────┐
-│  Executor (12 step handlers)    │  All LLM calls here
+│  Executor (13 step handlers)    │  All LLM calls here
 │  Retry + graceful degradation   │  Errors → pack.errors
 │                                 │
 │  1. OCR (if screenshot)         │
@@ -62,13 +63,14 @@ Telegram Message
 │  3. Resume selection            │
 │  4. Resume mutation             │
 │  5. LaTeX compilation           │
-│  6. Calendar events             │
-│  7. Email draft                 │
-│  8. LinkedIn DM                 │
-│  9. Referral note               │
-│  10. Drive upload               │
-│  11. DB persistence             │
-│  12. Eval logging               │
+│  6. Markdown report generation  │
+│  7. Calendar events             │
+│  8. Email draft                 │
+│  9. LinkedIn DM                 │
+│  10. Referral note              │
+│  11. Drive upload               │
+│  12. DB persistence             │
+│  13. Eval logging               │
 └─────────────────────────────────┘
            │
            ▼
@@ -84,7 +86,7 @@ Telegram Message
 
 | Agent | What It Does | Status |
 |-------|-------------|--------|
-| **Inbox Agent** | Full 12-step pipeline: JD → resume → collateral → upload → log | Production, full telemetry |
+| **Inbox Agent** | Full pipeline: JD → resume → report → collateral → upload → log | Production, full telemetry |
 | **Profile Agent** | Answers questions about me, grounded in profile.json + bullet bank. Forbidden-claim enforcement. | Production, run logging |
 | **Follow-Up Agent** | Detects +7 day applications, generates escalation-aware drafts (3 tiers), persists progress | Implemented, UX pending |
 | **Article Agent** | Summarizes articles, extracts job-search signals (hiring, funding, skills in demand) | Functional, signal persistence |
@@ -280,6 +282,7 @@ Every pipeline run logs:
 - Input/output per step (run_steps audit trail)
 - Eval results (all hard + soft evals)
 - Errors encountered (with graceful degradation)
+- Markdown report path plus mutation summary in run context / resume artifact
 
 ---
 

@@ -37,6 +37,7 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
         condense_retries=0,
         pdf_path="/tmp/r.pdf",
         output_dir="/tmp/out",
+        report_md_path="/tmp/out/application_report.md",
         application_context_id="acme_pm_abc123",
         application_output_dir="/tmp/out",
         selected_collateral=["email"],
@@ -49,6 +50,7 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
         single_page_status="met",
         compile_outcome="mutated_success",
         fit_score_details={"selected_resume": "master_ai.tex"},
+        mutation_summary={"mutations_count": 1},
     )
     eval_output = build_eval_output_artifact(
         run_id="run-1",
@@ -59,6 +61,8 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
     assert resume.schema_version == SCHEMA_VERSION
     assert resume.single_page_target_met is True
     assert resume.compile_outcome == "mutated_success"
+    assert resume.report_md_path == "/tmp/out/application_report.md"
+    assert resume.mutation_summary["mutations_count"] == 1
     assert resume.application_context_id == "acme_pm_abc123"
     assert resume.collateral_files["email"] == "/tmp/out/email_draft.txt"
     assert resume.collateral_files["linkedin"] is None

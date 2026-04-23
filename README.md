@@ -2,6 +2,12 @@
 
 Webhook-first multi-agent system for job application automation.
 
+Each inbox pipeline run now produces:
+- a tailored resume PDF
+- optional outreach drafts
+- a structured markdown application report with A-F sections
+- a Google Drive folder containing the generated artifacts
+
 ## Deployment
 
 Runs on **Railway** (Docker + managed PostgreSQL). The service is always-on — no local machine required.
@@ -60,6 +66,7 @@ python main.py webhook
 - `python main.py init-db` — create/migrate PostgreSQL tables
 - `python main.py ci-gate` — run CI eval gate
 - `python main.py db-stats` — show table counts and health
+- `python main.py pipeline-check` — validate DB/artifact integrity, report presence, and follow-up drift
 - `python main.py followup-runner --once` — execute one follow-up detection/generation cycle
 - `pytest -q` — run tests (DB tests skip automatically if `DATABASE_URL` not set)
 

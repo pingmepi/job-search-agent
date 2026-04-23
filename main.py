@@ -6,6 +6,7 @@ Usage:
     python main.py init-db                       # Initialize database
     python main.py ci-gate                       # Run CI eval gate
     python main.py db-stats                      # Show DB summary for debugging
+    python main.py pipeline-check                # Run pipeline integrity checks
     python main.py followup-runner [options]     # Run scheduled follow-up detection
     python main.py replay-webhook [options]      # Replay persisted webhook event
     python main.py build-skill-index             # Rebuild profile/skill_index.json
@@ -219,6 +220,24 @@ def main() -> None:
             f" processed={stats['webhook_events'].get('processed_events', 0)}"
             f" failed={stats['webhook_events'].get('failed_events', 0)}"
         )
+
+    elif command == "pipeline-check":
+        from core.pipeline_checks import run_pipeline_checks
+
+        result = run_pipeline_checks()
+        print(f"Pipeline integrity: {'PASS' if result['ok'] else 'FAIL'}")
+        print("Stats:")
+        for key, value in result["stats"].items():
+            print(f"  - {key}: {value}")
+        if result["warnings"]:
+            print("Warnings:")
+            for warning in result["warnings"]:
+                print(f"  - {warning}")
+        if result["errors"]:
+            print("Errors:")
+            for error in result["errors"]:
+                print(f"  - {error}")
+            sys.exit(2)
 
     elif command == "runs":
         from core.db import get_run, get_run_steps, list_runs

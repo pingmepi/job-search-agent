@@ -99,6 +99,22 @@ Runs: total=<n> completed=<n> tokens_nulls=<n> latency_nulls=<n> with_errors=<n>
 Compile: success=<n> failure=<n>
 ```
 
+Artifact and pipeline consistency check:
+
+```bash
+./.venv/bin/python main.py pipeline-check
+```
+
+Expected output pattern:
+
+```text
+Pipeline integrity: PASS
+Stats:
+  - ...
+```
+
+If the command reports `FAIL`, inspect the listed errors first. Warnings are informational and do not necessarily indicate a broken deploy.
+
 ## Stage 6: Run Webhook Server
 
 ```bash
@@ -205,6 +221,7 @@ Expected status: `401 Unauthorized`.
 - Start webhook server: `./.venv/bin/python main.py webhook`
 - Init DB: `./.venv/bin/python main.py init-db`
 - DB stats: `./.venv/bin/python main.py db-stats`
+- Pipeline integrity: `./.venv/bin/python main.py pipeline-check`
 - CI gate: `./.venv/bin/python main.py ci-gate`
 - Run follow-up cycle once: `./.venv/bin/python main.py followup-runner --once`
 - Run all tests: `./.venv/bin/pytest -q`

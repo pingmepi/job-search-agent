@@ -21,6 +21,7 @@ DEFAULT_CANDIDATE_NAME = "Mandalam_Karan"
 
 _LOGICAL_NAME_MAP = {
     "resume_pdf": "resume",
+    "report_md": "report",
     "email": "email",
     "linkedin": "linkedin",
     "referral": "referral",
@@ -98,6 +99,8 @@ def upload_to_drive(pdf_path: Path, company: str, role: str) -> str:
 def _mime_for_file(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
         return "application/pdf"
+    if path.suffix.lower() == ".md":
+        return "text/markdown"
     return "text/plain"
 
 

@@ -105,6 +105,7 @@ class ExecutionContext:
     condense_retries: int = 0
     input_mode: str = "text"
     step_results: list[StepResult] = field(default_factory=list)
+    mutation_summary: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -180,6 +181,26 @@ def _sanitize_mutations(raw: list[dict]) -> list[dict]:
             continue
         clean.append(m)
     return clean
+
+
+def _ensure_markdown_report(pack: "ApplicationPack", ctx: ExecutionContext) -> Optional[Path]:
+    """Write a structured A-F markdown report into the application artifacts directory."""
+    if not pack.output_dir:
+        return None
+    report_path = pack.output_dir / "application_report.md"
+    if report_path.exists():
+        pack.report_md_path = report_path
+        return report_path
+    try:
+        from core.report_markdown import render_application_report
+
+        report_text = render_application_report(pack=pack, ctx=ctx)
+        report_path.write_text(report_text, encoding="utf-8")
+        pack.report_md_path = report_path
+        return report_path
+    except Exception as report_err:
+        pack.errors.append(f"Markdown report generation failed: {report_err}")
+        return None
 
 
 def _parse_json_object(text: str) -> dict:
@@ -392,7 +413,7 @@ def _handle_resume_mutate(
     mutated_tex = apply_mutations(original_tex, mutations)
 
     mutation_types = dict(Counter(m.get("type", "REWRITE") for m in mutations))
-    ctx.last_step_audit = {
+    audit_blob = {
         "raw_llm_response": response.text[:5000] if hasattr(response, "text") else None,
         "mutations_count": len(mutations),
         "mutation_types": mutation_types,
@@ -400,6 +421,8 @@ def _handle_resume_mutate(
         "bank_bullets_sent": len(relevant_bullets),
         "bank_bullets_total": len(bullet_bank_raw),
     }
+    ctx.last_step_audit = dict(audit_blob)
+    ctx.mutation_summary = dict(audit_blob)
 
     original_bullets = _extract_bullets(original_tex)
     mutated_bullets = _extract_bullets(mutated_tex)
@@ -437,12 +460,14 @@ def _handle_resume_mutate(
             )
             mutated_tex = apply_mutations(original_tex, clean_mutations)
 
-        ctx.last_step_audit["truthfulness"] = {
+        truthfulness = {
             "per_bullet_results": per_bullet,
             "flagged_count": len(flagged),
             "reverted_mutations": reverted_count,
             "kept_mutations": len(clean_mutations),
         }
+        ctx.last_step_audit["truthfulness"] = truthfulness
+        ctx.mutation_summary["truthfulness"] = truthfulness
 
     pack.mutated_tex = mutated_tex
     return pack
@@ -867,7 +892,10 @@ def _handle_drive_upload(
 
     if not pack.pdf_path:
         return pack
+    report_path = _ensure_markdown_report(pack, ctx)
     drive_files: dict[str, Path] = {"resume_pdf": pack.pdf_path}
+    if report_path:
+        drive_files["report_md"] = report_path
     for key, file_path in pack.collateral_files.items():
         if file_path:
             drive_files[key] = Path(file_path)
@@ -1026,6 +1054,7 @@ def _persist_artifacts(
             condense_retries=ctx.condense_retries,
             pdf_path=str(pack.pdf_path) if pack.pdf_path else None,
             output_dir=str(pack.output_dir) if pack.output_dir else None,
+            report_md_path=str(pack.report_md_path) if pack.report_md_path else None,
             application_context_id=pack.application_context_id,
             application_output_dir=str(pack.output_dir) if pack.output_dir else None,
             selected_collateral=pack.selected_collateral,
@@ -1038,6 +1067,7 @@ def _persist_artifacts(
             single_page_status=ctx.single_page_status,
             compile_outcome=ctx.compile_outcome,
             fit_score_details=ctx.fit_score_details,
+            mutation_summary=ctx.mutation_summary,
         )
         eval_artifact = build_eval_output_artifact(
             run_id=ctx.run_id,
@@ -1084,6 +1114,7 @@ def _complete_run_record(
         "fit_score": ctx.fit_score_percent,
         "fit_score_details": ctx.fit_score_details,
         "pdf_path": str(pack.pdf_path) if pack.pdf_path else None,
+        "report_md_path": str(pack.report_md_path) if pack.report_md_path else None,
         "drive_link": pack.drive_link,
         "drive_uploads": pack.drive_uploads,
         "application_context_id": pack.application_context_id,
@@ -1099,6 +1130,7 @@ def _complete_run_record(
         "artifact_paths": artifact_paths,
         "single_page_status": ctx.single_page_status,
         "compile_outcome": ctx.compile_outcome,
+        "mutation_summary": ctx.mutation_summary,
     }
     pack.run_id = log_run(
         "inbox",
@@ -1125,6 +1157,7 @@ def _handle_eval_log(
 
     jd = pack.jd
     latency_ms = int((time.time() - ctx.start_time) * 1000)
+    _ensure_markdown_report(pack, ctx)
 
     _resolve_costs(pack, ctx)
     forbidden_claims_count, edit_scope_violations = _run_hard_evals(pack, ctx)
@@ -1150,6 +1183,8 @@ def _handle_eval_log(
         "collateral_files": pack.collateral_files,
         "application_context_id": pack.application_context_id,
         "drive_uploads": pack.drive_uploads,
+        "report_md_path": str(pack.report_md_path) if pack.report_md_path else None,
+        "mutation_summary": ctx.mutation_summary,
         "llm_total_tokens": ctx.total_tokens,
         "llm_total_cost": ctx.total_cost,
         "llm_usage_breakdown": ctx.llm_usage_breakdown,

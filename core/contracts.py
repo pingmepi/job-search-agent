@@ -51,6 +51,7 @@ class ResumeOutputArtifact:
     condense_retries: int
     pdf_path: str | None
     output_dir: str | None
+    report_md_path: str | None
     application_context_id: str | None
     application_output_dir: str | None
     selected_collateral: list[str]
@@ -63,6 +64,7 @@ class ResumeOutputArtifact:
     single_page_status: str
     compile_outcome: str | None
     fit_score_details: dict[str, Any]
+    mutation_summary: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -109,6 +111,7 @@ def build_resume_output_artifact(
     condense_retries: int,
     pdf_path: str | None,
     output_dir: str | None,
+    report_md_path: str | None = None,
     application_context_id: str | None = None,
     application_output_dir: str | None = None,
     selected_collateral: list[str] | None = None,
@@ -121,6 +124,7 @@ def build_resume_output_artifact(
     single_page_status: str = "unknown",
     compile_outcome: str | None = None,
     fit_score_details: dict[str, Any] | None = None,
+    mutation_summary: dict[str, Any] | None = None,
 ) -> ResumeOutputArtifact:
     if compile_outcome is not None and compile_outcome not in {
         "mutated_success",
@@ -146,6 +150,7 @@ def build_resume_output_artifact(
         condense_retries=int(condense_retries),
         pdf_path=pdf_path,
         output_dir=output_dir,
+        report_md_path=report_md_path,
         application_context_id=application_context_id,
         application_output_dir=application_output_dir or output_dir,
         selected_collateral=selected_collateral or [],
@@ -164,6 +169,7 @@ def build_resume_output_artifact(
         single_page_status=_ensure_non_empty(single_page_status, "single_page_status"),
         compile_outcome=compile_outcome,
         fit_score_details=fit_score_details or {},
+        mutation_summary=mutation_summary or {},
     )
 
 
