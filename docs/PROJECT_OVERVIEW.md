@@ -31,6 +31,11 @@ A Telegram bot. Send a job description (text, URL, or screenshot) → get back:
 - Calendar events (apply deadline + follow-up reminder)
 - Full telemetry: tokens, cost, latency, eval results per step
 
+Operational intake rule:
+- Telegram-originated inbox submissions are treated as manually vetted job posts
+- That provenance is persisted as `jobs.user_vetted = 1`
+- Non-Telegram/direct pipeline calls do not inherit that flag unless passed explicitly
+
 ### System at a Glance
 
 ```
@@ -69,7 +74,7 @@ Telegram Message
 │  9. LinkedIn DM                 │
 │  10. Referral note              │
 │  11. Drive upload               │
-│  12. DB persistence             │
+│  12. DB persistence             │  Persists `user_vetted` provenance
 │  13. Eval logging               │
 └─────────────────────────────────┘
            │
@@ -121,6 +126,10 @@ Not every decision was obvious. Here are the ones that shaped the system:
 **Why:** Routing happens on every message. LLM adds $0.001-0.01 per message, 200-500ms latency, and non-deterministic behavior (same message could route differently). Pattern matching is free, sub-millisecond, and 100% testable.
 
 **Trade-off accepted:** Can't handle ambiguous intent. User sends something that doesn't match → falls to CLARIFY. Worth it for testability and zero cost.
+
+**Related intake assumption:** Once the router sends a Telegram message into the
+Inbox Agent path, that submission is treated as user-vetted source input. This
+is a product choice, not an inference from JD quality.
 
 ### Planner/executor separation — testable plans without mocks
 

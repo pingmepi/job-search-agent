@@ -134,8 +134,8 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) AS cnt FROM jobs")
         jobs_count = cur.fetchone()["cnt"]
-        cur.execute("SELECT fit_score FROM jobs LIMIT 1")
-        fit_score = cur.fetchone()["fit_score"]
+        cur.execute("SELECT fit_score, user_vetted FROM jobs LIMIT 1")
+        job_row = cur.fetchone()
         cur.execute(
             "SELECT job_id, status, eval_results, context_json FROM runs WHERE run_id = %s",
             (pack.run_id,),
@@ -145,7 +145,8 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
         conn.close()
 
     assert jobs_count == 1
-    assert fit_score == 75
+    assert job_row["fit_score"] == 75
+    assert job_row["user_vetted"] == 0
     assert run_row is not None
     assert run_row["job_id"] == pack.job_id
     assert run_row["status"] == "completed"
@@ -153,6 +154,101 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
     context = json.loads(run_row["context_json"])
     assert "artifact_paths" in context
     assert "job_extraction" in context["artifact_paths"]
+
+
+def test_run_pipeline_persists_user_vetted_when_requested(db, tmp_path: Path, monkeypatch) -> None:
+    runs_dir = tmp_path / "runs"
+    profile_path = tmp_path / "profile.json"
+    bullet_bank_path = tmp_path / "bullet_bank.json"
+    base_resume = tmp_path / "base.tex"
+
+    profile_path.write_text(
+        json.dumps(
+            {
+                "identity": {"name": "Karan"},
+                "positioning": {"ai": "Product Manager"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    bullet_bank_path.write_text("[]", encoding="utf-8")
+    base_resume.write_text(
+        "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    fake_settings = SimpleNamespace(
+        database_url=db,
+        runs_dir=runs_dir,
+        resumes_dir=tmp_path,
+        profile_path=profile_path,
+        bullet_bank_path=bullet_bank_path,
+        max_cost_per_job=1.0,
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("core.db.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.logger.get_settings", lambda: fake_settings)
+
+    jd = JDSchema(
+        company="VettedCo",
+        role="Product Manager",
+        location="Remote",
+        experience_required="5 years",
+        skills=["python"],
+        description="Own AI product roadmap.",
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.extract_jd_with_usage",
+        lambda _text: (
+            jd,
+            {
+                "prompt_tokens": 5,
+                "completion_tokens": 7,
+                "total_tokens": 12,
+                "cost_estimate": 0.00012,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.75,
+            {"selected_resume": base_resume.name, "normalized_score": 0.75},
+        ),
+    )
+
+    def _fake_compile(_tex_path: Path, out_dir: Path) -> Path:
+        pdf_path = out_dir / "out.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n%fake\n")
+        return pdf_path
+
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _fake_compile)
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft", lambda *_args, **_kwargs: _response("email")
+    )
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email"],
+        skip_upload=True,
+        skip_calendar=True,
+        user_vetted=True,
+    )
+
+    conn = psycopg2.connect(db, cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_vetted FROM jobs WHERE id = %s", (pack.job_id,))
+        job_row = cur.fetchone()
+    finally:
+        conn.close()
+
+    assert job_row is not None
+    assert job_row["user_vetted"] == 1
 
 
 def test_run_pipeline_compile_fallback_rolls_back_to_base_resume(
@@ -599,11 +695,13 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
         selected_collateral: list[str],
         skip_upload: bool,
         skip_calendar: bool,
+        user_vetted: bool,
     ):
         captured["raw_text"] = raw_text
         captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
+        captured["user_vetted"] = user_vetted
         return fake_pack
 
     monkeypatch.setattr("agents.inbox.agent.run_pipeline", _fake_run_pipeline)
@@ -627,6 +725,7 @@ async def test_text_handler_routes_to_inbox_and_invokes_pipeline(monkeypatch) ->
     assert captured["selected_collateral"] == ["email", "linkedin"]
     assert captured["skip_upload"] is True
     assert captured["skip_calendar"] is True
+    assert captured["user_vetted"] is True
 
     replies = update.message.replies + update2.message.replies
     assert len(replies) == 4
@@ -732,11 +831,13 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
         selected_collateral: list[str],
         skip_upload: bool,
         skip_calendar: bool,
+        user_vetted: bool,
     ):
         captured["raw_text"] = raw_text
         captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
+        captured["user_vetted"] = user_vetted
         return fake_pack
 
     monkeypatch.setattr("agents.inbox.agent.run_pipeline", _fake_run_pipeline)
@@ -757,6 +858,7 @@ async def test_text_handler_url_fetch_success_uses_extracted_text(monkeypatch) -
 
     assert captured["raw_text"] == "structured jd text"
     assert captured["selected_collateral"] == ["referral"]
+    assert captured["user_vetted"] is True
     replies = update.message.replies + update2.message.replies
     assert len(replies) == 5
     assert "Routing to Inbox Agent" in replies[0][0]
@@ -853,11 +955,13 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
         selected_collateral: list[str],
         skip_upload: bool,
         skip_calendar: bool,
+        user_vetted: bool,
     ):
         captured["raw_text"] = raw_text
         captured["selected_collateral"] = selected_collateral
         captured["skip_upload"] = skip_upload
         captured["skip_calendar"] = skip_calendar
+        captured["user_vetted"] = user_vetted
         return fake_pack
 
     monkeypatch.setattr("agents.inbox.agent.run_pipeline", _fake_run_pipeline)
@@ -878,6 +982,7 @@ async def test_text_handler_respects_drive_calendar_toggles(monkeypatch) -> None
     assert captured["selected_collateral"] == []
     assert captured["skip_upload"] is False
     assert captured["skip_calendar"] is False
+    assert captured["user_vetted"] is True
 
 
 @pytest.mark.asyncio

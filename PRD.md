@@ -150,6 +150,10 @@ Shared Storage:
 * Run logs
 * Evals dataset
 
+Telegram inbox intake is considered manually vetted input. When a job enters the
+pipeline from Telegram text, URL, or screenshot flow, the persisted job row must
+record that provenance as `user_vetted`.
+
 ---
 
 # 5. Data Models
@@ -203,12 +207,20 @@ jobs(
   company TEXT,
   role TEXT,
   jd_hash TEXT,
+  user_vetted INTEGER,
   fit_score INTEGER,
   resume_used TEXT,
   drive_link TEXT,
   created_at TIMESTAMP
 );
 ```
+
+Semantics:
+
+* `user_vetted = 1` means the job post was explicitly submitted by the user via
+  Telegram inbox flow and should be treated as reviewed/approved source input.
+* `user_vetted = 0` means the job row came from some other path or was not
+  explicitly marked as vetted.
 
 ---
 

@@ -8,6 +8,11 @@ Each inbox pipeline run now produces:
 - a structured markdown application report with A-F sections
 - a Google Drive folder containing the generated artifacts
 
+Telegram-originated inbox submissions are treated as manually vetted job posts.
+That signal is persisted on the `jobs` table as `user_vetted=1` so downstream
+scanner/dashboard/integrity logic can distinguish user-approved intake from
+other pipeline entry points.
+
 ## Deployment
 
 Runs on **Railway** (Docker + managed PostgreSQL). The service is always-on — no local machine required.
@@ -47,6 +52,9 @@ Set at minimum:
 ```bash
 python main.py init-db
 ```
+
+This command also applies schema migrations, including the `jobs.user_vetted`
+column used for Telegram-vetted intake tracking.
 
 4. Start webhook server:
 

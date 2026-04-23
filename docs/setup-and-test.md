@@ -66,6 +66,9 @@ Expected output:
 ✅ Database initialized
 ```
 
+This also applies additive schema migrations. Current job rows include
+`user_vetted`, which is set to `1` for Telegram-originated inbox submissions.
+
 ## Stage 4: Baseline Test Suite (Fast Signal)
 
 Tests that exercise the database (webhook, followup, integration) require `DATABASE_URL`. They are skipped automatically when it is not set.
@@ -114,6 +117,10 @@ Stats:
 ```
 
 If the command reports `FAIL`, inspect the listed errors first. Warnings are informational and do not necessarily indicate a broken deploy.
+
+Note: `pipeline-check` does not currently fail on `user_vetted` values. That
+field is provenance metadata for intake source quality, intended for filtering
+and future dashboard/scanner logic.
 
 ## Stage 6: Run Webhook Server
 

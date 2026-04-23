@@ -82,8 +82,12 @@ The app will automatically decode the base64 token to a pickle file on startup.
 ## Step 7: Verify
 
 Send a job description to the Telegram bot. After processing, check:
-- **Google Drive**: Look for `Jobs/{Company}/{Role}/` folder with resume PDF
+- **Google Drive**: Look for `Jobs/{Company}/{Role}/` folder with resume PDF and `application_report.md`
 - **Google Calendar**: Look for "Applied: ..." and "Follow-up: ..." events
+
+Telegram-submitted inbox jobs are also marked as manually vetted in PostgreSQL
+via `jobs.user_vetted = 1`. That signal is separate from Drive/Calendar success
+and is persisted even when those integrations are disabled.
 
 ## Token Refresh
 

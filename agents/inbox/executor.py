@@ -104,6 +104,7 @@ class ExecutionContext:
     compile_outcome: Optional[str] = None
     condense_retries: int = 0
     input_mode: str = "text"
+    user_vetted: bool = False
     step_results: list[StepResult] = field(default_factory=list)
     mutation_summary: dict[str, Any] = field(default_factory=dict)
 
@@ -924,6 +925,7 @@ def _handle_db_log(
         pack.jd.company,
         pack.jd.role,
         pack.jd.jd_hash,
+        user_vetted=ctx.user_vetted,
         fit_score=ctx.fit_score_percent,
         resume_used=pack.resume_base,
         drive_link=pack.drive_link,
@@ -1121,6 +1123,7 @@ def _complete_run_record(
         "skip_upload": ctx.plan.skip_upload,
         "skip_calendar": ctx.plan.skip_calendar,
         "input_mode": ctx.input_mode,
+        "user_vetted": ctx.user_vetted,
         "selected_collateral": pack.selected_collateral,
         "generated_collateral": pack.generated_collateral,
         "collateral_generation_status": pack.collateral_generation_status,
@@ -1369,6 +1372,8 @@ def execute_plan(
     plan: ToolPlan,
     pack: "ApplicationPack",
     settings: Any,
+    *,
+    user_vetted: bool = False,
 ) -> "ApplicationPack":
     """
     Execute all steps in a ToolPlan in order.
@@ -1394,6 +1399,7 @@ def execute_plan(
         plan=plan,
         settings=settings,
         input_mode=plan.input_mode,
+        user_vetted=user_vetted,
         llm_usage_breakdown={
             "ocr_cleanup": {
                 "prompt_tokens": 0,

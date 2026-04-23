@@ -2,7 +2,7 @@
 
 Every significant decision made during development, with context on what was considered, what was chosen, and why. Cross-referenced with commits, sessions, and BUILD_LOG.md entries.
 
-Last updated: 2026-04-08
+Last updated: 2026-04-23
 
 ---
 
@@ -238,6 +238,41 @@ Last updated: 2026-04-08
 **Three modes:**
 1. **Headless** — load token, refresh if expired, raise if missing (never opens browser)
 2. **Interactive** — `python main.py auth-google` opens browser for OAuth consent
+
+---
+
+## ADR-14: Telegram Inbox Submissions Are Treated as Manually Vetted
+
+**Date:** 2026-04-23 | **Status:** Active
+
+**Context:** The product now has multiple intake surfaces: direct pipeline calls,
+future scanner ingestion, and Telegram inbox submissions. The user wants
+Telegram-posted jobs to be treated as explicitly reviewed job posts rather than
+requiring a separate legitimacy/vetting pass.
+
+**Considered:**
+- **Infer vetting later from content quality** — keeps schema simpler, but mixes
+  source provenance with downstream evaluation and makes dashboard/scanner
+  filtering ambiguous.
+- **Mark every pipeline run as vetted** — too broad; local tests, future
+  scanner imports, and non-user-generated runs would all look manually approved.
+- **Persist source-specific provenance** — Telegram inbox flow sets a dedicated
+  boolean/flag during DB persistence, other callers stay false by default.
+
+**Decision:** Telegram-originated inbox runs pass `user_vetted=True` into the
+pipeline. The executor persists that on `jobs.user_vetted`, and the final run
+context also records the flag for audit/debugging.
+
+**Consequences:**
+- Dashboard and scanner work can distinguish user-approved jobs from discovered
+  jobs without re-deriving provenance.
+- `init-db` / schema migrations must maintain the additive `user_vetted`
+  column on `jobs`.
+- Direct/local `run_pipeline()` callers stay non-vetted unless they opt in
+  explicitly.
+
+**References:** `agents/inbox/adapter.py`, `agents/inbox/agent.py`,
+`agents/inbox/executor.py`, `core/db.py`
 3. **Env-var bootstrap** — decode `GOOGLE_TOKEN_B64` to disk on startup (Railway deployment)
 
 **References:** `integrations/google_auth.py`, `integrations/drive.py`, `integrations/calendar.py`, `docs/google-oauth-setup.md`

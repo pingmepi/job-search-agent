@@ -23,6 +23,12 @@ The system ingests job descriptions from Telegram (text, URL, screenshot) and ru
 
 Primary runtime: FastAPI webhook service (`app.py`) + Telegram handlers (`agents/inbox/adapter.py`).
 
+Telegram-specific intake rule:
+
+- Anything you post into the Telegram inbox flow is treated as a manually vetted job post.
+- The executor persists that as `jobs.user_vetted = 1`.
+- Direct/local pipeline calls still default to `user_vetted = 0` unless explicitly set.
+
 ## 1b) Generated Artifacts
 
 For successful inbox runs, the pipeline writes artifacts into the run-scoped output directory and, when Drive upload is enabled, mirrors them into the application Drive folder:
@@ -103,6 +109,10 @@ Notes:
 ```bash
 python main.py init-db
 ```
+
+This is migration-safe and should be re-run after pulling schema changes. Current
+job schema includes `user_vetted` so Telegram intake provenance is queryable in
+PostgreSQL and available to future dashboard/scanner views.
 
 ## 6) Start Webhook Service (No Polling)
 
@@ -202,6 +212,9 @@ The command checks for:
 - missing `resume_output.json` artifacts
 - missing markdown report paths or missing report files
 - jobs currently due for follow-up
+
+Manual vetting provenance is not itself a pipeline-check failure today; it is
+stored in `jobs.user_vetted` for filtering, reporting, and future dashboard use.
 
 ## 7) Register Telegram Webhook
 

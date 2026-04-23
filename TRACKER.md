@@ -22,6 +22,7 @@ Last updated: 2026-04-23
 - Wired markdown report upload into the per-application Google Drive folder alongside the resume and generated collateral.
 - Added `python main.py pipeline-check` for DB/artifact integrity checks, including report presence validation.
 - Reframed roadmap work away from SaaS packaging and toward product surface expansion: reports, integrity checks, scanner, and dashboard.
+- Marked Telegram-originated inbox submissions as manually vetted intake and persisted that provenance on `jobs.user_vetted`.
 
 ## Previous Progress (2026-04-08)
 - Full codebase hardening: 17 fixes across security (7), performance (2), correctness (5), maintainability (3). Key: pickle→JSON tokens, SSRF protection, connection pooling, Drive closure bug, chat_id allowlist (`TELEGRAM_ALLOWED_CHAT_IDS`).
@@ -153,6 +154,7 @@ Last updated: 2026-04-23
 - Persistence: PostgreSQL via `psycopg2` (migrated from SQLite at commit `e18a794`).
 - Deployed on Railway with Docker (`python:3.11-slim` + Tesseract + TexLive).
 - Telegram ingestion runs through webhook service endpoint `/telegram/webhook` (no polling).
+- Telegram inbox submissions are treated as vetted job posts and persisted with `jobs.user_vetted = 1`.
 - Telegram handlers derive `skip_upload` / `skip_calendar` from env toggles.
 - Pipeline artifacts persist to `runs/artifacts/`.
 - CI gate: fixture-based, all 5 thresholds green. Historical live-DB noise is non-blocking.

@@ -50,6 +50,7 @@ class TestSchema:
             conn.close()
 
         assert "last_follow_up_at" in job_columns
+        assert "user_vetted" in job_columns
         assert "input_mode" in run_columns
         assert "skip_upload" in run_columns
         assert "skip_calendar" in run_columns
@@ -67,6 +68,7 @@ class TestJobsCRUD:
             "Acme Corp",
             "AI PM",
             "abc123",
+            user_vetted=True,
             fit_score=85,
             resume_used="master_ai.tex",
         )
@@ -78,6 +80,7 @@ class TestJobsCRUD:
         assert job["company"] == "Acme Corp"
         assert job["role"] == "AI PM"
         assert job["jd_hash"] == "abc123"
+        assert job["user_vetted"] == 1
         assert job["fit_score"] == 85
 
     def test_get_nonexistent(self, db):

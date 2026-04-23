@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     company         TEXT    NOT NULL,
     role            TEXT    NOT NULL,
     jd_hash         TEXT    NOT NULL,
+    user_vetted     INTEGER DEFAULT 0,
     fit_score       INTEGER,
     resume_used     TEXT,
     drive_link      TEXT,
@@ -126,6 +127,8 @@ def _table_columns(cur: Any, table_name: str) -> set[str]:
 def _apply_migrations(cur: Any) -> None:
     """Add columns that were introduced after initial schema creation."""
     jobs_cols = _table_columns(cur, "jobs")
+    if "user_vetted" not in jobs_cols:
+        cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_vetted INTEGER DEFAULT 0")
     if "last_follow_up_at" not in jobs_cols:
         cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_follow_up_at TEXT")
     if "calendar_apply_event_id" not in jobs_cols:
@@ -206,6 +209,7 @@ def insert_job(
     role: str,
     jd_hash: str,
     *,
+    user_vetted: bool = False,
     fit_score: int | None = None,
     resume_used: str | None = None,
     drive_link: str | None = None,
@@ -218,14 +222,15 @@ def insert_job(
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO jobs
-               (company, role, jd_hash, fit_score, resume_used, drive_link,
+               (company, role, jd_hash, user_vetted, fit_score, resume_used, drive_link,
                 calendar_apply_event_id, calendar_followup_event_id, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
             (
                 company,
                 role,
                 jd_hash,
+                int(user_vetted),
                 fit_score,
                 resume_used,
                 drive_link,
@@ -265,6 +270,7 @@ _ALLOWED_JOB_COLUMNS = {
     "company",
     "role",
     "jd_hash",
+    "user_vetted",
     "fit_score",
     "resume_used",
     "drive_link",
