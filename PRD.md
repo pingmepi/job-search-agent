@@ -394,13 +394,13 @@ Add:
 
 ---
 
-## Phase 3 — SaaS Readiness
+## Phase 3 — Workflow Product Surface
 
-* Multi-user support
-* OAuth flows
-* Dashboard
-* Billing
-* Usage metering
+* A-F markdown application reports
+* Pipeline integrity checks
+* Portal scanner
+* Operator dashboard
+* Drive-centered artifact visibility
 
 ---
 
@@ -538,7 +538,7 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 | Phase 0 Core Executor hardening | KAR-42..KAR-60 | Done |
 | Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | Done |
 | Phase 2 Planner Mode | KAR-61 | Done |
-| Phase 3 SaaS Readiness | KAR-62 | Todo |
+| Phase 3 Workflow Product Surface | KAR-62 | Todo |
 
 ## 13.4 Sync Rule
 

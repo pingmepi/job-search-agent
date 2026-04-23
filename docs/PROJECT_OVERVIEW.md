@@ -349,7 +349,7 @@ The LLM prompts are maybe 5 files. The other 95% is: error boundaries, retry log
 
 ### Medium-term
 - **Conversion tracking:** The real metric. Are tailored resumes getting more interviews? Need volume to measure.
-- **SaaS readiness:** Multi-user auth, per-user profiles, billing. Currently single-user.
+- **Workflow product surface:** scanner, dashboard, integrity checks, and richer application artifacts for day-to-day operating use.
 
 ### Backlog
 - Persist raw webhook events (KAR-72)
