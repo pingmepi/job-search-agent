@@ -2,7 +2,8 @@
 
 All tests mock the LLM response to avoid real API calls.
 Tests cover: high/low relevance, perfect/partial/bad extraction,
-edge cases (malformed JSON, missing fields, error handling).
+edge cases (malformed JSON, missing fields, error handling),
+repeat-averaging behavior.
 """
 
 from __future__ import annotations
@@ -27,6 +28,15 @@ def _llm_response(text: str) -> LLMResponse:
     )
 
 
+@pytest.fixture(autouse=True)
+def _mock_load_prompt(monkeypatch):
+    """Mock load_prompt so tests don't need real prompt files."""
+    monkeypatch.setattr(
+        "evals.soft.load_prompt",
+        lambda name, **_kw: f"mocked-{name}-prompt",
+    )
+
+
 # ── Resume Relevance Tests ────────────────────────────────────────
 
 
@@ -44,6 +54,7 @@ class TestResumeRelevance:
         score = score_resume_relevance(
             "Senior ML Engineer with 5+ years Python, TensorFlow, PyTorch",
             "\\item Built TensorFlow inference pipeline\\n\\item 6 years Python ML engineering",
+            repeat=1,
         )
         assert score == pytest.approx(0.92)
 
@@ -60,6 +71,7 @@ class TestResumeRelevance:
         score = score_resume_relevance(
             "Backend Engineer: Go, Kubernetes, gRPC microservices",
             "\\item Managed social media campaigns\\n\\item Ran email marketing automation",
+            repeat=1,
         )
         assert score == pytest.approx(0.15)
 
@@ -74,6 +86,7 @@ class TestResumeRelevance:
         score = score_resume_relevance(
             "Product Manager with data analytics background",
             "\\item Led product roadmap\\n\\item Built SQL dashboards",
+            repeat=1,
         )
         assert 0.4 <= score <= 0.7
 
@@ -85,7 +98,7 @@ class TestResumeRelevance:
                 json.dumps({"score": 100, "reasoning": "Perfect match"})
             ),
         )
-        score = score_resume_relevance("JD text", "Resume text")
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 1.0
 
     def test_score_above_100_clamped(self, monkeypatch):
@@ -94,7 +107,7 @@ class TestResumeRelevance:
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response(json.dumps({"score": 150, "reasoning": "overscored"})),
         )
-        score = score_resume_relevance("JD text", "Resume text")
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 1.0
 
     def test_negative_score_clamped_to_zero(self, monkeypatch):
@@ -103,7 +116,7 @@ class TestResumeRelevance:
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response(json.dumps({"score": -10, "reasoning": "error"})),
         )
-        score = score_resume_relevance("JD text", "Resume text")
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 0.0
 
     def test_malformed_json_returns_zero(self, monkeypatch):
@@ -112,7 +125,7 @@ class TestResumeRelevance:
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response("this is not valid json at all"),
         )
-        score = score_resume_relevance("JD text", "Resume text")
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 0.0
 
     def test_missing_score_field_returns_zero(self, monkeypatch):
@@ -121,7 +134,7 @@ class TestResumeRelevance:
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response(json.dumps({"reasoning": "missing score field"})),
         )
-        score = score_resume_relevance("JD text", "Resume text")
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 0.0
 
 
@@ -149,6 +162,7 @@ class TestJDAccuracy:
                 "skills": ["PM", "SQL", "Python"],
                 "description": "Senior PM role at Google.",
             },
+            repeat=1,
         )
         assert score >= 0.9
 
@@ -170,6 +184,7 @@ class TestJDAccuracy:
                 "skills": ["Python"],  # incomplete
                 "description": "ML role.",
             },
+            repeat=1,
         )
         assert 0.4 <= score <= 0.6
 
@@ -191,6 +206,7 @@ class TestJDAccuracy:
                 "skills": [],
                 "description": "Wrong.",
             },
+            repeat=1,
         )
         assert score <= 0.2
 
@@ -200,7 +216,7 @@ class TestJDAccuracy:
             "evals.soft.chat_text",
             lambda *_a, **_k: _llm_response("not json"),
         )
-        score = score_jd_accuracy("raw text", {"company": "Test"})
+        score = score_jd_accuracy("raw text", {"company": "Test"}, repeat=1)
         assert score == 0.0
 
     def test_score_string_value_handled(self, monkeypatch):
@@ -211,7 +227,7 @@ class TestJDAccuracy:
                 json.dumps({"score": "75", "reasoning": "string score"})
             ),
         )
-        score = score_jd_accuracy("raw text", {"company": "Test"})
+        score = score_jd_accuracy("raw text", {"company": "Test"}, repeat=1)
         assert score == pytest.approx(0.75)
 
     def test_non_numeric_score_returns_zero(self, monkeypatch):
@@ -222,5 +238,57 @@ class TestJDAccuracy:
                 json.dumps({"score": "excellent", "reasoning": "qualitative"})
             ),
         )
-        score = score_jd_accuracy("raw text", {"company": "Test"})
+        score = score_jd_accuracy("raw text", {"company": "Test"}, repeat=1)
         assert score == 0.0
+
+
+# ── Repeat-Averaging Tests ────────────────────────────────────────
+
+
+class TestRepeatAveraging:
+    """Test that repeat-averaging reduces variance via median."""
+
+    def test_median_of_three_calls(self, monkeypatch):
+        """With 3 different scores, median should be the middle value."""
+        call_count = 0
+
+        def _varying_response(*_a, **_k):
+            nonlocal call_count
+            scores = [60, 80, 70]  # median = 70
+            score = scores[call_count % 3]
+            call_count += 1
+            return _llm_response(json.dumps({"score": score, "reasoning": "test"}))
+
+        monkeypatch.setattr("evals.soft.chat_text", _varying_response)
+        score = score_resume_relevance("JD", "Resume", repeat=3)
+        assert score == pytest.approx(0.70)
+        assert call_count == 3
+
+    def test_repeat_one_is_single_call(self, monkeypatch):
+        """repeat=1 should make exactly one LLM call."""
+        call_count = 0
+
+        def _counting_response(*_a, **_k):
+            nonlocal call_count
+            call_count += 1
+            return _llm_response(json.dumps({"score": 85, "reasoning": "test"}))
+
+        monkeypatch.setattr("evals.soft.chat_text", _counting_response)
+        score = score_resume_relevance("JD", "Resume", repeat=1)
+        assert call_count == 1
+        assert score == pytest.approx(0.85)
+
+    def test_median_handles_outlier(self, monkeypatch):
+        """One outlier in 3 calls should be ignored by median."""
+        call_count = 0
+
+        def _outlier_response(*_a, **_k):
+            nonlocal call_count
+            scores = [80, 5, 82]  # median = 80; outlier 5 ignored
+            score = scores[call_count % 3]
+            call_count += 1
+            return _llm_response(json.dumps({"score": score, "reasoning": "test"}))
+
+        monkeypatch.setattr("evals.soft.chat_text", _outlier_response)
+        score = score_jd_accuracy("raw", {"company": "Test"}, repeat=3)
+        assert score == pytest.approx(0.80)

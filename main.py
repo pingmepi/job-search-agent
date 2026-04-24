@@ -5,6 +5,7 @@ Usage:
     python main.py webhook                       # Start Telegram webhook service
     python main.py init-db                       # Initialize database
     python main.py ci-gate                       # Run CI eval gate
+    python main.py eval-report [--json]          # Print eval trend report from run artifacts
     python main.py db-stats                      # Show DB summary for debugging
     python main.py pipeline-check                # Run pipeline integrity checks
     python main.py followup-runner [options]     # Run scheduled follow-up detection
@@ -291,6 +292,12 @@ def main() -> None:
 
     elif command == "replay-webhook":
         _run_replay_webhook(sys.argv[2:])
+
+    elif command == "eval-report":
+        from evals.report import main as run_report
+
+        json_output = "--json" in sys.argv[2:]
+        run_report(json_output=json_output)
 
     elif command == "build-skill-index":
         from scripts.build_skill_index import build_skill_index

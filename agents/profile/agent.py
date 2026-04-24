@@ -112,16 +112,46 @@ def check_response_grounding(
     for pattern in metric_patterns:
         metric_candidates.extend(re.findall(pattern, response_text, flags=re.IGNORECASE))
 
+    # Dynamically include allowed_tools from profile.json
+    allowed_tools = set(profile.get("allowed_tools", []))
+
     common_entities = {
+        # Roles & Titles
         "Product Manager",
         "Senior Product",
-        "Business Administration",
+        "Technical Product Manager",
+        "Program Manager",
         "Product Management",
+        "Product Strategist",
+        "Associate Consultant",
+        "Solution Architect",
+
+        # Domains & Concepts
+        "Agentic AI",
         "Data Science",
         "Machine Learning",
+        "Customer Experience",
+        "Marketing Automation",
+        "Workflow Orchestration",
+        "Product Lifecycle",
+        "Growth Strategy",
+        "Funnel Optimization",
+        "Implementation Lifecycle",
+
+        # Professional Skills
+        "Stakeholder Management",
         "Cross Functional",
+        "Business Administration",
+        "Decision Support",
         "Master Of",
-    }
+
+        # Technical Concepts
+        "Data Pipelines",
+        "System Reliability",
+        "Prompt Design",
+        "Attribution Modeling",
+        "Reporting Frameworks",
+    } | allowed_tools
 
     ungrounded: set[str] = set()
     for candidate in entity_candidates:
