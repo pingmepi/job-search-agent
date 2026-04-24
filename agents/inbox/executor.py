@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import time
 from collections import Counter
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -139,9 +140,16 @@ def _extract_bullets(text: str) -> list[str]:
     return bullets
 
 
+@lru_cache(maxsize=32)
+def _load_profile_json(profile_path: str) -> dict[str, Any]:
+    """Load and cache the profile JSON for the lifetime of the process."""
+    return json.loads(Path(profile_path).read_text(encoding="utf-8"))
+
+
 def _load_profile(ctx: "ExecutionContext") -> dict:
     try:
-        return json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
+        profile_data = _load_profile_json(str(Path(ctx.settings.profile_path)))
+        return dict(profile_data)
     except Exception as exc:
         logger.warning("Failed to load profile: %s — mutations will lack profile context", exc)
         return {}
@@ -789,7 +797,7 @@ def _handle_draft(
         generate_referral_template,
     )
 
-    profile = json.loads(ctx.settings.profile_path.read_text(encoding="utf-8"))
+    profile = _load_profile(ctx)
     identity = profile.get("identity", {})
     name = identity.get("name", "Karan")
     positioning = profile.get("positioning", {}).get("ai", "Product Manager")

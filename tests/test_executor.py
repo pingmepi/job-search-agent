@@ -8,6 +8,7 @@ graceful degradation, StepResult fields, and execute_plan flow.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -123,6 +124,38 @@ class TestKeywordCoverage:
 
     def test_empty_skills_returns_one(self):
         assert _keyword_coverage([], "any text") == 1.0
+
+
+class TestProfileLoading:
+    def test_load_profile_is_cached_by_path(self, tmp_path, monkeypatch):
+        import agents.inbox.executor as ex
+
+        profile_path = tmp_path / "profile.json"
+        profile_path.write_text(
+            json.dumps({"identity": {"name": "Karan"}, "positioning": {"ai": "PM"}}),
+            encoding="utf-8",
+        )
+        ctx = SimpleNamespace(settings=SimpleNamespace(profile_path=profile_path))
+
+        ex._load_profile_json.cache_clear()
+        read_count = {"n": 0}
+        original_read_text = Path.read_text
+
+        def _wrapped_read_text(self, *args, **kwargs):
+            if self == profile_path:
+                read_count["n"] += 1
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _wrapped_read_text)
+        try:
+            first = ex._load_profile(ctx)
+            second = ex._load_profile(ctx)
+        finally:
+            ex._load_profile_json.cache_clear()
+
+        assert read_count["n"] == 1
+        assert first == second
+        assert first["identity"]["name"] == "Karan"
 
 
 # ── _outside_editable_content_changed ────────────────────────────────────────
