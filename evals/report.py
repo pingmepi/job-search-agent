@@ -52,6 +52,13 @@ def _extract_metrics(artifact: dict[str, Any]) -> dict[str, Any]:
         "compile_success": er.get("compile_success"),
         "compile_rollback_used": er.get("compile_rollback_used", False),
         "compile_outcome": er.get("compile_outcome"),
+        "task_type": artifact.get("task_type"),
+        "task_outcome": artifact.get("task_outcome"),
+        "error_types": artifact.get("error_types"),
+        "prompt_versions": artifact.get("prompt_versions"),
+        "models_used": artifact.get("models_used"),
+        "feedback_label": artifact.get("feedback_label"),
+        "feedback_reason": artifact.get("feedback_reason"),
         "forbidden_claims": er.get("forbidden_claims_count", 0),
         "edit_violations": er.get("edit_scope_violations", 0),
         "draft_length_ok": er.get("draft_length_ok"),
@@ -105,6 +112,23 @@ def build_report(artifacts_dir: Path | None = None) -> dict[str, Any]:
 
     total_tokens_all = [r["total_tokens"] for r in runs if r["total_tokens"]]
     total_costs_all = [r["total_cost"] for r in runs if r["total_cost"] is not None]
+    success_count = sum(1 for r in runs if r.get("task_outcome") == "success")
+    partial_count = sum(1 for r in runs if r.get("task_outcome") == "partial")
+    fail_count = sum(1 for r in runs if r.get("task_outcome") == "fail")
+    helpful_count = sum(1 for r in runs if r.get("feedback_label") == "helpful")
+    not_helpful_count = sum(1 for r in runs if r.get("feedback_label") == "not_helpful")
+    no_error_runs = 0
+    null_error_type_runs = 0
+    error_type_counts: dict[str, int] = {}
+    for r in runs:
+        error_types = r.get("error_types")
+        if error_types is None:
+            null_error_type_runs += 1
+        elif not error_types:
+            no_error_runs += 1
+        else:
+            for error_type in error_types:
+                error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
 
     summary = {
         "total_runs": len(runs),
@@ -133,6 +157,14 @@ def build_report(artifacts_dir: Path | None = None) -> dict[str, Any]:
             else None
         ),
         "total_cost": sum(total_costs_all) if total_costs_all else 0.0,
+        "success_count": success_count,
+        "partial_count": partial_count,
+        "fail_count": fail_count,
+        "helpful_count": helpful_count,
+        "not_helpful_count": not_helpful_count,
+        "no_error_runs": no_error_runs,
+        "null_error_type_runs": null_error_type_runs,
+        "error_type_counts": error_type_counts,
     }
 
     return {"runs": runs, "summary": summary}
@@ -201,17 +233,41 @@ def format_markdown(report: dict[str, Any]) -> str:
     if avg_tok is not None:
         lines.append(f"| Avg tokens/run | {avg_tok:,.0f} | ℹ️ |")
     lines.append(f"| Total LLM cost | ${summary.get('total_cost', 0):.4f} | ℹ️ |")
+    if summary.get("success_count") or summary.get("partial_count") or summary.get("fail_count"):
+        lines.append(
+            f"| Outcomes | success={summary.get('success_count', 0)}, partial={summary.get('partial_count', 0)}, fail={summary.get('fail_count', 0)} | ℹ️ |"
+        )
+    if summary.get("helpful_count") or summary.get("not_helpful_count"):
+        lines.append(
+            f"| Feedback | helpful={summary.get('helpful_count', 0)}, not_helpful={summary.get('not_helpful_count', 0)} | ℹ️ |"
+        )
+    lines.append(
+        f"| Error classification coverage | none={summary.get('no_error_runs', 0)}, null={summary.get('null_error_type_runs', 0)} | ℹ️ |"
+    )
 
     lines.append("")
+
+    error_type_counts = summary.get("error_type_counts", {})
+    if error_type_counts:
+        lines.append("## Error Types")
+        lines.append("")
+        lines.append("| Error type | Count |")
+        lines.append("| --- | --- |")
+        for error_type, count in sorted(
+            error_type_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        ):
+            lines.append(f"| `{error_type}` | {count} |")
+        lines.append("")
 
     # ── Per-run table ─────────────────────────────────────────────
     lines.append("## Per-Run Detail")
     lines.append("")
     lines.append(
-        "| Run | Date | Compile | Rollback | Forbidden | Relevance | JD Acc | Tokens |"
+        "| Run | Date | Outcome | Errors | Compile | Rollback | Forbidden | Relevance | JD Acc | Tokens |"
     )
     lines.append(
-        "| --- | --- | --- | --- | --- | --- | --- | --- |"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     )
 
     for r in runs:
@@ -229,10 +285,18 @@ def format_markdown(report: dict[str, Any]) -> str:
         relevance = f"{r['soft_resume_relevance']:.2f}" if r["soft_resume_relevance"] is not None else "—"
         accuracy = f"{r['soft_jd_accuracy']:.2f}" if r["soft_jd_accuracy"] is not None else "—"
         tokens = f"{r['total_tokens']:,}" if r["total_tokens"] else "—"
+        outcome = r.get("task_outcome") or "—"
+        error_types = r.get("error_types")
+        if error_types is None:
+            error_cell = "null"
+        elif not error_types:
+            error_cell = "[]"
+        else:
+            error_cell = ", ".join(error_types)
 
         lines.append(
-            f"| `{run_id}` | {date} | {compile_icon} | {rollback} | {forbidden}"
-            f" | {relevance} | {accuracy} | {tokens} |"
+            f"| `{run_id}` | {date} | {outcome} | {error_cell} | {compile_icon}"
+            f" | {rollback} | {forbidden} | {relevance} | {accuracy} | {tokens} |"
         )
 
     lines.append("")

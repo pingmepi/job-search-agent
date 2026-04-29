@@ -6,7 +6,8 @@ import logging
 import time
 from uuid import uuid4
 
-from agents.followup.agent import detect_followups, generate_all_followups
+from agents.followup.agent import detect_followups, generate_followup_draft_with_telemetry
+from core.feedback import TASK_OUTCOME_FAIL, TASK_OUTCOME_SUCCESS, TASK_TYPE_FOLLOWUP, classify_error_types
 from core.db import complete_run, insert_run
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ def run_followup_cycle(
     insert_run(run_id, "followup_runner")
 
     try:
+        prompt_versions: list[str] | None = [] if not dry_run else None
+        models_used: list[str] | None = [] if not dry_run else None
         if dry_run:
             jobs = detect_followups()
             payload = [
@@ -38,9 +41,29 @@ def run_followup_cycle(
                 for job in jobs
             ]
         else:
-            payload = generate_all_followups(
-                persist_progress=persist_progress,
-            )
+            jobs = detect_followups()
+            payload = []
+            for job in jobs:
+                draft, llm_resp = generate_followup_draft_with_telemetry(job)
+                if prompt_versions is not None:
+                    prompt_versions.append("followup_draft:inline_prompt:v1")
+                if models_used is not None:
+                    models_used.append(llm_resp.model)
+                next_count = int(job.get("follow_up_count", 0) or 0)
+                if persist_progress:
+                    from agents.followup.agent import _persist_followup_progress
+
+                    next_count = _persist_followup_progress(job)
+                payload.append(
+                    {
+                        "job_id": job["id"],
+                        "company": job["company"],
+                        "role": job["role"],
+                        "tier": job["tier_number"] + 1,
+                        "draft": draft,
+                        "follow_up_count_after": next_count,
+                    }
+                )
 
         summary = {
             "run_id": run_id,
@@ -57,6 +80,11 @@ def run_followup_cycle(
                 "dry_run": dry_run,
                 "persist_progress": persist_progress,
             },
+            task_type=TASK_TYPE_FOLLOWUP,
+            task_outcome=TASK_OUTCOME_SUCCESS,
+            error_types=[],
+            prompt_versions=prompt_versions,
+            models_used=models_used,
             context={"jobs": payload[:20]},
         )
         return summary
@@ -66,6 +94,10 @@ def run_followup_cycle(
             run_id,
             status="failed",
             errors=[str(exc)],
+            task_type=TASK_TYPE_FOLLOWUP,
+            task_outcome=TASK_OUTCOME_FAIL,
+            error_types=classify_error_types([str(exc)]),
+            prompt_versions=None if dry_run else ["followup_draft:inline_prompt:v1"],
         )
         raise
 

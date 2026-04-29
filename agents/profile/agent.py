@@ -20,6 +20,7 @@ from typing import Optional
 from uuid import uuid4
 
 from core.config import get_settings
+from core.feedback import TASK_OUTCOME_FAIL, TASK_OUTCOME_SUCCESS, TASK_TYPE_PROFILE, classify_error_types
 from core.db import complete_run, insert_run
 from core.llm import LLMResponse, chat_text
 
@@ -271,6 +272,11 @@ def run_profile_agent(
             status="completed",
             tokens_used=llm_resp.total_tokens,
             latency_ms=latency_ms,
+            task_type=TASK_TYPE_PROFILE,
+            task_outcome=TASK_OUTCOME_SUCCESS,
+            error_types=[],
+            prompt_versions=["profile_answer:inline_prompt:v1"],
+            models_used=[llm_resp.model],
             eval_results={
                 "ungrounded_claims": len(ungrounded),
                 "narrative": narrative,
@@ -286,5 +292,9 @@ def run_profile_agent(
             status="failed",
             latency_ms=latency_ms,
             errors=[str(exc)],
+            task_type=TASK_TYPE_PROFILE,
+            task_outcome=TASK_OUTCOME_FAIL,
+            error_types=classify_error_types([str(exc)]),
+            prompt_versions=["profile_answer:inline_prompt:v1"],
         )
         raise

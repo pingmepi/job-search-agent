@@ -82,6 +82,7 @@ def clean_ocr_text_with_usage(raw_text: str) -> tuple[str, dict[str, float | int
             "total_tokens": 0,
             "cost_estimate": 0.0,
             "generation_id": None,
+            "model": None,
         }
 
     response = chat_text(OCR_CLEANUP_PROMPT, raw_text)
@@ -91,6 +92,7 @@ def clean_ocr_text_with_usage(raw_text: str) -> tuple[str, dict[str, float | int
         "total_tokens": response.total_tokens,
         "cost_estimate": response.cost_estimate,
         "generation_id": response.generation_id,
+        "model": response.model,
     }
 
 

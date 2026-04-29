@@ -6,6 +6,9 @@ Usage:
     python main.py init-db                       # Initialize database
     python main.py ci-gate                       # Run CI eval gate
     python main.py eval-report [--json]          # Print eval trend report from run artifacts
+    python main.py feedback <run_id> ...         # Attach operator feedback to a completed run
+    python main.py feedback-report [--days N]    # Summarize feedback-loop metrics from DB
+    python main.py regression-run [options]      # Run inbox regression suite
     python main.py db-stats                      # Show DB summary for debugging
     python main.py pipeline-check                # Run pipeline integrity checks
     python main.py followup-runner [options]     # Run scheduled follow-up detection
@@ -131,6 +134,75 @@ def _parse_followup_runner_args(args: list[str]) -> dict:
     if opts["interval_minutes"] <= 0:
         raise ValueError("--interval-minutes must be > 0")
 
+    return opts
+
+
+def _parse_feedback_args(args: list[str]) -> dict[str, object]:
+    if not args:
+        raise ValueError("feedback requires a run_id")
+    opts: dict[str, object] = {
+        "run_id": args[0],
+        "label": None,
+        "reason": None,
+    }
+    i = 1
+    while i < len(args):
+        token = args[i]
+        if token == "--label":
+            if i + 1 >= len(args):
+                raise ValueError("--label requires a value")
+            opts["label"] = args[i + 1]
+            i += 1
+        elif token == "--reason":
+            if i + 1 >= len(args):
+                raise ValueError("--reason requires a value")
+            opts["reason"] = args[i + 1]
+            i += 1
+        else:
+            raise ValueError(f"Unknown feedback argument: {token}")
+        i += 1
+
+    if not opts["label"]:
+        raise ValueError("feedback requires --label")
+    return opts
+
+
+def _parse_feedback_report_args(args: list[str]) -> dict[str, int]:
+    opts = {"days": 7}
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token == "--days":
+            if i + 1 >= len(args):
+                raise ValueError("--days requires a value")
+            opts["days"] = int(args[i + 1])
+            i += 1
+        else:
+            raise ValueError(f"Unknown feedback-report argument: {token}")
+        i += 1
+    if opts["days"] <= 0:
+        raise ValueError("--days must be > 0")
+    return opts
+
+
+def _parse_regression_run_args(args: list[str]) -> dict[str, object]:
+    opts: dict[str, object] = {
+        "json_output": False,
+        "case_id": None,
+    }
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token == "--json":
+            opts["json_output"] = True
+        elif token == "--case":
+            if i + 1 >= len(args):
+                raise ValueError("--case requires a value")
+            opts["case_id"] = args[i + 1]
+            i += 1
+        else:
+            raise ValueError(f"Unknown regression-run argument: {token}")
+        i += 1
     return opts
 
 
@@ -298,6 +370,36 @@ def main() -> None:
 
         json_output = "--json" in sys.argv[2:]
         run_report(json_output=json_output)
+
+    elif command == "feedback":
+        from evals.feedback_report import annotate_run_feedback
+
+        opts = _parse_feedback_args(sys.argv[2:])
+        annotate_run_feedback(
+            opts["run_id"],  # type: ignore[arg-type]
+            feedback_label=opts["label"],  # type: ignore[arg-type]
+            feedback_reason=opts["reason"],  # type: ignore[arg-type]
+        )
+        print(
+            f"Feedback saved: run_id={opts['run_id']} label={opts['label']}"
+            f" reason={opts['reason'] or '-'}"
+        )
+
+    elif command == "feedback-report":
+        from evals.feedback_report import build_feedback_report, format_feedback_report
+
+        opts = _parse_feedback_report_args(sys.argv[2:])
+        report = build_feedback_report(days=opts["days"])
+        print(format_feedback_report(report))
+
+    elif command == "regression-run":
+        from evals.regression_runner import main as run_regression
+
+        opts = _parse_regression_run_args(sys.argv[2:])
+        run_regression(
+            json_output=bool(opts["json_output"]),
+            case_id=opts["case_id"],  # type: ignore[arg-type]
+        )
 
     elif command == "build-skill-index":
         from scripts.build_skill_index import build_skill_index

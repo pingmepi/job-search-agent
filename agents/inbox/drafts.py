@@ -29,6 +29,8 @@ class DraftResult:
     completion_tokens: int = 0
     total_tokens: int = 0
     cost_estimate: float = 0.0
+    generation_id: str | None = None
+    model: str | None = None
 
 
 # ── Email draft ───────────────────────────────────────────────────
@@ -63,6 +65,8 @@ def generate_email_draft(
         completion_tokens=response.completion_tokens,
         total_tokens=response.total_tokens,
         cost_estimate=response.cost_estimate,
+        generation_id=response.generation_id,
+        model=response.model,
     )
 
 
@@ -111,6 +115,8 @@ def generate_linkedin_dm(
         completion_tokens=response.completion_tokens,
         total_tokens=response.total_tokens,
         cost_estimate=response.cost_estimate,
+        generation_id=response.generation_id,
+        model=response.model,
     )
 
 
@@ -146,4 +152,6 @@ def generate_referral_template(
         completion_tokens=response.completion_tokens,
         total_tokens=response.total_tokens,
         cost_estimate=response.cost_estimate,
+        generation_id=response.generation_id,
+        model=response.model,
     )

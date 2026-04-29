@@ -7,6 +7,7 @@ Each inbox pipeline run now produces:
 - optional outreach drafts
 - a structured markdown application report with A-F sections
 - a Google Drive folder containing the generated artifacts
+- normalized feedback-loop telemetry (task outcome, error types, prompt versions, models used)
 
 Telegram-originated inbox submissions are treated as manually vetted job posts.
 That signal is persisted on the `jobs` table as `user_vetted=1` so downstream
@@ -73,6 +74,10 @@ python main.py webhook
 - `python main.py webhook` — start Telegram webhook service
 - `python main.py init-db` — create/migrate PostgreSQL tables
 - `python main.py ci-gate` — run CI eval gate
+- `python main.py eval-report [--json]` — summarize eval artifacts
+- `python main.py feedback <run_id> --label ...` — attach operator feedback (`helpful` / `not_helpful`)
+- `python main.py feedback-report [--days N]` — summarize feedback-loop metrics from DB
+- `python main.py regression-run [--json] [--case <id>]` — run inbox regression suite (side-effect-safe)
 - `python main.py db-stats` — show table counts and health
 - `python main.py pipeline-check` — validate DB/artifact integrity, report presence, and follow-up drift
 - `python main.py followup-runner --once` — execute one follow-up detection/generation cycle

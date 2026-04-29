@@ -55,6 +55,11 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
     eval_output = build_eval_output_artifact(
         run_id="run-1",
         jd_hash="abc",
+        task_type="inbox_apply",
+        task_outcome="success",
+        error_types=[],
+        prompt_versions=["resume_mutate:v3"],
+        models_used=["openai/gpt-4o-mini"],
         eval_results={"compile_success": True},
     )
 
@@ -68,6 +73,9 @@ def test_build_resume_and_eval_artifacts_include_schema_version() -> None:
     assert resume.collateral_files["linkedin"] is None
     assert resume.fit_score_details["selected_resume"] == "master_ai.tex"
     assert eval_output.schema_version == SCHEMA_VERSION
+    assert eval_output.task_outcome == "success"
+    assert eval_output.error_types == []
+    assert eval_output.prompt_versions == ["resume_mutate:v3"]
 
 
 def test_build_resume_artifact_rejects_invalid_compile_outcome() -> None:

@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS runs (
     skip_calendar   INTEGER,
     error_count     INTEGER,
     errors_json     TEXT,
+    task_type       TEXT,
+    task_outcome    TEXT,
+    error_types_json TEXT,
+    feedback_label  TEXT,
+    feedback_reason TEXT,
+    prompt_versions_json TEXT,
+    models_used_json TEXT,
     context_json    TEXT,
     created_at      TEXT    NOT NULL,
     completed_at    TEXT
@@ -143,6 +150,13 @@ def _apply_migrations(cur: Any) -> None:
         "skip_calendar": "INTEGER",
         "error_count": "INTEGER",
         "errors_json": "TEXT",
+        "task_type": "TEXT",
+        "task_outcome": "TEXT",
+        "error_types_json": "TEXT",
+        "feedback_label": "TEXT",
+        "feedback_reason": "TEXT",
+        "prompt_versions_json": "TEXT",
+        "models_used_json": "TEXT",
         "context_json": "TEXT",
     }.items():
         if col not in runs_cols:
@@ -329,6 +343,13 @@ def complete_run(
     skip_upload: bool | None = None,
     skip_calendar: bool | None = None,
     errors: list[str] | None = None,
+    task_type: str | None = None,
+    task_outcome: str | None = None,
+    error_types: list[str] | None = None,
+    feedback_label: str | None = None,
+    feedback_reason: str | None = None,
+    prompt_versions: list[str] | None = None,
+    models_used: list[str] | None = None,
     context: dict[str, Any] | None = None,
 ) -> None:
     """Mark a run as completed with eval results."""
@@ -340,7 +361,10 @@ def complete_run(
                SET status = %s, eval_results = %s, tokens_used = %s,
                    cost_estimate = %s, latency_ms = %s, input_mode = %s,
                    skip_upload = %s, skip_calendar = %s, error_count = %s,
-                   errors_json = %s, context_json = %s, completed_at = %s
+                   errors_json = %s, task_type = %s, task_outcome = %s,
+                   error_types_json = %s, feedback_label = %s, feedback_reason = %s,
+                   prompt_versions_json = %s, models_used_json = %s,
+                   context_json = %s, completed_at = %s
                WHERE run_id = %s""",
             (
                 status,
@@ -353,11 +377,78 @@ def complete_run(
                 int(skip_calendar) if skip_calendar is not None else None,
                 error_count,
                 json.dumps(errors) if errors is not None else None,
+                task_type,
+                task_outcome,
+                json.dumps(error_types) if error_types is not None else None,
+                feedback_label,
+                feedback_reason,
+                json.dumps(prompt_versions) if prompt_versions is not None else None,
+                json.dumps(models_used) if models_used is not None else None,
                 json.dumps(context) if context is not None else None,
                 _now_iso(),
                 run_id,
             ),
         )
+
+
+def update_run_feedback(
+    run_id: str,
+    *,
+    feedback_label: str,
+    feedback_reason: str | None = None,
+) -> None:
+    """Attach operator feedback to an existing run."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE runs
+               SET feedback_label = %s, feedback_reason = %s
+               WHERE run_id = %s""",
+            (feedback_label, feedback_reason, run_id),
+        )
+
+
+def list_runs_for_feedback_report(*, days: int | None = None) -> list[dict[str, Any]]:
+    """Return completed runs with decoded feedback metadata for reporting."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if days is None:
+            cur.execute("SELECT * FROM runs ORDER BY created_at DESC")
+        else:
+            cur.execute(
+                """SELECT * FROM runs
+                   WHERE created_at::timestamptz >= NOW() - (%s || ' days')::interval
+                   ORDER BY created_at DESC""",
+                (int(days),),
+            )
+        return [_decode_run_row(dict(row)) for row in cur.fetchall()]
+
+
+def _decode_run_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Decode JSON-encoded run columns into native Python objects."""
+    if row.get("eval_results"):
+        row["eval_results"] = json.loads(row["eval_results"])
+    if row.get("errors_json"):
+        row["errors"] = json.loads(row["errors_json"])
+    elif "errors" not in row:
+        row["errors"] = None
+    if row.get("error_types_json"):
+        row["error_types"] = json.loads(row["error_types_json"])
+    elif "error_types" not in row:
+        row["error_types"] = None
+    if row.get("prompt_versions_json"):
+        row["prompt_versions"] = json.loads(row["prompt_versions_json"])
+    elif "prompt_versions" not in row:
+        row["prompt_versions"] = None
+    if row.get("models_used_json"):
+        row["models_used"] = json.loads(row["models_used_json"])
+    elif "models_used" not in row:
+        row["models_used"] = None
+    if row.get("context_json"):
+        row["context"] = json.loads(row["context_json"])
+    elif "context" not in row:
+        row["context"] = None
+    return row
 
 
 def get_run(run_id: str) -> dict[str, Any] | None:
@@ -367,14 +458,7 @@ def get_run(run_id: str) -> dict[str, Any] | None:
         cur.execute("SELECT * FROM runs WHERE run_id = %s", (run_id,))
         row = cur.fetchone()
         if row:
-            d = dict(row)
-            if d.get("eval_results"):
-                d["eval_results"] = json.loads(d["eval_results"])
-            if d.get("errors_json"):
-                d["errors"] = json.loads(d["errors_json"])
-            if d.get("context_json"):
-                d["context"] = json.loads(d["context_json"])
-            return d
+            return _decode_run_row(dict(row))
         return None
 
 
@@ -392,14 +476,7 @@ def list_runs(*, limit: int = 20) -> list[dict[str, Any]]:
         )
         results = []
         for row in cur.fetchall():
-            d = dict(row)
-            if d.get("eval_results"):
-                d["eval_results"] = json.loads(d["eval_results"])
-            if d.get("errors_json"):
-                d["errors"] = json.loads(d["errors_json"])
-            if d.get("context_json"):
-                d["context"] = json.loads(d["context_json"])
-            results.append(d)
+            results.append(_decode_run_row(dict(row)))
         return results
 
 

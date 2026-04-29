@@ -50,6 +50,12 @@ from agents.inbox.resume import (
     parse_editable_regions,
     select_base_resume_with_details,
 )
+from core.feedback import (
+    TASK_TYPE_INBOX_APPLY,
+    classify_error_types,
+    derive_task_outcome,
+    unique_in_order,
+)
 from core.json_utils import extract_first_json_object as _extract_first_json_object
 from core.prompts import load_prompt
 
@@ -91,6 +97,8 @@ class ExecutionContext:
     generation_ids: list[tuple[str, str]] = field(default_factory=list)
     llm_usage_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_step_audit: dict[str, Any] = field(default_factory=dict)  # extra data for audit trail
+    prompt_versions: list[str] = field(default_factory=list)
+    models_used: list[str] = field(default_factory=list)
 
     # Step outputs carried forward
     original_tex: Optional[str] = None
@@ -192,6 +200,19 @@ def _sanitize_mutations(raw: list[dict]) -> list[dict]:
     return clean
 
 
+def _record_prompt_version(ctx: "ExecutionContext", name: str, version: int) -> None:
+    ctx.prompt_versions.append(f"{name}:v{version}")
+
+
+def _record_inline_prompt(ctx: "ExecutionContext", label: str) -> None:
+    ctx.prompt_versions.append(label)
+
+
+def _record_model(ctx: "ExecutionContext", model: str | None) -> None:
+    if model:
+        ctx.models_used.append(model)
+
+
 def _ensure_markdown_report(pack: "ApplicationPack", ctx: ExecutionContext) -> Optional[Path]:
     """Write a structured A-F markdown report into the application artifacts directory."""
     if not pack.output_dir:
@@ -284,6 +305,8 @@ def _handle_ocr(
     ctx.plan.raw_text = raw_text  # update shared text for subsequent steps
     ctx.total_tokens += int(usage.get("total_tokens", 0))
     ctx.llm_usage_breakdown["ocr_cleanup"] = usage
+    _record_inline_prompt(ctx, "ocr_cleanup:inline_prompt:v1")
+    _record_model(ctx, usage.get("model"))
     if usage.get("generation_id"):
         ctx.generation_ids.append(("ocr_cleanup", usage["generation_id"]))
     return pack
@@ -297,6 +320,8 @@ def _handle_jd_extract(
     jd, usage = extract_jd_with_usage(ctx.plan.raw_text)
     ctx.total_tokens += int(usage.get("total_tokens", 0))
     ctx.llm_usage_breakdown["jd_extract"] = usage
+    _record_prompt_version(ctx, "jd_extract", 1)
+    _record_model(ctx, usage.get("model"))
     if usage.get("generation_id"):
         ctx.generation_ids.append(("jd_extract", usage["generation_id"]))
 
@@ -392,6 +417,7 @@ def _handle_resume_mutate(
 
     current_bullet_count = len(_extract_bullets(original_tex))
 
+    _record_prompt_version(ctx, "resume_mutate", 3)
     system = load_prompt("resume_mutate", version=3)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
@@ -409,6 +435,7 @@ def _handle_resume_mutate(
         max_attempts=step.max_attempts,
     )
     ctx.total_tokens += response.total_tokens
+    _record_model(ctx, response.model)
     if response.generation_id:
         ctx.generation_ids.append(("resume_mutation", response.generation_id))
     ctx.llm_usage_breakdown["resume_mutation"] = {
@@ -581,6 +608,7 @@ def _handle_compile(
     def _run_condense(tex: str, page_count: int, attempt: int = 1) -> Optional[str]:
         """Call the condense LLM and return condensed TeX, or None on failure."""
         try:
+            _record_prompt_version(ctx, "resume_condense", 1)
             condense_system = load_prompt("resume_condense", version=1)
             regions = parse_editable_regions(tex)
             if not regions:
@@ -603,6 +631,7 @@ def _handle_compile(
                 max_attempts=2,
             )
             ctx.total_tokens += response.total_tokens
+            _record_model(ctx, response.model)
             if response.generation_id:
                 ctx.generation_ids.append(("resume_condense", response.generation_id))
             ctx.llm_usage_breakdown["resume_condense"] = {
@@ -806,6 +835,8 @@ def _handle_draft(
 
     if tool == TOOL_DRAFT_EMAIL:
         resp = generate_email_draft(name, positioning, jd.company, jd.role)
+        _record_prompt_version(ctx, "draft_email", 1)
+        _record_model(ctx, getattr(resp, "model", None))
         pack.email_draft = resp.text
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("email")
@@ -821,6 +852,8 @@ def _handle_draft(
 
     elif tool == TOOL_DRAFT_LINKEDIN:
         resp = generate_linkedin_dm(name, positioning, jd.company, jd.role)
+        _record_prompt_version(ctx, "draft_linkedin", 1)
+        _record_model(ctx, getattr(resp, "model", None))
         pack.linkedin_draft = resp.text
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("linkedin")
@@ -836,6 +869,8 @@ def _handle_draft(
 
     elif tool == TOOL_DRAFT_REFERRAL:
         resp = generate_referral_template(name, positioning, jd.company, jd.role)
+        _record_prompt_version(ctx, "draft_referral", 1)
+        _record_model(ctx, getattr(resp, "model", None))
         pack.referral_draft = resp.text
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("referral")
@@ -1040,6 +1075,8 @@ def _persist_artifacts(
 
     artifact_paths: dict[str, str] = {}
     jd = pack.jd
+    task_outcome = derive_task_outcome(status="completed", eval_results=eval_results, errors=pack.errors)
+    error_types = classify_error_types(pack.errors)
     try:
         job_artifact = build_job_extraction_artifact(
             run_id=ctx.run_id,
@@ -1082,6 +1119,11 @@ def _persist_artifacts(
         eval_artifact = build_eval_output_artifact(
             run_id=ctx.run_id,
             jd_hash=jd.jd_hash,
+            task_type=TASK_TYPE_INBOX_APPLY,
+            task_outcome=task_outcome,
+            error_types=error_types,
+            prompt_versions=unique_in_order(ctx.prompt_versions),
+            models_used=unique_in_order(ctx.models_used),
             eval_results=eval_results,
         )
         base_dir = ctx.settings.runs_dir / "artifacts"
@@ -1143,6 +1185,8 @@ def _complete_run_record(
         "compile_outcome": ctx.compile_outcome,
         "mutation_summary": ctx.mutation_summary,
     }
+    task_outcome = derive_task_outcome(status="completed", eval_results=eval_results, errors=pack.errors)
+    error_types = classify_error_types(pack.errors)
     pack.run_id = log_run(
         "inbox",
         eval_results,
@@ -1155,6 +1199,11 @@ def _complete_run_record(
         skip_upload=ctx.plan.skip_upload,
         skip_calendar=ctx.plan.skip_calendar,
         errors=pack.errors,
+        task_type=TASK_TYPE_INBOX_APPLY,
+        task_outcome=task_outcome,
+        error_types=error_types,
+        prompt_versions=unique_in_order(ctx.prompt_versions),
+        models_used=unique_in_order(ctx.models_used),
         context=run_context,
     )
 

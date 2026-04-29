@@ -223,6 +223,29 @@ curl -i -X POST http://127.0.0.1:8000/telegram/webhook \
 
 Expected status: `401 Unauthorized`.
 
+## Stage 9: Feedback Loop and Regression Checks
+
+Attach operator feedback to completed runs:
+
+```bash
+./.venv/bin/python main.py feedback <run_id> --label helpful
+./.venv/bin/python main.py feedback <run_id> --label not_helpful --reason wrong
+```
+
+Generate feedback summary report:
+
+```bash
+./.venv/bin/python main.py feedback-report --days 7
+```
+
+Run regression suite (safe mode: no Drive/Calendar side effects):
+
+```bash
+./.venv/bin/python main.py regression-run
+./.venv/bin/python main.py regression-run --json
+./.venv/bin/python main.py regression-run --case text_ai_pm_core
+```
+
 ## Fast Command Reference
 
 - Start webhook server: `./.venv/bin/python main.py webhook`
@@ -230,6 +253,10 @@ Expected status: `401 Unauthorized`.
 - DB stats: `./.venv/bin/python main.py db-stats`
 - Pipeline integrity: `./.venv/bin/python main.py pipeline-check`
 - CI gate: `./.venv/bin/python main.py ci-gate`
+- Eval trend report: `./.venv/bin/python main.py eval-report`
+- Attach run feedback: `./.venv/bin/python main.py feedback <run_id> --label ...`
+- Feedback summary: `./.venv/bin/python main.py feedback-report --days 7`
+- Regression suite: `./.venv/bin/python main.py regression-run`
 - Run follow-up cycle once: `./.venv/bin/python main.py followup-runner --once`
 - Run all tests: `./.venv/bin/pytest -q`
 - Runtime snapshot (logs + health + webhook info): `./scripts/check_runtime.sh`

@@ -76,6 +76,13 @@ class EvalOutputArtifact:
     schema_version: str
     created_at: str
     jd_hash: str
+    task_type: str | None
+    task_outcome: str | None
+    error_types: list[str] | None
+    prompt_versions: list[str] | None
+    models_used: list[str] | None
+    feedback_label: str | None
+    feedback_reason: str | None
     eval_results: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
@@ -178,11 +185,25 @@ def build_eval_output_artifact(
     run_id: str,
     jd_hash: str,
     eval_results: dict[str, Any],
+    task_type: str | None = None,
+    task_outcome: str | None = None,
+    error_types: list[str] | None = None,
+    prompt_versions: list[str] | None = None,
+    models_used: list[str] | None = None,
+    feedback_label: str | None = None,
+    feedback_reason: str | None = None,
 ) -> EvalOutputArtifact:
     return EvalOutputArtifact(
         run_id=_ensure_non_empty(run_id, "run_id"),
         schema_version=SCHEMA_VERSION,
         created_at=_now_iso(),
         jd_hash=_ensure_non_empty(jd_hash, "jd_hash"),
+        task_type=task_type,
+        task_outcome=task_outcome,
+        error_types=error_types,
+        prompt_versions=prompt_versions,
+        models_used=models_used,
+        feedback_label=feedback_label,
+        feedback_reason=feedback_reason,
         eval_results=eval_results,
     )

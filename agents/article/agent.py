@@ -15,6 +15,7 @@ import logging
 import time
 from uuid import uuid4
 
+from core.feedback import TASK_OUTCOME_FAIL, TASK_OUTCOME_SUCCESS, TASK_TYPE_ARTICLE, classify_error_types
 from core.db import complete_run, insert_article_signals, insert_run
 from core.llm import LLMResponse, chat_text
 
@@ -86,6 +87,11 @@ def run_article_agent(text: str) -> tuple[str, list[str], str]:
             status="completed",
             tokens_used=llm_resp.total_tokens,
             latency_ms=latency_ms,
+            task_type=TASK_TYPE_ARTICLE,
+            task_outcome=TASK_OUTCOME_SUCCESS,
+            error_types=[],
+            prompt_versions=["article_summary:inline_prompt:v1"],
+            models_used=[llm_resp.model],
             eval_results={
                 "signal_count": len(signals),
                 "bullet_count": len(summary.split("\n")),
@@ -106,5 +112,9 @@ def run_article_agent(text: str) -> tuple[str, list[str], str]:
             status="failed",
             latency_ms=latency_ms,
             errors=[str(exc)],
+            task_type=TASK_TYPE_ARTICLE,
+            task_outcome=TASK_OUTCOME_FAIL,
+            error_types=classify_error_types([str(exc)]),
+            prompt_versions=["article_summary:inline_prompt:v1"],
         )
         raise

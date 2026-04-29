@@ -31,6 +31,13 @@ def log_run(
     skip_upload: bool | None = None,
     skip_calendar: bool | None = None,
     errors: list[str] | None = None,
+    task_type: str | None = None,
+    task_outcome: str | None = None,
+    error_types: list[str] | None = None,
+    feedback_label: str | None = None,
+    feedback_reason: str | None = None,
+    prompt_versions: list[str] | None = None,
+    models_used: list[str] | None = None,
     context: dict[str, Any] | None = None,
 ) -> str:
     """
@@ -54,6 +61,13 @@ def log_run(
         skip_upload=skip_upload,
         skip_calendar=skip_calendar,
         errors=errors,
+        task_type=task_type,
+        task_outcome=task_outcome,
+        error_types=error_types,
+        feedback_label=feedback_label,
+        feedback_reason=feedback_reason,
+        prompt_versions=prompt_versions,
+        models_used=models_used,
         context=context,
     )
 
@@ -74,6 +88,13 @@ def log_run(
         "skip_calendar": skip_calendar,
         "errors": errors or [],
         "error_count": len(errors or []),
+        "task_type": task_type,
+        "task_outcome": task_outcome,
+        "error_types": error_types,
+        "feedback_label": feedback_label,
+        "feedback_reason": feedback_reason,
+        "prompt_versions": prompt_versions,
+        "models_used": models_used,
         "context": context or {},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

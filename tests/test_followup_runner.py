@@ -54,8 +54,8 @@ def test_run_followup_cycle_persists_progress(db, monkeypatch):
     _insert_old_job(db, "PersistCo")
 
     monkeypatch.setattr(
-        "agents.followup.agent.generate_followup_draft",
-        lambda _: "draft",
+        "agents.followup.runner.generate_followup_draft_with_telemetry",
+        lambda _: ("draft", type("Resp", (), {"model": "openai/gpt-4o-mini"})()),
     )
 
     result = run_followup_cycle()

@@ -12,11 +12,13 @@ from core.db import (
     get_job,
     get_jobs_needing_followup,
     get_run,
+    list_runs_for_feedback_report,
     get_webhook_event,
     init_db,
     insert_job,
     insert_run,
     insert_webhook_event,
+    update_run_feedback,
     update_job,
     update_webhook_event,
 )
@@ -133,6 +135,11 @@ class TestRunsCRUD:
             skip_upload=True,
             skip_calendar=False,
             errors=["example error"],
+            task_type="inbox_apply",
+            task_outcome="partial",
+            error_types=["external_dependency"],
+            prompt_versions=["resume_mutate:v3"],
+            models_used=["openai/gpt-4o-mini"],
             context={"company": "Acme", "jd_hash": "abc123"},
         )
         run = get_run("run-001")
@@ -144,10 +151,40 @@ class TestRunsCRUD:
         assert run["skip_calendar"] == 0
         assert run["error_count"] == 1
         assert run["errors"] == ["example error"]
+        assert run["task_type"] == "inbox_apply"
+        assert run["task_outcome"] == "partial"
+        assert run["error_types"] == ["external_dependency"]
+        assert run["prompt_versions"] == ["resume_mutate:v3"]
+        assert run["models_used"] == ["openai/gpt-4o-mini"]
         assert run["context"]["company"] == "Acme"
 
     def test_get_nonexistent_run(self, db):
         assert get_run("nope") is None
+
+    def test_update_feedback_and_list_report_runs(self, db):
+        insert_run("run-002", "inbox")
+        complete_run(
+            "run-002",
+            status="completed",
+            eval_results={"compile_success": True},
+            task_type="inbox_apply",
+            task_outcome="success",
+            error_types=[],
+        )
+
+        update_run_feedback(
+            "run-002",
+            feedback_label="helpful",
+            feedback_reason=None,
+        )
+
+        run = get_run("run-002")
+        assert run["feedback_label"] == "helpful"
+        assert run["feedback_reason"] is None
+
+        runs = list_runs_for_feedback_report(days=30)
+        assert len(runs) >= 1
+        assert runs[0]["error_types"] == []
 
 
 class TestWebhookEventsCRUD:

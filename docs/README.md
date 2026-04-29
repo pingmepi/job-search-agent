@@ -31,13 +31,20 @@ Telegram-specific intake rule:
 
 ## 1b) Generated Artifacts
 
-For successful inbox runs, the pipeline writes artifacts into the run-scoped output directory and, when Drive upload is enabled, mirrors them into the application Drive folder:
+For successful inbox runs, the pipeline writes artifacts to two local folder scopes and, when Drive upload is enabled, mirrors them into the application Drive folder:
 
 - Resume PDF
 - `application_report.md` with A-F sections
 - Optional `email_draft.txt`
 - Optional `linkedin_dm.txt`
 - Optional `referral.txt`
+
+Folder scopes:
+
+- Application-context folder: `runs/artifacts/<company>_<role>_<jdhash>/`
+  - Contains human-facing outputs (PDF, report, drafts, compile failure tex snapshots).
+- Run-id folder: `runs/artifacts/<run_id>/`
+  - Contains canonical JSON artifacts (`job_extraction.json`, `resume_output.json`, `eval_output.json`).
 
 The markdown report includes the selected base resume, the mutation summary, fit details, collateral generation status, and execution summary.
 
@@ -215,6 +222,29 @@ The command checks for:
 
 Manual vetting provenance is not itself a pipeline-check failure today; it is
 stored in `jobs.user_vetted` for filtering, reporting, and future dashboard use.
+
+## 6d) Feedback and Regression Commands
+
+Feedback loop commands:
+
+```bash
+python main.py feedback <run_id> --label helpful
+python main.py feedback <run_id> --label not_helpful --reason wrong
+python main.py feedback-report --days 7
+```
+
+Regression runner (offline, side-effect-safe):
+
+```bash
+python main.py regression-run
+python main.py regression-run --json
+python main.py regression-run --case text_ai_pm_core
+```
+
+Runner behavior:
+
+- Executes inbox cases with `skip_upload=True` and `skip_calendar=True`.
+- Validates invariant assertions (outcome, compile, forbidden claims, edit-scope violations, keyword coverage) instead of brittle full-output matching.
 
 ## 7) Register Telegram Webhook
 

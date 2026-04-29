@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from core.llm import LLMResponse, chat_text
 from core.db import get_jobs_needing_followup, update_job
-from core.llm import chat_text
 
 # ── Escalation tiers ──────────────────────────────────────────────
 
@@ -86,6 +86,12 @@ Return only the message text.
 
 
 def generate_followup_draft(job: dict) -> str:
+    """Generate a follow-up draft for a single job."""
+    draft, _ = generate_followup_draft_with_telemetry(job)
+    return draft
+
+
+def generate_followup_draft_with_telemetry(job: dict) -> tuple[str, LLMResponse]:
     """
     Generate a follow-up draft for a single job.
 
@@ -106,7 +112,7 @@ def generate_followup_draft(job: dict) -> str:
     )
 
     response = chat_text(system, f"Generate a {tier['label']} message.")
-    return response.text
+    return response.text, response
 
 
 def _persist_followup_progress(job: dict) -> int:

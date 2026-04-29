@@ -24,6 +24,13 @@ def _write_eval(tmp: Path, run_id: str, overrides: dict | None = None) -> Path:
         "schema_version": "1.0",
         "created_at": "2026-03-05T06:49:24+00:00",
         "jd_hash": "abc123",
+        "task_type": "inbox_apply",
+        "task_outcome": "success",
+        "error_types": [],
+        "prompt_versions": ["resume_mutate:v3"],
+        "models_used": ["openai/gpt-4o-mini"],
+        "feedback_label": None,
+        "feedback_reason": None,
         "eval_results": {
             "compile_success": True,
             "forbidden_claims_count": 0,
@@ -97,6 +104,46 @@ class TestBuildReport:
         report = build_report(tmp_path)
         assert report["summary"]["total_forbidden_claims"] == 3
 
+    def test_error_types_handle_arrays_and_null(self, tmp_path):
+        _write_eval(tmp_path, "run-none", {})
+        _write_eval(tmp_path, "run-null", {})
+        _write_eval(tmp_path, "run-timeout", {})
+
+        run_null = tmp_path / "run-null" / "eval_output.json"
+        payload_null = json.loads(run_null.read_text(encoding="utf-8"))
+        payload_null["error_types"] = None
+        run_null.write_text(json.dumps(payload_null), encoding="utf-8")
+
+        run_timeout = tmp_path / "run-timeout" / "eval_output.json"
+        payload_timeout = json.loads(run_timeout.read_text(encoding="utf-8"))
+        payload_timeout["error_types"] = ["tool_timeout", "tool_timeout"]
+        run_timeout.write_text(json.dumps(payload_timeout), encoding="utf-8")
+
+        report = build_report(tmp_path)
+        assert report["summary"]["no_error_runs"] == 1
+        assert report["summary"]["null_error_type_runs"] == 1
+        assert report["summary"]["error_type_counts"]["tool_timeout"] == 2
+
+    def test_feedback_counts_aggregated(self, tmp_path):
+        _write_eval(tmp_path, "run-helpful", {})
+        _write_eval(tmp_path, "run-bad", {})
+
+        helpful = tmp_path / "run-helpful" / "eval_output.json"
+        helpful_payload = json.loads(helpful.read_text(encoding="utf-8"))
+        helpful_payload["feedback_label"] = "helpful"
+        helpful.write_text(json.dumps(helpful_payload), encoding="utf-8")
+
+        bad = tmp_path / "run-bad" / "eval_output.json"
+        bad_payload = json.loads(bad.read_text(encoding="utf-8"))
+        bad_payload["feedback_label"] = "not_helpful"
+        bad_payload["task_outcome"] = "partial"
+        bad.write_text(json.dumps(bad_payload), encoding="utf-8")
+
+        report = build_report(tmp_path)
+        assert report["summary"]["helpful_count"] == 1
+        assert report["summary"]["not_helpful_count"] == 1
+        assert report["summary"]["partial_count"] == 1
+
     def test_malformed_json_skipped(self, tmp_path):
         """Malformed JSON files should be silently skipped."""
         run_dir = tmp_path / "run-bad"
@@ -147,3 +194,21 @@ class TestFormatMarkdown:
         # At least one ✅ and one ❌ should be present
         assert "✅" in md
         assert "❌" in md
+
+    def test_error_array_and_null_rendered(self, tmp_path):
+        _write_eval(tmp_path, "run-null")
+        _write_eval(tmp_path, "run-array")
+        report_path_null = tmp_path / "run-null" / "eval_output.json"
+        payload_null = json.loads(report_path_null.read_text(encoding="utf-8"))
+        payload_null["error_types"] = None
+        report_path_null.write_text(json.dumps(payload_null), encoding="utf-8")
+
+        report_path_array = tmp_path / "run-array" / "eval_output.json"
+        payload_array = json.loads(report_path_array.read_text(encoding="utf-8"))
+        payload_array["error_types"] = ["parse_error", "missing_context"]
+        report_path_array.write_text(json.dumps(payload_array), encoding="utf-8")
+
+        report = build_report(tmp_path)
+        md = format_markdown(report)
+        assert "null" in md
+        assert "parse_error, missing_context" in md
