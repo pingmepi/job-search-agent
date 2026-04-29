@@ -1,0 +1,33 @@
+{
+  "tool_version": "1.0.0",
+  "generated_at": "2026-04-29T19:59:12.307655Z",
+  "repo_head": "8c4619feabdbd0ea83b071c0d5895adb2edaf6f3",
+  "scanned_doc_files": 11,
+  "scanned_code_files": 41,
+  "findings": [
+    {
+      "severity": "LOW",
+      "category": "stale-instruction",
+      "file": "docs/webhook-service.md:1-29",
+      "says": "Doc is structured as an LLM prompt brief ('You are a senior backend engineer...')",
+      "actually": "Implementation has shipped; docs/webhook-service-instructions.md is the actual current-state spec \u2014 two similarly named docs invite confusion",
+      "fix": "Rename to docs/webhook-service-prompt.md (or move to .planning/) and/or add a 'historical brief' banner pointing readers at webhook-service-instructions.md"
+    },
+    {
+      "severity": "LOW",
+      "category": "dead-link",
+      "file": "interview-prep/ai-product-builder.md",
+      "says": "113 markdown links flagged dead by find_dead_doc_links.py",
+      "actually": "All hits use GitHub-style #L<line> fragments (e.g. core/router.py#L99); the base files exist, only the local scanner cannot resolve line anchors. README, PRD, and docs/* are clean.",
+      "fix": "Either teach find_dead_doc_links.py to ignore #L\\d+ fragments when base path resolves, or suppress the interview-prep/ directory"
+    }
+  ],
+  "clean_areas": [
+    ".env.example covers all 22 env vars read by core/config.py (prior HIGH fixed in PR #30 / commit 8ec48cb)",
+    "All 12 CLI subcommands dispatched in main.py are documented in README.md",
+    "PRD \u00a713.3 Phase 3 row decomposed into shipped vs. todo sub-deliverables (prior HIGH fixed)",
+    "Python 3.9+ consistent across pyproject.toml, README.md, docs/setup-and-test.md",
+    "python-telegram-bot >=21.0, fastapi >=0.111.0, uvicorn >=0.30.0 in pyproject.toml match docs/webhook-service.md spec versions",
+    "GET /health and POST /telegram/webhook documented in README and docs/webhook-service-instructions.md match app.py routes"
+  ]
+}

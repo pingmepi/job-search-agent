@@ -70,7 +70,7 @@ After installing MacTeX, make sure `pdflatex` is on PATH (restart terminal if ne
 From project root:
 
 ```bash
-cd /Users/karan/Desktop/job-search-agent
+cd <repo-root>
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
@@ -85,13 +85,15 @@ Create local env file:
 cp .env.example .env
 ```
 
-Set required values:
+Set required values (see `.env.example` for the full list with defaults):
 
 ```env
+# LLM
 OPENROUTER_API_KEY=...
 LLM_MODEL=stepfun/step-3.5-flash:free
-LLM_FALLBACK_MODELS=qwen/qwen3-coder:free,meta-llama/llama-3.2-3b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,mistralai/mistral-small-3.1-24b-instruct:free,deepseek/deepseek-r1-0528:free,openai/gpt-oss-120b:free,arcee-ai/trinity-mini:free
+LLM_FALLBACK_MODELS=qwen/qwen3-coder:free,meta-llama/llama-3.2-3b-instruct:free,...
 
+# Telegram
 TELEGRAM_TOKEN=...
 TELEGRAM_BOT_USERNAME=@job_notes_bot
 TELEGRAM_WEBHOOK_SECRET=<random-secret>
@@ -100,10 +102,25 @@ TELEGRAM_WEBHOOK_PATH=/telegram/webhook
 WEBHOOK_HOST=0.0.0.0
 WEBHOOK_PORT=8000
 WEBHOOK_PROCESS_TIMEOUT_SECONDS=10
+OCR_MIN_TEXT_CHARS=80
+OCR_MIN_ALPHA_CHARS=35
+OCR_REQUIRE_JD_INDICATOR=true
+TELEGRAM_ENABLE_DRIVE_UPLOAD=false
+TELEGRAM_ENABLE_CALENDAR_EVENTS=false
 
+# Google Cloud (Drive + Calendar)
 GOOGLE_CREDENTIALS_PATH=credentials/google_oauth.json
+
+# Cost thresholds
 MAX_COST_PER_JOB=0.15
+
+# Database
 DATABASE_URL=postgresql://user:password@host:5432/inbox_agent
+
+# Security & resume policy (optional — safe to leave as defaults)
+TELEGRAM_ALLOWED_CHAT_IDS=          # comma-separated chat IDs; empty = allow all
+ENFORCE_SINGLE_PAGE=true
+MAX_CONDENSE_RETRIES=3
 ```
 
 Notes:
