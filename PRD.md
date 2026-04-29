@@ -487,6 +487,7 @@ agents/
   inbox/
   profile/
   followup/
+  article/
 integrations/
 evals/
 tests/
@@ -550,7 +551,11 @@ https://linear.app/karans/project/job-search-agent-d5014a28b093
 | Phase 0 Core Executor hardening | KAR-42..KAR-60 | Done |
 | Phase 1 Intelligence Layer | KAR-53, KAR-57, KAR-59 | Done |
 | Phase 2 Planner Mode | KAR-61 | Done |
-| Phase 3 Workflow Product Surface | KAR-62 | Todo |
+| Phase 3 — A–F application reports | KAR-62 | Done |
+| Phase 3 — Pipeline integrity checks | KAR-62 | Done |
+| Phase 3 — Drive-centered artifact visibility | KAR-62 | Done |
+| Phase 3 — Portal scanner | KAR-62 | Todo |
+| Phase 3 — Operator dashboard | KAR-62 | Todo |
 
 ## 13.4 Sync Rule
 

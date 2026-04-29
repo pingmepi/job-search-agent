@@ -63,7 +63,7 @@ After installing MacTeX, make sure `pdflatex` is on PATH (restart terminal if ne
 From project root:
 
 ```bash
-cd /Users/karan/Desktop/job-search-agent
+cd <repo-root>
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip

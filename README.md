@@ -76,6 +76,12 @@ python main.py webhook
 - `python main.py db-stats` — show table counts and health
 - `python main.py pipeline-check` — validate DB/artifact integrity, report presence, and follow-up drift
 - `python main.py followup-runner --once` — execute one follow-up detection/generation cycle
+- `python main.py runs [run_id] [--steps] [--limit N]` — list recent runs or inspect a single run with step audit
+- `python main.py replay-webhook --event-id <id> | --update-id <id>` — replay a stored Telegram update through the pipeline
+- `python main.py eval-report [--json]` — print eval trend report from run artifacts
+- `python main.py build-skill-index` — rebuild `profile/skill_index.json` from the bullet bank
+- `python main.py auth-google` — interactive Google OAuth flow (writes Drive + Calendar token)
+- `python main.py encode-token` — base64-encode the Google OAuth token for `GOOGLE_TOKEN_B64` (Railway)
 - `pytest -q` — run tests (DB tests skip automatically if `DATABASE_URL` not set)
 
 ## Documentation

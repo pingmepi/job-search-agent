@@ -19,8 +19,8 @@ Gate logic (primary — fixture-based):
 
 Informational report (secondary — live DB):
   Prints compile rate, forbidden claims, and edit violations from
-  actual SQLite run history for situational awareness.  These do NOT
-  block CI.
+  actual PostgreSQL run history for situational awareness.  These do
+  NOT block CI.
 """
 
 from __future__ import annotations
