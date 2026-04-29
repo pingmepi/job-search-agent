@@ -11,7 +11,7 @@ Build a webhook-based Telegram bot service (no polling) using FastAPI and python
 - Is written cleanly and testably
 
 You will be provided:
-- TELEGRAM_BOT_TOKEN
+- TELEGRAM_TOKEN
 - TELEGRAM_WEBHOOK_SECRET
 - PUBLIC_BASE_URL (e.g., https://domain.com)
 
@@ -25,7 +25,7 @@ Use environment variables only.
 ## Requirements
 
 ### 1. Stack
-- Python 3.11+
+- Python 3.9+
 - FastAPI
 - python-telegram-bot v21+
 - Uvicorn
@@ -92,7 +92,7 @@ No heavy processing yet.
 
 Generate a shell script `set_webhook.sh` that:
 
-- Reads TELEGRAM_BOT_TOKEN
+- Reads TELEGRAM_TOKEN
 - Reads TELEGRAM_WEBHOOK_SECRET
 - Reads PUBLIC_BASE_URL
 - Calls Telegram setWebhook API
