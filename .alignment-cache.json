@@ -1,0 +1,82 @@
+{
+  "tool_version": "1.0.0",
+  "generated_at": "2026-04-29T14:50:00Z",
+  "repo_head": "03ebb4a",
+  "scanned_doc_files": 11,
+  "scanned_code_files": 50,
+  "findings": [
+    {
+      "severity": "HIGH",
+      "category": "config-env-drift",
+      "file": ".env.example",
+      "says": "Lists 19 env vars (no TELEGRAM_ALLOWED_CHAT_IDS, ENFORCE_SINGLE_PAGE, MAX_CONDENSE_RETRIES)",
+      "actually": "core/config.py:68/87/90 reads three additional env vars not listed in .env.example",
+      "fix": "Add TELEGRAM_ALLOWED_CHAT_IDS, ENFORCE_SINGLE_PAGE, MAX_CONDENSE_RETRIES to .env.example with defaults"
+    },
+    {
+      "severity": "HIGH",
+      "category": "stale-instruction",
+      "file": "PRD.md:553",
+      "says": "Phase 3 Workflow Product Surface | KAR-62 | Todo",
+      "actually": "A-F reports, pipeline-check, Drive artifacts are all shipped per README.md and docs/README.md",
+      "fix": "Split Phase 3 row into shipped sub-items vs Portal scanner / Operator dashboard remaining"
+    },
+    {
+      "severity": "MED",
+      "category": "undocumented-feature",
+      "file": "README.md:73-79",
+      "says": "Lists 6 commands: webhook, init-db, ci-gate, db-stats, pipeline-check, followup-runner",
+      "actually": "main.py exposes 6 more: runs, replay-webhook, eval-report, build-skill-index, encode-token, auth-google",
+      "fix": "Extend README ## Commands with the six missing subcommands"
+    },
+    {
+      "severity": "MED",
+      "category": "stale-comments-docstrings",
+      "file": "evals/ci_gate.py:21-22",
+      "says": "actual SQLite run history for situational awareness",
+      "actually": "Codebase migrated to PostgreSQL (psycopg2), per PRD.md:148",
+      "fix": "Replace 'SQLite' with 'PostgreSQL' in the docstring"
+    },
+    {
+      "severity": "MED",
+      "category": "removed-api",
+      "file": "PRD.md:482-497",
+      "says": "Repo structure shows agents/{inbox, profile, followup}/ only",
+      "actually": "agents/article/ exists, wired in core/router.py:82-91, FR-AA-1 marked Done in PRD §13.1",
+      "fix": "Add article/ to §11 tree and add Agent 4 subsection to §2"
+    },
+    {
+      "severity": "MED",
+      "category": "stale-instruction",
+      "file": "docs/README.md:65-66",
+      "says": "cd /Users/karan/Desktop/job-search-agent",
+      "actually": "Hardcoded absolute path useless to other contributors; docs/setup-and-test.md:7-8 correctly says 'from repo root'",
+      "fix": "Replace with 'cd <repo-root>' or remove the line"
+    },
+    {
+      "severity": "LOW",
+      "category": "config-env-drift",
+      "file": ".env.example:4",
+      "says": "7-model OpenRouter fallback chain (qwen3-coder, llama-3.2-3b, etc.)",
+      "actually": "Free-tier OpenRouter models rotate; core/llm.py:65-76 handles 'no endpoints found' precisely because of churn",
+      "fix": "Trim example to 1-2 models with a note about free-tier rotation"
+    },
+    {
+      "severity": "LOW",
+      "category": "version-drift",
+      "file": "pyproject.toml:5",
+      "says": "requires-python >= 3.9",
+      "actually": "Aligned with docs/setup-and-test.md sample (Python 3.9.6) and ruff target-version py39",
+      "fix": "None - clean"
+    }
+  ],
+  "clean_areas": [
+    "Setup commands in README.md:29-69 and docs/setup-and-test.md all map to real main.py subcommands and scripts",
+    ".env.example -> core/config.py is clean for documented vars; drift is only code-reads-more direction",
+    "Eval thresholds in evals/ci_gate.py:36-40 match PRD §12 success criteria one-for-one",
+    "Functional-requirement traceability table in PRD §13.1 spot-checks Done across FR-IA-*, FR-PA-*, FR-FU-*, FR-AA-1",
+    "Webhook endpoints GET /health and POST /telegram/webhook match between docs and app.py",
+    "No dead relative links in production docs (113 hits in interview-prep are GitHub line-anchor convention, not real broken links)",
+    "Routing rules in PRD §3 match core/router.py:99-169 one-for-one"
+  ]
+}
