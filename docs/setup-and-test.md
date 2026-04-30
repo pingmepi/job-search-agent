@@ -246,6 +246,10 @@ Run regression suite (safe mode: no Drive/Calendar side effects):
 ./.venv/bin/python main.py regression-run --case text_ai_pm_core
 ```
 
+Important:
+- Regression runs execute the real inbox pipeline and require `DATABASE_URL` and `OPENROUTER_API_KEY`.
+- Core happy-path cases assert a soft quality floor (`min_soft_resume_relevance >= 0.51`), so a case can fail even when compile succeeds if soft relevance is too low.
+
 ## Fast Command Reference
 
 - Start webhook server: `./.venv/bin/python main.py webhook`

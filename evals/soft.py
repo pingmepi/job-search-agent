@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import statistics
 
+from core.json_utils import extract_first_json_object
 from core.llm import chat_text
 from core.prompts import load_prompt
 
@@ -30,7 +31,16 @@ def _single_score(
     """Run one LLM judge call and extract a 0–1 score."""
     response = chat_text(system, user_msg, model=model, json_mode=True)
     try:
-        data = json.loads(response.text)
+        raw = (response.text or "").strip()
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # Some providers still return fenced or mixed text despite json_mode.
+            # Recover the first JSON object when possible before failing closed.
+            extracted = extract_first_json_object(raw)
+            if not extracted:
+                return 0.0
+            data = json.loads(extracted)
         score = float(data.get("score", 0))
         return min(max(score / 100.0, 0.0), 1.0)
     except (json.JSONDecodeError, ValueError):
@@ -53,9 +63,7 @@ def score_resume_relevance(
     system = load_prompt("eval_resume_relevance", version=1)
     user_msg = f"JOB DESCRIPTION:\n{jd_text}\n\nRESUME:\n{resume_text}"
 
-    scores = [
-        _single_score(system, user_msg, model=model) for _ in range(repeat)
-    ]
+    scores = [_single_score(system, user_msg, model=model) for _ in range(repeat)]
     return round(statistics.median(scores), 4)
 
 
@@ -75,7 +83,5 @@ def score_jd_accuracy(
     system = load_prompt("eval_jd_accuracy", version=1)
     user_msg = f"RAW TEXT:\n{raw_text}\n\nEXTRACTION:\n{json.dumps(extracted_jd, indent=2)}"
 
-    scores = [
-        _single_score(system, user_msg, model=model) for _ in range(repeat)
-    ]
+    scores = [_single_score(system, user_msg, model=model) for _ in range(repeat)]
     return round(statistics.median(scores), 4)

@@ -258,6 +258,11 @@ python main.py regression-run --json
 python main.py regression-run --case text_ai_pm_core
 ```
 
+Notes:
+- `regression-run` executes the real pipeline and requires both `DATABASE_URL` and `OPENROUTER_API_KEY`.
+- Core happy-path regression cases now include a soft quality floor (`min_soft_resume_relevance >= 0.51`).
+- Soft eval parsing is hardened to recover fenced/mixed JSON judge responses before failing closed to `0.0`.
+
 Runner behavior:
 
 - Executes inbox cases with `skip_upload=True` and `skip_calendar=True`.
