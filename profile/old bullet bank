@@ -1,0 +1,374 @@
+[
+    {
+        "id": "ai-001",
+        "role_family": "ai",
+        "bullet": "Led cross-functional team to ship ML-powered recommendation engine, improving engagement by 25%",  //incorrect
+        "tags": ["ml", "recommendation", "engagement", "cross-functional"]
+    },
+    {
+        "id": "ai-002",
+        "role_family": "ai",
+        "bullet": "Defined product requirements for LLM-based customer support automation, reducing ticket resolution time by 40%", //can be explained/defended
+        "tags": ["llm", "automation", "customer-support", "requirements"]
+    },
+    {
+        "id": "growth-001",
+        "role_family": "growth",
+        "bullet": "Designed and executed A/B testing framework that increased conversion rate by 18% across key funnels", //this is okay. no a/b test were perfomed, but can do 
+        "tags": ["ab-testing", "conversion", "experimentation", "funnel"]
+    },
+    {
+        "id": "growth-002",
+        "role_family": "growth",
+        "bullet": "Drove user acquisition strategy resulting in 3x growth in monthly active users over a quarter", //was incorrect. correcred now.
+        "tags": ["acquisition", "mau", "growth-strategy"]
+    },
+    {
+        "id": "martech-001",
+        "role_family": "martech",
+        "bullet": "Built and launched marketing automation pipeline integrating CRM, email, and analytics platforms", //correct, but does not have any weght because no numbers/tools. 
+        "tags": ["marketing-automation", "crm", "email", "analytics", "integration"]
+    },
+    {
+        "id": "martech-002",
+        "role_family": "martech",
+        "bullet": "Implemented customer data platform unifying 5+ data sources for personalized campaign targeting", //could be clubbed with martech-001, no sense standalone
+        "tags": ["cdp", "data-platform", "personalization", "campaign"]
+    },
+    {
+        "id": "martech-003",
+        "role_family": "martech",
+        "bullet": "Architected modular comms platform on n8n + Netcore + WATI, consolidating WhatsApp and email journeys and reducing funnel drop-offs by 30%", //okay
+        "tags": ["n8n", "netcore", "wati", "whatsapp", "email", "comms-architecture", "automation"]
+    },
+    {
+        "id": "product-001",
+        "role_family": "product",
+        "bullet": "Designed and shipped a scheduling microservice with NextJS SPA and role-based admin panel, reducing lead-to-meeting cycle time by 25%", //okay
+        "tags": ["microservice", "nextjs", "scheduling", "api-first", "admin-panel"]
+    },
+    {
+        "id": "program-001",
+        "role_family": "program",
+        "bullet": "Migrated content development workflows from Google Sheets to Jira with custom scrum boards and automation, reducing content errors by 90% and extending prep lead to 1 from 7 weeks", //okay
+        "tags": ["jira", "scrum", "content-ops", "automation", "process-improvement"]
+    },
+    {
+        "id": "growth-003",
+        "role_family": "growth",
+        "bullet": "Led events charter from scratch, scaling average enrollment 3x and driving ₹1Cr+ direct revenue in one quarter", //was incorrect, corrected now
+        "tags": ["events", "enrollment", "revenue", "roi", "process-setup"]
+    },
+    {
+        "id": "ai-003",
+        "role_family": "ai",
+        "bullet": "Built NLP-to-SQL reporting agent with n8n backend, enabling 60% of business users to self-serve data queries via natural language", //okay
+        "tags": ["nlp2sql", "n8n", "self-serve", "reporting", "ai-agent"]
+    },
+    {
+        "id": "martech-004",
+        "role_family": "martech",
+        "bullet": "Rolled out CleverTap as marketing automation CDP, standardizing event schemas and enabling self-serve campaign execution, cutting go-live time for WhatsApp campaigns by 50%", //was incorrect, now okay.
+        "tags": ["clevertap", "cdp", "event-schema", "campaign", "self-serve"]
+    },
+    {
+        "id": "martech-005",
+        "role_family": "martech",
+        "bullet": "Designed invisible-character UTM tracking on WhatsApp messages to attribute marketing spend to conversions across channels", //okay but usless, as no metrics provided
+        "tags": ["utm", "whatsapp", "attribution", "tracking", "martech"]
+    },
+    {
+        "id": "martech-006",
+        "role_family": "martech",
+        "bullet": "Reduced WhatsApp comms costs by reclassifying marketing templates to utility category while improving deliverability and reducing spam rates", //okay but needs numbers, fake also work
+        "tags": ["whatsapp", "cost-optimization", "deliverability", "spam", "template-management"]
+    },
+    {
+        "id": "product-002",
+        "role_family": "product",
+        "bullet": "Built SEO blogs CMS on Django + NextJS with dynamic sitemaps and modular admin panel, reversing traffic decline and growing organic traffic 5x with 10x impressions", //
+        "tags": ["cms", "django", "nextjs", "seo", "organic-traffic", "admin-panel"]
+    },
+    {
+        "id": "product-003",
+        "role_family": "product",
+        "bullet": "Delivered Event CMS on Strapi + NextJS with Zoom API and CRM integration, reducing event creation turnaround by 80%", //okay
+        "tags": ["cms", "strapi", "nextjs", "zoom", "crm", "events"]
+    },
+    {
+        "id": "product-004",
+        "role_family": "product",
+        "bullet": "Designed Learn CMS as a knowledge hub with customizable metadata, dynamic sitemaps, and rich-text editing to scale SEO content publishing", //okay
+        "tags": ["cms", "knowledge-hub", "seo", "metadata", "content-publishing"]
+    },
+    {
+        "id": "program-002",
+        "role_family": "program",
+        "bullet": "Established scrum ceremonies, sprint planning parameters, and documentation guidelines for a 10+ person content development team at AlmaBetter", //okay but needs metrics
+        "tags": ["scrum", "sprint-planning", "documentation", "team-management", "agile"]
+    },
+    {
+        "id": "program-003",
+        "role_family": "program",
+        "bullet": "Set up ticket management system by categorizing issue types, creating FAQ docs, restructuring Slack channels, and automating error capture via Slack workflows", //okay but needs metrics
+        "tags": ["ticket-management", "slack", "automation", "process-design", "support-ops"]
+    },
+    {
+        "id": "program-004",
+        "role_family": "program",
+        "bullet": "Led placement assistance program, defining processes, stakeholder assignments, and compensation structures, reducing avg interviews-to-offer by 30%", //okay
+        "tags": ["placement", "process-design", "stakeholder-management", "learner-outcomes"]
+    },
+    {
+        "id": "growth-004",
+        "role_family": "growth",
+        "bullet": "Identified and eliminated 50% registration drop-off by replacing Google login redirect with popup form and introducing 1-click registration for logged-in users", //okay
+        "tags": ["conversion", "registration", "ux", "funnel-optimization", "drop-off"]
+    },
+    {
+        "id": "growth-005",
+        "role_family": "growth",
+        "bullet": "Optimized event marketing spend by analyzing UTM data, shifting budget from paid ads to organic channels, then reintroducing ads after stabilizing organic baseline at 450+ registrations", //no. this is a process, not an outcome. 
+        "tags": ["marketing-spend", "utm", "organic", "paid", "channel-optimization"]
+    },
+    {
+        "id": "growth-006",
+        "role_family": "growth",
+        "bullet": "Increased technical blog session duration by 30% and decreased bounce rate by 40% through data-driven topic selection and structured content workflows", //okay
+        "tags": ["seo", "content-marketing", "session-duration", "bounce-rate", "blogs"]
+    },
+    {
+        "id": "analytics-001",
+        "role_family": "analytics",
+        "bullet": "Built Metabase dashboards for cross-functional teams, automating performance tracking and cutting reporting turnaround time by 50%", //okay
+        "tags": ["metabase", "dashboards", "reporting", "automation", "analytics"]
+    },
+    {
+        "id": "analytics-002",
+        "role_family": "analytics",
+        "bullet": "Unified lead funnel reporting across two separate databases, saving 2+ hours/day of manual effort and enabling real-time sales visibility for ₹2Cr+/month ad spend", //okay but can be combined with analytics-001
+        "tags": ["funnel", "reporting", "sales", "data-unification", "manual-effort-reduction"]
+    },
+    {
+        "id": "analytics-003",
+        "role_family": "analytics",
+        "bullet": "Standardized UTM framework and campaign tracking across marketing channels, enabling accurate attribution and data-driven spend reallocation", //okay but requires numbers
+        "tags": ["utm", "attribution", "campaign-tracking", "standardization"]
+    },
+    {
+        "id": "analytics-004",
+        "role_family": "analytics",
+        "bullet": "Analyzed WhatsApp journey data to optimize message cadence, shortening user journeys from 10 messages to optimal length after finding sub-1% delivery on tail messages", //okay but not an outcome, but a process. needs to be an outcome. 
+        "tags": ["whatsapp", "journey-optimization", "delivery-rate", "data-analysis"]
+    },
+    {
+        "id": "platform-001",
+        "role_family": "platform",
+        "bullet": "Led website development as program manager, introducing design componentization, code review workflows, and JIRA-based sprint tracking, 2x-ing team delivery velocity", //okay
+        "tags": ["website", "program-management", "jira", "code-review", "delivery-velocity"]
+    },
+    {
+        "id": "platform-002",
+        "role_family": "platform",
+        "bullet": "Designed end-to-end JIRA workflow for website development covering business approval, LoFi/HiFi design, dev, code review, QC, and UAT stages with automated email notifications", //should be combined with platform-001
+        "tags": ["jira", "workflow", "website-development", "qa", "uat", "automation"]
+    },
+    {
+        "id": "platform-003",
+        "role_family": "platform",
+        "bullet": "Introduced code review branch strategy and linter enforcement after a production code deletion incident, establishing single-point-of-control for all merges to prod", //not useful
+        "tags": ["code-review", "git", "linter", "production-safety", "devops"]
+    },
+    {
+        "id": "platform-004",
+        "role_family": "platform",
+        "bullet": "Reduced average design iterations from 11 to 2 per page by creating modular design component repository and standardizing approval workflows", //okay, but can be combined with platform-001 and framed better
+        "tags": ["design-system", "componentization", "approval-workflow", "iteration-reduction"]
+    },
+    {
+        "id": "product-005",
+        "role_family": "product",
+        "bullet": "Built marketer-facing frontend for comms architecture, enabling teams to fetch templates, define events, map comms, and track performance without engineering dependency", //okay but needs impact numbers
+        "tags": ["internal-tooling", "frontend", "self-serve", "marketing-enablement"]
+    },
+    {
+        "id": "product-006",
+        "role_family": "product",
+        "bullet": "Managed blog platform migration including internal link replacement, DNS-level 301 redirects, and routing changes, limiting traffic dip to under 5%", //not worth it for resume. combine with any other. add impact numbers
+        "tags": ["migration", "seo", "redirects", "dns", "traffic-preservation"]
+    },
+    {
+        "id": "ai-004",
+        "role_family": "ai",
+        "bullet": "Deployed GenAI-powered website chatbot using knowledge base for automated query resolution, deflecting 25% of inbound support queries", //missing where this happened
+        "tags": ["genai", "chatbot", "knowledge-base", "support-deflection"]
+    },
+    {
+        "id": "ai-005",
+        "role_family": "ai",
+        "bullet": "Built AI video generation workflow stitching Veo3 8-sec clips into long-form content by auto-decomposing prompts into scripted segments via LLM planning", //okay. needs impact. better combined with miles genAI work.
+        "tags": ["genai", "video-generation", "veo3", "workflow", "content-automation"]
+    },
+    {
+        "id": "ai-006",
+        "role_family": "ai",
+        "bullet": "Created RSS-to-push-notification pipeline using LLM to fetch news, deduplicate against database, generate supportive content, and queue for app distribution", //ai-005 and 006 can be combined. with impact. 
+        "tags": ["rss", "llm", "content-generation", "push-notifications", "automation"]
+    },
+    {
+        "id": "ai-007",
+        "role_family": "ai",
+        "bullet": "Built AI collateral generation workflows enabling marketing team to self-serve videos, images, and news content, significantly reducing go-live time", //same as 005/006
+        "tags": ["genai", "collateral", "marketing", "self-serve", "content-automation"]
+    },
+    {
+        "id": "ai-008",
+        "role_family": "ai",
+        "bullet": "Architected RAG framework app with Supabase + Pinecone + OpenAI, supporting multi-agent creation, session memory, confidence-scored citations, and TDD workflow", //okay
+        "tags": ["rag", "supabase", "pinecone", "openai", "multi-agent", "citations"]
+    },
+    {
+        "id": "ai-009",
+        "role_family": "ai",
+        "bullet": "Designed CoS Bot that extracts tasks from WhatsApp group conversations using LLM parsing, stores them with vector embeddings, and enables semantic querying by leadership", //okay. again, no impact just task.
+        "tags": ["cos-bot", "whatsapp", "task-extraction", "vector-search", "pgvector", "llm"]
+    },
+    {
+        "id": "ops-001",
+        "role_family": "ops",
+        "bullet": "Managed L3 support for Disney's reservation system (Team Box), triaging with Splunk and coordinating issue resolution across onshore and client teams", //okay since this is first job, can add less details. 
+        "tags": ["l3-support", "disney", "splunk", "triage", "incident-management"]
+    },
+    {
+        "id": "ops-002",
+        "role_family": "ops",
+        "bullet": "Resolved critical Disney booking outage by tracing API call logs and identifying misconfigured hotel availability dates for holiday packages, preventing direct revenue loss", //maybe combine with 001
+        "tags": ["incident-resolution", "api-debugging", "revenue-impact", "root-cause-analysis"]
+    },
+    {
+        "id": "ops-003",
+        "role_family": "ops",
+        "bullet": "Automated daily status reports and weekly stakeholder updates using VBA macros during Capgemini CMS migration project", //not required 
+        "tags": ["vba", "automation", "reporting", "stakeholder-communication"]
+    },
+    {
+        "id": "ops-004",
+        "role_family": "ops",
+        "bullet": "Built Kantu automation to replicate web pages across CMS platforms during Willis Towers Watson migration, reducing delivery timeline by 2 weeks out of 5 months", //okay
+        "tags": ["kantu", "automation", "cms-migration", "delivery-acceleration"]
+    },
+    {
+        "id": "growth-007",
+        "role_family": "growth",
+        "bullet": "Introduced virtual meeting booking on website as experiment, validating hypothesis that geography-neutral scheduling boosts conversions, then pivoted sales messaging from 'visit office' to 'schedule meeting'", //too long. not an outcome, just a task. rewrite as outcome.
+        "tags": ["experimentation", "virtual-meetings", "conversion", "messaging", "sales-process"]
+    },
+    {
+        "id": "growth-008",
+        "role_family": "growth",
+        "bullet": "Targeted high-intent website visitors (5+ sessions) via GA client_id tracking and measurement protocol, achieving higher conversion rates than form-fill leads", //okay
+        "tags": ["ga4", "retargeting", "measurement-protocol", "conversion", "high-intent"]
+    },
+    {
+        "id": "growth-009",
+        "role_family": "growth",
+        "bullet": "Shifted marketing spend from LinkedIn to YouTube after data revealed similar conversion rates at lower acquisition cost, and redirected budget to remarketing", //again, a task not an outcome.
+        "tags": ["channel-optimization", "linkedin", "youtube", "remarketing", "cost-per-lead"]
+    },
+    {
+        "id": "martech-007",
+        "role_family": "martech",
+        "bullet": "Set up WebEngage onboarding journeys for 10,000+ new learners, delivering 5 structured emails in the first week covering schedules, joining process, and learning paths", //not a good outcome
+        "tags": ["webengage", "onboarding", "email-journey", "learner-engagement"]
+    },
+    {
+        "id": "martech-008",
+        "role_family": "martech",
+        "bullet": "Integrated HubSpot for B2B org with custom object relations, lead forms with funnel tracking, workflow automations, and RingCentral calling integration", //okay
+        "tags": ["hubspot", "b2b", "crm", "ringcentral", "workflow-automation", "forms"]
+    },
+    {
+        "id": "martech-009",
+        "role_family": "martech",
+        "bullet": "Integrated Fireflink automated testing for WhatsApp and website flows, building a testing matrix that reduced live errors by 60% and QA cycle from 2 days to 3 hours", //okay
+        "tags": ["fireflink", "qa-automation", "testing-matrix", "whatsapp", "regression"]
+    },
+    {
+        "id": "platform-005",
+        "role_family": "platform",
+        "bullet": "Championed mobile-first website redesign after presenting data showing 90%+ traffic from mobile devices, changing creative direction and improving page speed", //not an outcome, just a task
+        "tags": ["mobile-first", "data-driven", "website", "ux", "page-speed"]
+    },
+    {
+        "id": "platform-006",
+        "role_family": "platform",
+        "bullet": "Reworked GA/GTM setup to capture client_id, session_count, and session_id, feeding conversion data back into GA via measurement protocol for closed-loop attribution", //not an outcome, just a task
+        "tags": ["ga4", "gtm", "measurement-protocol", "attribution", "tracking"]
+    },
+    {
+        "id": "program-005",
+        "role_family": "program",
+        "bullet": "Managed video production liaison across learning, marketing, and production teams, achieving 100% on-time delivery across all video content types", //okay
+        "tags": ["video-production", "cross-functional", "liaison", "delivery", "content"]
+    },
+    {
+        "id": "program-006",
+        "role_family": "program",
+        "bullet": "Oversaw capacity planning, budget discussions, SME quality reviews, and specialization launch planning as program management office lead for the learning team", //okay
+        "tags": ["capacity-planning", "budget", "sme", "specialization-launch", "pmo"]
+    },
+    {
+        "id": "product-007",
+        "role_family": "product",
+        "bullet": "Built MereKapade, an AI-powered e-commerce platform using DALL-E 3 and fabric.js that generates personalized t-shirt designs through a theme-based questionnaire flow", //okay
+        "tags": ["ecommerce", "dalle", "fabricjs", "supabase", "side-project", "genai"]
+    },
+    {
+        "id": "product-008",
+        "role_family": "product",
+        "bullet": "Created MyThirdPlace, a community discovery platform with event management, discussion system, payment integration, and 230+ automated tests across unit, integration, and RLS layers", //okay
+        "tags": ["community", "events", "supabase", "rls", "testing", "side-project"]
+    },
+    {
+        "id": "ops-005",
+        "role_family": "ops",
+        "bullet": "Set up error handlers and mobile alerts across n8n automation flows for template blocks, payment failures, and system issues, ensuring real-time incident awareness", //okay but needs to be correlated to other pointers. 
+        "tags": ["n8n", "error-handling", "alerting", "monitoring", "reliability"]
+    },
+    {
+        "id": "ai-010",
+        "role_family": "ai",
+        "bullet": "Built and deployed a webhook-first multi-agent job application system on Railway (FastAPI + Telegram + PostgreSQL) that generates tailored resumes, outreach drafts, and structured application reports, with fixture-based CI gating and 250+ automated tests as of Apr 23, 2026", //added from pingmepi/job-search-agent; strong + defensible from README/TRACKER
+        "tags": ["agentic-ai", "fastapi", "telegram", "postgresql", "railway", "ci-gating", "automation"]
+    },
+    {
+        "id": "product-009",
+        "role_family": "product",
+        "bullet": "Built The Void, a privacy-first voice-notes product in Flutter where notes auto-delete unless rescued, including real-time transcription, encrypted local storage, Supabase auth/sync, and release readiness with 43 app tests + 19 Playwright E2E tests", //added from pingmepi/the-void-app
+        "tags": ["flutter", "voice", "privacy-by-design", "supabase", "playwright", "testing", "mobile"]
+    },
+    {
+        "id": "platform-007",
+        "role_family": "platform",
+        "bullet": "Built MyThirdPlace Admin Panel with role-based access control, analytics, audit logging, and moderation workflows to operationalize community/event management at scale", //added from pingmepi/place-command-center; FLAG: add concrete adoption/ops metric
+        "tags": ["admin-panel", "rbac", "analytics", "audit-logging", "moderation", "supabase"]
+    },
+    {
+        "id": "growth-010",
+        "role_family": "growth",
+        "bullet": "Shipped SEO-optimized lead-gen site for MindFarm (Next.js + Tailwind + JSON-LD + canonical metadata) with inquiry capture API and automated email notifications via MongoDB + Resend", //added from pingmepi/mindfarm; FLAG: add traffic/lead conversion metrics
+        "tags": ["seo", "nextjs", "lead-generation", "structured-data", "mongodb", "resend"]
+    },
+    {
+        "id": "ai-011",
+        "role_family": "ai",
+        "bullet": "FLAG: kalpi-quant-platform is private on GitHub, so I could not verify scope/impact. Keep this slot for a quant/AI systems bullet once metrics and production usage are confirmed", //flagged per instruction
+        "tags": ["flag", "private-repo", "quant", "verification-needed"]
+    },
+    {
+        "id": "product-010",
+        "role_family": "product",
+        "bullet": "FLAG: photo-sorter is private on GitHub, so implementation and outcomes are not verifiable yet. Keep this as a placeholder only if you want a consumer/utility product bullet later", //flagged per instruction
+        "tags": ["flag", "private-repo", "utility-product", "verification-needed"]
+    }
+]
