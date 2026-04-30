@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from core.json_utils import extract_first_json_object as _extract_first_json_object
@@ -256,21 +256,22 @@ def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | in
                 f"{raw_text}\n\n---\n{nudge}",
                 json_mode=True,
             )
+            # Always aggregate token usage across both attempts so telemetry stays
+            # honest, regardless of whether the retry recovered skills.
+            response = replace(
+                response,
+                text=retry_response.text,
+                prompt_tokens=response.prompt_tokens + retry_response.prompt_tokens,
+                completion_tokens=response.completion_tokens + retry_response.completion_tokens,
+                total_tokens=response.total_tokens + retry_response.total_tokens,
+                cost_estimate=response.cost_estimate + retry_response.cost_estimate,
+                generation_id=retry_response.generation_id or response.generation_id,
+            )
             retry_data = _parse_json_object_from_llm_text(retry_response.text)
             retry_normalized = _fill_missing_required_fields(retry_data, raw_text)
             retry_jd = validate_jd_schema(retry_normalized)
             if retry_jd.skills:
                 jd = retry_jd
-                # Aggregate token usage across both attempts so telemetry stays honest.
-                response = type(response)(  # type: ignore[misc]
-                    text=retry_response.text,
-                    model=response.model,
-                    prompt_tokens=response.prompt_tokens + retry_response.prompt_tokens,
-                    completion_tokens=response.completion_tokens + retry_response.completion_tokens,
-                    total_tokens=response.total_tokens + retry_response.total_tokens,
-                    cost_estimate=response.cost_estimate + retry_response.cost_estimate,
-                    generation_id=retry_response.generation_id or response.generation_id,
-                )
         except Exception as retry_err:
             # Retry is a best-effort enhancement; do not fail the run if it errors.
             import logging as _logging

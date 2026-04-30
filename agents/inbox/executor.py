@@ -365,14 +365,28 @@ def _handle_resume_select(
     pack.resume_base = base_path.name
     logger.info("Selected resume: %s", base_path.name)
 
-    # Min-fit-score gate: zero signal across all templates means we have no basis
-    # to tailor a resume. Mark out_of_scope and abort the pipeline rather than
-    # silently picking by lex tie-break and producing a misaligned application.
-    if fit_score <= 0.0:
+    # Min-fit-score gate: a near-zero signal across all templates means we have
+    # no basis to tailor a resume. Mark out_of_scope and abort the pipeline
+    # rather than silently picking by lex tie-break and producing a misaligned
+    # application.
+    #
+    # Two thresholds:
+    #   * skills-mode (real JD skills): zero overlap is the trigger.
+    #   * fallback-mode (jd.skills empty → tokenized role + description): a
+    #     single generic token ("the", a brand name) can yield a tiny positive
+    #     score, so we require at least 15% of the fallback tokens to match
+    #     before treating the JD as in-scope. The fallback ceiling is 0.5 in
+    #     compute_keyword_overlap, so 0.075 == 15% of the cap.
+    fallback_used = bool(details.get("fallback_signal_used"))
+    FALLBACK_MIN_SCORE = 0.075
+    out_of_scope = fit_score <= 0.0 or (fallback_used and fit_score < FALLBACK_MIN_SCORE)
+    if out_of_scope:
+        mode = "fallback" if fallback_used else "skills"
         reason = (
-            f"out_of_scope: zero fit score across all {details.get('candidate_count', 0)} "
-            f"templates for role={pack.jd.role!r} (skills={len(pack.jd.skills)}). "
-            f"No JD signal — aborting before mutation to avoid persona drift."
+            f"out_of_scope: weak fit score ({fit_score:.3f}, mode={mode}) across all "
+            f"{details.get('candidate_count', 0)} templates for role={pack.jd.role!r} "
+            f"(skills={len(pack.jd.skills)}). "
+            f"Insufficient JD signal — aborting before mutation to avoid persona drift."
         )
         logger.warning(reason)
         ctx.out_of_scope = True
@@ -1356,6 +1370,85 @@ _HANDLERS: dict[str, Handler] = {
 # ── Executor ──────────────────────────────────────────────────────────────────
 
 
+def _eval_log_completed(ctx: ExecutionContext) -> bool:
+    """Return True if the eval_log step ran successfully.
+
+    step_results is appended in lockstep with plan.steps until the dispatch
+    loop breaks, so we can pair indices to look up each result's tool.
+    """
+    for i, result in enumerate(ctx.step_results):
+        if i >= len(ctx.plan.steps):
+            break
+        if result.success and ctx.plan.steps[i].tool == TOOL_EVAL_LOG:
+            return True
+    return False
+
+
+def _log_out_of_scope_run(pack: "ApplicationPack", ctx: ExecutionContext) -> None:
+    """Persist a minimal run record when OutOfScopeError aborted the pipeline.
+
+    Without this, task_outcome=out_of_scope never reaches the DB (the eval_log
+    step is unreachable after a fatal-step abort). The regression runner and
+    Telegram pack.run_id lookups depend on the row existing.
+    """
+    from evals.logger import log_run
+
+    latency_ms = int((time.time() - ctx.start_time) * 1000)
+    jd = pack.jd
+    eval_results: dict[str, Any] = {
+        "compile_success": False,
+        "out_of_scope": True,
+        "fit_score": ctx.fit_score_percent,
+        "fit_score_details": ctx.fit_score_details,
+        "llm_total_tokens": ctx.total_tokens,
+        "llm_total_cost": ctx.total_cost,
+        "llm_usage_breakdown": ctx.llm_usage_breakdown,
+    }
+    pack.eval_results = eval_results
+    run_context: dict[str, Any] = {
+        "company": getattr(jd, "company", None),
+        "role": getattr(jd, "role", None),
+        "jd_hash": getattr(jd, "jd_hash", None),
+        "resume_base": pack.resume_base,
+        "fit_score": ctx.fit_score_percent,
+        "fit_score_details": ctx.fit_score_details,
+        "input_mode": ctx.input_mode,
+        "user_vetted": ctx.user_vetted,
+        "out_of_scope": True,
+        "out_of_scope_reason": ctx.out_of_scope_reason,
+        "error_count": len(pack.errors),
+        "aborted_step": next((r.step_name for r in ctx.step_results if not r.success), None),
+    }
+    error_types = classify_error_types(pack.errors)
+    try:
+        pack.run_id = log_run(
+            "inbox",
+            eval_results,
+            run_id=ctx.run_id,
+            job_id=pack.job_id,
+            tokens_used=ctx.total_tokens,
+            cost_estimate=ctx.total_cost,
+            latency_ms=latency_ms,
+            input_mode=ctx.input_mode,
+            skip_upload=ctx.plan.skip_upload,
+            skip_calendar=ctx.plan.skip_calendar,
+            errors=pack.errors,
+            task_type=TASK_TYPE_INBOX_APPLY,
+            task_outcome=derive_task_outcome(
+                status="completed",
+                eval_results=eval_results,
+                errors=pack.errors,
+                out_of_scope=True,
+            ),
+            error_types=error_types,
+            prompt_versions=unique_in_order(ctx.prompt_versions),
+            models_used=unique_in_order(ctx.models_used),
+            context=run_context,
+        )
+    except Exception as exc:
+        logger.error("Failed to persist out-of-scope run record: %s", exc)
+
+
 def _build_step_input(
     step: ToolStep, pack: "ApplicationPack", ctx: ExecutionContext
 ) -> dict[str, Any]:
@@ -1577,5 +1670,11 @@ def execute_plan(
             if step.tool in {TOOL_RESUME_SELECT, TOOL_JD_EXTRACT}:
                 logger.error("Fatal step %s failed — aborting pipeline", step.name)
                 break
+
+    # If the pipeline aborted on out-of-scope before eval_log ran, write a
+    # minimal run record so task_outcome=out_of_scope reaches the DB and the
+    # regression runner / Telegram replies can resolve pack.run_id.
+    if ctx.out_of_scope and not _eval_log_completed(ctx):
+        _log_out_of_scope_run(pack, ctx)
 
     return pack
