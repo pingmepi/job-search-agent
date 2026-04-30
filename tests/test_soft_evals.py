@@ -137,6 +137,17 @@ class TestResumeRelevance:
         score = score_resume_relevance("JD text", "Resume text", repeat=1)
         assert score == 0.0
 
+    def test_fenced_json_is_recovered(self, monkeypatch):
+        """Fenced JSON should still be parsed to a score."""
+        monkeypatch.setattr(
+            "evals.soft.chat_text",
+            lambda *_a, **_k: _llm_response(
+                "```json\n" + json.dumps({"score": 73, "reasoning": "ok"}) + "\n```"
+            ),
+        )
+        score = score_resume_relevance("JD text", "Resume text", repeat=1)
+        assert score == pytest.approx(0.73)
+
 
 # ── JD Extraction Accuracy Tests ──────────────────────────────────
 

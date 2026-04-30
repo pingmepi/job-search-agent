@@ -108,6 +108,7 @@ class TestJDSchemaValidation:
             if calls["count"] == 1:
                 return SimpleNamespace(
                     text="I cannot comply right now.",
+                    model="test-model",
                     prompt_tokens=1,
                     completion_tokens=1,
                     total_tokens=2,
@@ -116,6 +117,7 @@ class TestJDSchemaValidation:
                 )
             return SimpleNamespace(
                 text='{"company":"Acme Corp","role":"Senior PM","location":"Remote","experience_required":"","skills":["Python"],"description":"desc"}',
+                model="test-model",
                 prompt_tokens=3,
                 completion_tokens=2,
                 total_tokens=5,
@@ -145,6 +147,7 @@ class TestJDSchemaValidation:
                 raise RuntimeError("Error code: 429 - Too Many Requests")
             return SimpleNamespace(
                 text='{"company":"Acme Corp","role":"PM","location":"","experience_required":"","skills":[],"description":""}',
+                model="test-model",
                 prompt_tokens=2,
                 completion_tokens=1,
                 total_tokens=3,

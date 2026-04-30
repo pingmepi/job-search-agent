@@ -2,7 +2,9 @@
 
 Every significant decision made during development, with context on what was considered, what was chosen, and why. Cross-referenced with commits, sessions, and BUILD_LOG.md entries.
 
-Last updated: 2026-04-23
+Last updated: 2026-04-30
+
+Note (2026-04-30): ADR numbering was renumbered to resolve a duplicate `ADR-14`. Linear issue search showed no ADR-number citations that would break from this renumber.
 
 ---
 
@@ -279,7 +281,7 @@ context also records the flag for audit/debugging.
 
 ---
 
-## ADR-14: Pre-Commit Hooks Over CI-Only Checks
+## ADR-15: Pre-Commit Hooks Over CI-Only Checks
 
 **Date:** 2026-04-07 | **Commit:** `61de9ea` | **Status:** Active
 
@@ -300,7 +302,7 @@ context also records the flag for audit/debugging.
 
 ---
 
-## ADR-15: Agent Run Logging — Match Inbox Agent Observability
+## ADR-16: Agent Run Logging — Match Inbox Agent Observability
 
 **Date:** 2026-04-07 | **Commit:** `1580c49` | **Status:** Active
 
@@ -318,7 +320,7 @@ context also records the flag for audit/debugging.
 
 ---
 
-## ADR-16: LLM Outputs as Untrusted Data
+## ADR-17: LLM Outputs as Untrusted Data
 
 **Date:** 2026-04-07 | **Commits:** `8abced8`, `1b9d822` | **Status:** Active (ongoing pattern)
 
@@ -342,7 +344,7 @@ context also records the flag for audit/debugging.
 
 ---
 
-## ADR-17: Graceful Degradation with Visibility
+## ADR-18: Graceful Degradation with Visibility
 
 **Date:** 2026-02-17 (pattern) → 2026-04-07 (refined) | **Status:** Active
 
@@ -363,6 +365,65 @@ except Exception as exc:
 
 ---
 
+## ADR-19: Out-of-Scope Handling Is a Pipeline Gate, Not a Prompt Hint
+
+**Date:** 2026-04-29 | **Status:** Active
+
+**Context:** An out-of-scope JD ("Engenheiro De Vendas") still produced a full mutated resume and collateral package with persona drift. Prompt-only constraints were not sufficient.
+
+**Considered:**
+- **Prompt-only refusal behavior** — ask mutation/generation prompts to self-police out-of-scope input.
+- **Post-hoc operator review only** — let pipeline run, rely on human catch.
+- **Pipeline gate before expensive downstream steps** — compute fit, then hard-stop as `out_of_scope` when signal is absent.
+
+**Decision:** Out-of-scope must be enforced as a deterministic pipeline control, not left to prompt behavior. The pipeline can and should terminate before mutation/collateral when fit signal is below floor.
+
+**References:** `agents/inbox/resume.py`, `agents/inbox/executor.py`, `BUILD_LOG.md` (2026-04-29/30 entries)
+
+---
+
+## ADR-20: Mode-Aware Resume-Fit Floor for Selection
+
+**Date:** 2026-04-30 | **Status:** Active
+
+**Context:** Resume selection uses two scoring modes: primary keyword overlap and fallback token overlap. A single static minimum threshold penalized fallback mode unfairly.
+
+**Decision:** Use a mode-aware floor in selection (`FALLBACK_MIN_SCORE = 0.075`) and mark no-signal cases as `out_of_scope` instead of proceeding via lexicographic tie-break on zero-signal inputs.
+
+**Consequence:** Out-of-scope and low-signal JDs fail fast, reducing persona drift and unnecessary LLM/tool spend.
+
+**References:** `agents/inbox/resume.py`, `agents/inbox/executor.py`
+
+---
+
+## ADR-21: Soft-Eval Parser Recovery for Fenced JSON
+
+**Date:** 2026-04-30 | **Commit:** `69ebd60` | **Status:** Active
+
+**Context:** Soft eval prompts request JSON-only responses, but provider output occasionally included fenced code blocks. Strict `json.loads` failure caused historical soft scores to collapse to `0.0`.
+
+**Decision:** Keep `json_mode=True`, then recover the first valid JSON object from mixed text before failing closed. This preserves robustness without weakening judge prompt discipline.
+
+**Consequence:** Soft score signals are now usable for gating and regression assertions.
+
+**References:** `evals/soft.py`, `tests/test_soft_evals.py`
+
+---
+
+## ADR-22: Regression Suite Must Assert Soft Floors on Core Cases
+
+**Date:** 2026-04-30 | **Commit:** `69ebd60` | **Status:** Active
+
+**Context:** Structural/hard checks passed even when semantic quality collapsed. Purely structural regression checks failed to catch this failure class.
+
+**Decision:** Core happy-path regression cases now carry expected soft-score floors (`min_soft_resume_relevance`, `min_soft_jd_accuracy`), with preflight env validation for clean failure behavior.
+
+**Consequence:** Regression runs now detect semantic quality regressions earlier and with clearer diagnostics.
+
+**References:** `evals/regression_runner.py`, `evals/regression_dataset.py`, `tests/test_regression_runner.py`
+
+---
+
 ## Decision Index
 
 | # | Decision | Date | Trigger | Key Commit |
@@ -380,13 +441,12 @@ except Exception as exc:
 | 11 | Per-bullet truthfulness | 2026-04-02 | False positive rate | `6177cee` |
 | 12 | Remove single-page enforcement | 2026-04-02 | Complexity vs value | `22eb3bf` |
 | 13 | Single OAuth token | 2026-04-06 | User feedback | `8814640` |
-| 14 | Pre-commit hooks | 2026-04-07 | Zero quality gates | `61de9ea` |
-| 15 | Agent run logging | 2026-04-07 | Zero observability | `1580c49` |
-| 16 | LLM outputs as untrusted data | 2026-04-07 | 3 production bugs | `8abced8` |
-| 17 | Graceful degradation + visibility | 2026-04-07 | Silent quality loss | `1b9d822` |
-| 18 | Connection pooling | 2026-04-08 | Per-query TCP churn | `aa7d491` |
-| 19 | SSRF protection on URL fetch | 2026-04-08 | Cloud metadata exposure risk | `aa7d491` |
-| 20 | Chat ID allowlist | 2026-04-08 | Unauthorized bot usage/cost | `aa7d491` |
-| 21 | JSON token storage (not pickle) | 2026-04-08 | RCE via pickle deserialization | `aa7d491` |
-| 22 | Shared JSON extraction utility | 2026-04-08 | Duplicated logic, divergent bugfixes | `aa7d491` |
-| 23 | Decompose eval handler | 2026-04-08 | 240-line function, untestable parts | `aa7d491` |
+| 14 | Telegram inbox submissions treated as manually vetted | 2026-04-23 | Multi-source intake provenance | — |
+| 15 | Pre-commit hooks | 2026-04-07 | Zero quality gates | `61de9ea` |
+| 16 | Agent run logging | 2026-04-07 | Zero observability | `1580c49` |
+| 17 | LLM outputs as untrusted data | 2026-04-07 | 3 production bugs | `8abced8` |
+| 18 | Graceful degradation + visibility | 2026-04-07 | Silent quality loss | `1b9d822` |
+| 19 | Out-of-scope as pipeline gate | 2026-04-29 | Persona-mutation incident | — |
+| 20 | Mode-aware fit floor | 2026-04-30 | Zero-signal tie-break risk | `69ebd60` |
+| 21 | Fenced-JSON soft-eval recovery | 2026-04-30 | Soft scores stuck at 0.0 | `69ebd60` |
+| 22 | Soft floors in regression core cases | 2026-04-30 | Hard checks missed semantic regressions | `69ebd60` |

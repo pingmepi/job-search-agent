@@ -3,7 +3,7 @@ Below is a **build-ready PRD** structured for:
 * Codex / Augment / Antigravity consumption
 * Test-driven development
 * Linear task breakdown
-* Multi-agent architecture (2 + 1 agents)
+* Multi-agent architecture (4 agents: Inbox, Profile, Follow-Up, Article)
 * Eval-first enforcement
 
 This is explicit. No vibes.
@@ -12,7 +12,7 @@ This is explicit. No vibes.
 
 # 📄 PRD v3 — Multi-Agent Job Application System
 
-## Project Name: `inbox-agent`
+## Project Name: `job-search-agent` (formerly `inbox-agent`)
 
 ---
 
@@ -31,7 +31,7 @@ Build a deterministic, eval-driven, multi-agent system that:
 
 # 2. Agent Architecture
 
-We are building **three agents**.
+We are building **four agents**: Inbox (Executor), Profile, Follow-Up, and Article. See `docs/PROJECT_OVERVIEW.md` §2 for the canonical agent map.
 
 ---
 

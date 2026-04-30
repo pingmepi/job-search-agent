@@ -272,15 +272,15 @@ Every LLM-powered system needs a way to know if it's getting better or worse. Wi
 
 12 curated fixtures. 5 thresholds. Runs via `python main.py ci-gate`. Blocks release if any threshold fails.
 
-**Current metrics (2026-04-08):**
+**Current metrics (2026-04-30):**
 
 | Metric | Threshold | Actual |
 |--------|-----------|--------|
 | Compile success | ≥ 95% | 100% |
 | Forbidden claims | = 0 | 0 |
 | Edit violations | = 0 | 0 |
-| Avg cost | ≤ $0.15 | $0.07 |
-| Avg latency | ≤ 60s | 33s |
+| Avg cost | ≤ $0.15 | $0.0683 |
+| Avg latency | ≤ 60s | 33.4s |
 
 ### Per-Run Telemetry
 
@@ -299,23 +299,24 @@ Every pipeline run logs:
 
 | Category | Metric | Value |
 |----------|--------|-------|
-| Timeline | Duration | 51 days (2026-02-16 → 2026-04-08) |
-| Code | Commits | 51 |
-| Tests | Passing | 251 |
-| Tests | Skipped (need DB) | 37 |
+| Timeline | Initial build duration | 51 days (2026-02-16 → 2026-04-08); active development continues |
+| Code | Commits | 114 |
+| Tests | Passing | 318 |
+| Tests | Skipped (need DB) | 39 |
+| Tests | Deselected (`-m "not live"`) | 2 |
 | Milestones | Count | 14 |
 | Bugs fixed | Count | 24 (with root cause + fix documented) |
-| Architecture | ADRs documented | 23 |
+| Architecture | ADRs documented | 22 |
 | Security | Fixes | 7 |
 | Agents | Count | 4 (Inbox, Profile, Follow-Up, Article) |
-| Pipeline | Steps | 12 |
+| Pipeline | Steps | 13 |
 | Resume variants | Count | 5 (AI, Technical, Growth, Agentic, Founders) |
 | Bullet bank | Entries | 56 across 8 role families |
 | Tools tracked | Count | 36 |
 | CI gate | Fixtures | 12 |
 | CI gate | Status | PASSED (all 5 thresholds green) |
-| Cost | Per run | $0.07 avg |
-| Latency | Per run | 33s avg |
+| Cost | Per run | $0.0683 avg |
+| Latency | Per run | 33.4s avg |
 | Compile | Success rate | 100% on fixtures |
 
 ---
@@ -353,8 +354,9 @@ The LLM prompts are maybe 5 files. The other 95% is: error boundaries, retry log
 ## 8. What's Next
 
 ### Immediate
-- **Follow-Up Agent UX:** Runner exists with full logging. Adapter only shows status — needs `/followup` command to generate and show drafts.
-- **Draft cost tracking:** Draft LLM calls don't capture `generation_id`. Costs always show $0.00.
+- **Out-of-scope gate completion:** gates 1/2/4/5 shipped after the persona-mutation incident; gate #3 (JD-role allowlist) is still pending.
+- **Eval artifact persistence:** `evals/report.py` should become DB-first with filesystem fallback to survive Railway redeploys.
+- **Follow-Up Agent UX:** runner exists with full logging; adapter still needs a draft-generation-first `/followup` flow.
 
 ### Medium-term
 - **Conversion tracking:** The real metric. Are tailored resumes getting more interviews? Need volume to measure.
@@ -371,7 +373,7 @@ The LLM prompts are maybe 5 files. The other 95% is: error boundaries, retry log
 ## 9. Repository
 
 - **GitHub:** `pingmepi/job-search-agent`
-- **Docs:** `BUILD_LOG.md` (evolution), `docs/decisions.md` (23 ADRs), `TRACKER.md` (status)
+- **Docs:** `BUILD_LOG.md` (evolution), `docs/decisions.md` (22 ADRs), `TRACKER.md` (status)
 - **Run tests:** `.venv/bin/pytest -q -m "not live"`
 - **Run CI gate:** `python main.py ci-gate`
 - **Live E2E:** `OPENROUTER_API_KEY=... pytest -m live`

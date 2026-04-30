@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from core.json_utils import extract_first_json_object as _extract_first_json_object
@@ -217,7 +217,7 @@ def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | in
     from core.llm import chat_text
     from core.prompts import load_prompt
 
-    system_prompt = load_prompt("jd_extract", version=1)
+    system_prompt = load_prompt("jd_extract", version=2)
     response = None
     last_error: Exception | None = None
     for attempt in range(1, 4):
@@ -238,6 +238,47 @@ def extract_jd_with_usage(raw_text: str) -> tuple[JDSchema, dict[str, float | in
         if last_error:
             raise last_error
         raise RuntimeError("JD extraction failed without a concrete error.")
+
+    # If skills came back empty on a non-trivial JD, retry ONCE with a stronger
+    # nudge. Skill-sparse extraction is the dominant cause of zero-fit-score
+    # resume selection (see run-144b1afaef4a RCA).
+    if not jd.skills and len(raw_text or "") > 200:
+        nudge = (
+            "Your previous extraction returned an empty `skills` array. "
+            "Re-read the JD carefully. Extract at least 3 skills covering tools, "
+            "methodologies, domains, AND functional responsibilities. The JD may "
+            "be in a non-English language — extract regardless of source language. "
+            "Return the same JSON schema."
+        )
+        try:
+            retry_response = chat_text(
+                system_prompt,
+                f"{raw_text}\n\n---\n{nudge}",
+                json_mode=True,
+            )
+            # Always aggregate token usage across both attempts so telemetry stays
+            # honest, regardless of whether the retry recovered skills.
+            response = replace(
+                response,
+                text=retry_response.text,
+                prompt_tokens=response.prompt_tokens + retry_response.prompt_tokens,
+                completion_tokens=response.completion_tokens + retry_response.completion_tokens,
+                total_tokens=response.total_tokens + retry_response.total_tokens,
+                cost_estimate=response.cost_estimate + retry_response.cost_estimate,
+                generation_id=retry_response.generation_id or response.generation_id,
+            )
+            retry_data = _parse_json_object_from_llm_text(retry_response.text)
+            retry_normalized = _fill_missing_required_fields(retry_data, raw_text)
+            retry_jd = validate_jd_schema(retry_normalized)
+            if retry_jd.skills:
+                jd = retry_jd
+        except Exception as retry_err:
+            # Retry is a best-effort enhancement; do not fail the run if it errors.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "JD skills-empty retry failed (non-fatal): %s", retry_err
+            )
 
     assert response is not None
     usage = {

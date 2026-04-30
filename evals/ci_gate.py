@@ -131,10 +131,12 @@ def _report_db_stats() -> None:
     """Print live DB metrics as informational output (non-blocking)."""
     try:
         with get_conn() as conn:
-            rows = conn.execute(
+            cur = conn.cursor()
+            cur.execute(
                 "SELECT eval_results, cost_estimate, latency_ms"
                 " FROM runs WHERE eval_results IS NOT NULL"
-            ).fetchall()
+            )
+            rows = cur.fetchall()
     except Exception as exc:
         print(f"ℹ️  [db] Could not read run history: {exc}")
         return

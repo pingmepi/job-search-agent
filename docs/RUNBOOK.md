@@ -1,6 +1,7 @@
-# Job Search Agent - Runbook
+# Job Search Agent - Operational Runbook
 
-This document explains how to run the full `job-search-agent` project in webhook mode (no Telegram polling).
+This is the canonical operator runbook for setup, runtime, and debugging.
+For architecture and system narrative, use `docs/PROJECT_OVERVIEW.md`.
 
 ## Related Operational Docs
 
@@ -257,6 +258,11 @@ python main.py regression-run
 python main.py regression-run --json
 python main.py regression-run --case text_ai_pm_core
 ```
+
+Notes:
+- `regression-run` executes the real pipeline and requires both `DATABASE_URL` and `OPENROUTER_API_KEY`.
+- Core happy-path regression cases now include a soft quality floor (`min_soft_resume_relevance >= 0.51`).
+- Soft eval parsing is hardened to recover fenced/mixed JSON judge responses before failing closed to `0.0`.
 
 Runner behavior:
 

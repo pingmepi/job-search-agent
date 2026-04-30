@@ -15,23 +15,30 @@ def test_dataset_has_minimum_cases():
 
 def test_run_regression_with_mock_executor_passes():
     def _executor(case):
+        # Pick the first allowed outcome from the case so the mock satisfies
+        # each case's expected task_outcome_in (e.g. out_of_scope cases).
+        allowed = case.get("expected", {}).get("task_outcome_in") or ["success"]
+        outcome = allowed[0]
+        compile_success = bool(case.get("expected", {}).get("compile_success", True))
         return {
             "run_id": f"run-{case['id']}",
             "pack_eval_results": {
-                "compile_success": True,
+                "compile_success": compile_success,
                 "forbidden_claims_count": 0,
                 "edit_scope_violations": 0,
                 "keyword_coverage": 0.8,
+                "soft_resume_relevance": 0.8,
             },
             "pack_errors": [],
             "db_run": {
-                "task_outcome": "success",
+                "task_outcome": outcome,
                 "error_types": [],
                 "eval_results": {
-                    "compile_success": True,
+                    "compile_success": compile_success,
                     "forbidden_claims_count": 0,
                     "edit_scope_violations": 0,
                     "keyword_coverage": 0.8,
+                    "soft_resume_relevance": 0.8,
                 },
             },
         }
@@ -96,6 +103,37 @@ def test_run_regression_assertion_failure_surface():
     assert any("compile_success" in msg for msg in report["results"][0]["failures"])
 
 
+def test_run_regression_soft_relevance_floor_failure():
+    def _executor(case):
+        return {
+            "run_id": "run-soft-fail",
+            "pack_eval_results": {
+                "compile_success": True,
+                "forbidden_claims_count": 0,
+                "edit_scope_violations": 0,
+                "keyword_coverage": 0.8,
+                "soft_resume_relevance": 0.2,
+            },
+            "pack_errors": [],
+            "db_run": {
+                "task_outcome": "partial",
+                "error_types": [],
+                "eval_results": {
+                    "compile_success": True,
+                    "forbidden_claims_count": 0,
+                    "edit_scope_violations": 0,
+                    "keyword_coverage": 0.8,
+                    "soft_resume_relevance": 0.2,
+                },
+            },
+        }
+
+    report = run_regression(case_id="text_ai_pm_core", executor=_executor)
+    assert report["failed"] == 1
+    assert report["results"][0]["passed"] is False
+    assert any("soft_resume_relevance" in msg for msg in report["results"][0]["failures"])
+
+
 def test_format_regression_report_renders_error_cells():
     report = {
         "suite": "inbox_regression_v1",
@@ -124,3 +162,25 @@ def test_format_regression_report_renders_error_cells():
     assert "| `a` | PASS | success | [] |" in output
     assert "| `b` | FAIL | - | null |" in output
     assert "execution_error: boom" in output
+
+
+def test_run_regression_preflight_for_missing_runtime_env(monkeypatch):
+    class _Settings:
+        database_url = ""
+        openrouter_api_key = ""
+
+    monkeypatch.setattr("evals.regression_runner.get_settings", lambda: _Settings())
+    monkeypatch.setattr(
+        "evals.regression_runner._pipeline_executor",
+        lambda _case: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
+
+    report = run_regression(case_id="text_ai_pm_core")
+
+    assert report["total_cases"] == 1
+    assert report["failed"] == 1
+    assert report["results"][0]["passed"] is False
+    assert report["results"][0]["run_id"] is None
+    assert any("preflight_error:" in msg for msg in report["results"][0]["failures"])
+    assert any("DATABASE_URL" in msg for msg in report["results"][0]["failures"])
+    assert any("OPENROUTER_API_KEY" in msg for msg in report["results"][0]["failures"])

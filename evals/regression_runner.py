@@ -6,6 +6,7 @@ import json
 import time
 from typing import Any, Callable
 
+from core.config import get_settings
 from evals.regression_dataset import RegressionCase, get_regression_cases
 
 
@@ -39,6 +40,17 @@ def _pipeline_executor(case: RegressionCase) -> dict[str, Any]:
     }
 
 
+def _missing_runtime_config() -> list[str]:
+    """Return a list of required runtime env vars that are currently missing."""
+    settings = get_settings()
+    missing: list[str] = []
+    if not settings.database_url.strip():
+        missing.append("DATABASE_URL")
+    if not settings.openrouter_api_key.strip():
+        missing.append("OPENROUTER_API_KEY")
+    return missing
+
+
 def _evaluate_case(case: RegressionCase, observed: dict[str, Any]) -> tuple[bool, list[str]]:
     expected = case.get("expected", {})
     failures: list[str] = []
@@ -50,9 +62,7 @@ def _evaluate_case(case: RegressionCase, observed: dict[str, Any]) -> tuple[bool
 
     allowed_outcomes = expected.get("task_outcome_in")
     if allowed_outcomes is not None and outcome not in allowed_outcomes:
-        failures.append(
-            f"task_outcome expected in {allowed_outcomes}, got {outcome!r}"
-        )
+        failures.append(f"task_outcome expected in {allowed_outcomes}, got {outcome!r}")
 
     if "compile_success" in expected:
         got_compile = eval_results.get("compile_success")
@@ -79,6 +89,18 @@ def _evaluate_case(case: RegressionCase, observed: dict[str, Any]) -> tuple[bool
         if got is None or float(got) < float(min_keyword):
             failures.append(f"keyword_coverage expected >= {min_keyword}, got {got!r}")
 
+    min_soft_resume = expected.get("min_soft_resume_relevance")
+    if min_soft_resume is not None:
+        got = eval_results.get("soft_resume_relevance")
+        if got is None or float(got) < float(min_soft_resume):
+            failures.append(f"soft_resume_relevance expected >= {min_soft_resume}, got {got!r}")
+
+    min_soft_jd = expected.get("min_soft_jd_accuracy")
+    if min_soft_jd is not None:
+        got = eval_results.get("soft_jd_accuracy")
+        if got is None or float(got) < float(min_soft_jd):
+            failures.append(f"soft_jd_accuracy expected >= {min_soft_jd}, got {got!r}")
+
     required_error_types = expected.get("require_error_types")
     if required_error_types:
         observed_types = set(error_types or [])
@@ -104,6 +126,35 @@ def run_regression(
     cases = get_regression_cases()
     if case_id:
         cases = [_case_by_id(cases, case_id)]
+
+    # Default executor runs the real pipeline, which requires DB + LLM auth.
+    # Fail fast with a clear message instead of emitting one noisy execution
+    # error per case.
+    if executor is None:
+        missing = _missing_runtime_config()
+        if missing:
+            reason = "missing required env var(s): " + ", ".join(missing)
+            results = [
+                {
+                    "id": case["id"],
+                    "description": case.get("description", ""),
+                    "passed": False,
+                    "duration_ms": 0,
+                    "failures": [f"preflight_error: {reason}"],
+                    "run_id": None,
+                    "task_outcome": None,
+                    "error_types": None,
+                }
+                for case in cases
+            ]
+            return {
+                "suite": "inbox_regression_v1",
+                "total_cases": len(results),
+                "passed": 0,
+                "failed": len(results),
+                "duration_ms": 0,
+                "results": results,
+            }
 
     exec_fn = executor or _pipeline_executor
     started = time.time()
@@ -167,7 +218,9 @@ def format_regression_report(report: dict[str, Any]) -> str:
         status = "PASS" if row["passed"] else "FAIL"
         outcome = row.get("task_outcome") or "-"
         error_types = row.get("error_types")
-        error_cell = "null" if error_types is None else (", ".join(error_types) if error_types else "[]")
+        error_cell = (
+            "null" if error_types is None else (", ".join(error_types) if error_types else "[]")
+        )
         lines.append(f"| `{row['id']}` | {status} | {outcome} | {error_cell} |")
         if row.get("failures"):
             for failure in row["failures"]:
