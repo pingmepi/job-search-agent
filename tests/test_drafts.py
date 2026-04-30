@@ -16,6 +16,7 @@ from agents.inbox.drafts import (
 def _fake_llm_response(text: str) -> SimpleNamespace:
     return SimpleNamespace(
         text=text,
+        model="test-model",
         prompt_tokens=100,
         completion_tokens=50,
         total_tokens=150,

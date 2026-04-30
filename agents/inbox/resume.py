@@ -289,12 +289,139 @@ def _skill_matches_index(
     return False
 
 
+_JD_SIGNAL_STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "you",
+        "are",
+        "our",
+        "your",
+        "this",
+        "that",
+        "will",
+        "from",
+        "have",
+        "has",
+        "had",
+        "into",
+        "their",
+        "they",
+        "them",
+        "then",
+        "than",
+        "but",
+        "all",
+        "any",
+        "can",
+        "may",
+        "who",
+        "what",
+        "when",
+        "where",
+        "why",
+        "how",
+        "ours",
+        "yours",
+        "team",
+        "role",
+        "work",
+        "join",
+        "looking",
+        "seeking",
+        "must",
+        "should",
+        "would",
+        "could",
+        "well",
+        "more",
+        "less",
+        "very",
+        "also",
+        "just",
+        "able",
+        "across",
+        "about",
+        "above",
+        "below",
+        "between",
+        "within",
+        "while",
+        "which",
+        "these",
+        "those",
+        "such",
+        "etc",
+        # Portuguese/Spanish high-frequency stopwords
+        "para",
+        "como",
+        "esse",
+        "essa",
+        "isso",
+        "aqui",
+        "isto",
+        "ser",
+        "ter",
+        "uma",
+        "uns",
+        "umas",
+        "dos",
+        "das",
+        "que",
+        "por",
+        "pelo",
+        "pela",
+        "pelos",
+        "pelas",
+        "del",
+        "los",
+        "las",
+        "una",
+        "unos",
+        "unas",
+        "con",
+        "sin",
+        "sus",
+    }
+)
+
+
+def _tokenize_jd_signal(jd_role: str | None, jd_description: str | None) -> list[str]:
+    """Extract candidate keyword tokens from JD role + description.
+
+    Used as a fallback signal for resume selection when jd.skills is empty
+    (e.g., LLM extraction returned [] for a non-English or skill-sparse JD).
+
+    Returns deduplicated lowercase tokens >= 4 chars, excluding common stopwords.
+    """
+    parts = []
+    if jd_role:
+        parts.append(str(jd_role))
+    if jd_description:
+        parts.append(str(jd_description))
+    raw = " ".join(parts).lower()
+    if not raw:
+        return []
+    tokens = re.findall(r"[a-zÀ-ſ][a-zÀ-ſ0-9+/\-]{2,}", raw)
+    seen: set[str] = set()
+    out: list[str] = []
+    for tok in tokens:
+        if len(tok) < 4 or tok in _JD_SIGNAL_STOPWORDS or tok in seen:
+            continue
+        seen.add(tok)
+        out.append(tok)
+    return out
+
+
 def compute_keyword_overlap(
     jd_skills: list[str],
     tex_content: str,
     *,
     skill_index: dict[str, Any] | None = None,
     resume_name: str | None = None,
+    fallback_signal: list[str] | None = None,
 ) -> float:
     """Compute fraction of JD skills found in resume text.
 
@@ -302,9 +429,21 @@ def compute_keyword_overlap(
     index-based matching (synonym expansion + indexed skills) in
     addition to text-based matching. A skill counts as matched if
     either method finds it.
+
+    When jd_skills is empty and fallback_signal is provided (tokens from
+    jd.role + jd.description), score against the fallback tokens instead.
+    Fallback scores are bounded to [0, 0.5] so they never beat a real
+    skills-based match.
     """
     if not jd_skills:
-        return 0.0
+        if not fallback_signal:
+            return 0.0
+        tex_normalized = _normalize_text(tex_content)
+        matches = sum(1 for tok in fallback_signal if tok in tex_normalized)
+        # Cap fallback at 0.5 so any genuine skills overlap from a non-empty
+        # jd_skills run still wins. Inside the fallback regime this still gives
+        # a deterministic ranking signal across templates.
+        return min(0.5, matches / max(len(fallback_signal), 1))
     tex_normalized = _normalize_text(tex_content)
 
     # Load index data for this resume if available
@@ -350,8 +489,19 @@ def select_base_resume_with_details(
     resumes_dir: Path,
     *,
     skill_index: dict[str, Any] | None = None,
+    jd_role: str | None = None,
+    jd_description: str | None = None,
 ) -> tuple[Path, float, dict[str, Any]]:
-    """Select best resume with deterministic tie-breaking and provenance details."""
+    """Select best resume with deterministic tie-breaking and provenance details.
+
+    When jd_skills is empty, falls back to tokenizing jd_role + jd_description
+    so we still get a ranking signal instead of every template scoring 0.0.
+    Fallback scores are capped at 0.5 (see compute_keyword_overlap).
+    """
+    fallback_signal: list[str] = []
+    if not jd_skills:
+        fallback_signal = _tokenize_jd_signal(jd_role, jd_description)
+
     best_path: Optional[Path] = None
     best_score = -1.0
     candidate_scores: list[tuple[Path, float]] = []
@@ -363,6 +513,7 @@ def select_base_resume_with_details(
             content,
             skill_index=skill_index,
             resume_name=tex_file.name,
+            fallback_signal=fallback_signal,
         )
         candidate_scores.append((tex_file, score))
         if score > best_score:
@@ -407,6 +558,8 @@ def select_base_resume_with_details(
             {"resume": path.name, "score": round(float(score), 6)}
             for path, score in sorted(candidate_scores, key=lambda x: x[0].name)
         ],
+        "fallback_signal_used": bool(fallback_signal),
+        "fallback_signal_count": len(fallback_signal),
     }
     return best_path, best_score, details
 

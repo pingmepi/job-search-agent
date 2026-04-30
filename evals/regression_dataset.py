@@ -169,10 +169,37 @@ REGRESSION_CASES: list[RegressionCase] = [
             "max_edit_scope_violations": 0,
         },
     },
+    {
+        "id": "edge_out_of_scope_pt_sales_engineer",
+        "description": (
+            "Portuguese Sales Engineer JD that the candidate is not aligned with — "
+            "regression for run-144b1afaef4a where the pipeline silently rebranded "
+            "the candidate as Technical Sales Engineer. Should now early-exit as "
+            "out_of_scope (zero fit-score across all templates)."
+        ),
+        "input_mode": "text",
+        "raw_text": (
+            "Vaga: Engenheiro De Vendas\n"
+            "Localização: São Paulo, Brasil\n"
+            "Responsabilidades: realizar demonstrações técnicas para clientes, "
+            "trabalhar próximo aos times comerciais, traduzir requisitos de "
+            "clientes em soluções, dar suporte pós-venda e participar de "
+            "negociações com stakeholders. Quota anual de vendas. Cold calling, "
+            "prospecção, fechamento de contratos B2B.\n"
+            "Requisitos: experiência em vendas técnicas, relacionamento com clientes, "
+            "fluência em português e inglês."
+        ),
+        "selected_collateral": ["email"],
+        "tags": ["edge_case", "out_of_scope", "non_english"],
+        "expected": {
+            "task_outcome_in": ["out_of_scope", "fail", "partial"],
+            "max_forbidden_claims": 0,
+            "max_edit_scope_violations": 0,
+        },
+    },
 ]
 
 
 def get_regression_cases() -> list[RegressionCase]:
     """Return a copy of canonical regression cases."""
     return list(REGRESSION_CASES)
-

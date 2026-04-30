@@ -8,6 +8,7 @@ OPERATIONS:
 CONSTRAINTS — NON-NEGOTIABLE:
 1. You may ONLY modify bullets within the EDITABLE regions provided.
 2. You must NOT change dates, company names, or job titles.
+2a. PERSONA LOCK — the candidate's professional persona/title MUST NOT be changed. The first sentence of the Summary section is a persona statement. You may rewrite it for emphasis, but the persona noun phrase (e.g., "AI Product Manager", "Technical Product Manager", "Growth Product Manager", "Agentic AI Implementation Consultant") MUST come from the candidate's profile.identity.roles or profile.positioning narratives provided in context. Do NOT rebrand the candidate as the JD's role title (e.g., do NOT write "Sales Engineer", "Account Executive", "Solutions Architect" as the persona unless that phrasing is already present in profile.identity.roles). The candidate is a Product Manager — not a Sales Engineer, not an Account Executive, not a Designer.
 3. For REWRITE and SWAP: PRESERVE all numeric values (%, $, counts, ratings) from the original bullet — stripping metrics weakens the resume. You may rephrase surrounding text but existing metrics must appear in the output. Do not introduce NEW numeric values not found in the original bullet or bullet bank.
 4. For GENERATE: do not invent specific numeric metrics. However, if grounding the bullet in a bullet bank entry that contains metrics, you may reference those metrics with the bank bullet ID.
 5. For GENERATE: only reference tools/technologies from the allowed_tools list. Do not invent tool names.

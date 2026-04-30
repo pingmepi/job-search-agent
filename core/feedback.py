@@ -17,6 +17,7 @@ ERROR_TYPE_UNKNOWN = "unknown"
 TASK_OUTCOME_SUCCESS = "success"
 TASK_OUTCOME_PARTIAL = "partial"
 TASK_OUTCOME_FAIL = "fail"
+TASK_OUTCOME_OUT_OF_SCOPE = "out_of_scope"
 
 TASK_TYPE_INBOX_APPLY = "inbox_apply"
 TASK_TYPE_FOLLOWUP = "followup"
@@ -46,6 +47,7 @@ VALID_TASK_OUTCOMES = {
     TASK_OUTCOME_SUCCESS,
     TASK_OUTCOME_PARTIAL,
     TASK_OUTCOME_FAIL,
+    TASK_OUTCOME_OUT_OF_SCOPE,
 }
 
 VALID_TASK_TYPES = {
@@ -122,8 +124,11 @@ def derive_task_outcome(
     status: str,
     eval_results: dict[str, Any] | None = None,
     errors: list[str] | None = None,
+    out_of_scope: bool = False,
 ) -> str:
-    """Derive success/partial/fail from existing pipeline signals."""
+    """Derive success/partial/fail/out_of_scope from existing pipeline signals."""
+    if out_of_scope:
+        return TASK_OUTCOME_OUT_OF_SCOPE
     normalized_status = (status or "").strip().lower()
     results = eval_results or {}
     has_errors = bool(errors)

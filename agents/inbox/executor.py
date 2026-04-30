@@ -20,8 +20,8 @@ import shutil
 import tempfile
 import time
 from collections import Counter
-from functools import lru_cache
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -66,6 +66,14 @@ logger = logging.getLogger(__name__)
 
 
 # ── Step result ───────────────────────────────────────────────────────────────
+
+
+class OutOfScopeError(Exception):
+    """Raised when the JD has no overlap with any candidate resume template.
+
+    Signals the pipeline should abort gracefully and emit task_outcome=out_of_scope
+    rather than mutate a misaligned template into a misleading application.
+    """
 
 
 @dataclass
@@ -116,6 +124,8 @@ class ExecutionContext:
     user_vetted: bool = False
     step_results: list[StepResult] = field(default_factory=list)
     mutation_summary: dict[str, Any] = field(default_factory=dict)
+    out_of_scope: bool = False
+    out_of_scope_reason: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -345,6 +355,8 @@ def _handle_resume_select(
         pack.jd.skills,
         ctx.settings.resumes_dir,
         skill_index=skill_index,
+        jd_role=pack.jd.role,
+        jd_description=pack.jd.description,
     )
     ctx.base_path = base_path
     ctx.fit_score = fit_score
@@ -352,6 +364,21 @@ def _handle_resume_select(
     ctx.fit_score_percent = int(round(fit_score * 100))
     pack.resume_base = base_path.name
     logger.info("Selected resume: %s", base_path.name)
+
+    # Min-fit-score gate: zero signal across all templates means we have no basis
+    # to tailor a resume. Mark out_of_scope and abort the pipeline rather than
+    # silently picking by lex tie-break and producing a misaligned application.
+    if fit_score <= 0.0:
+        reason = (
+            f"out_of_scope: zero fit score across all {details.get('candidate_count', 0)} "
+            f"templates for role={pack.jd.role!r} (skills={len(pack.jd.skills)}). "
+            f"No JD signal — aborting before mutation to avoid persona drift."
+        )
+        logger.warning(reason)
+        ctx.out_of_scope = True
+        ctx.out_of_scope_reason = reason
+        pack.errors.append(reason)
+        raise OutOfScopeError(reason)
     return pack
 
 
@@ -1075,7 +1102,12 @@ def _persist_artifacts(
 
     artifact_paths: dict[str, str] = {}
     jd = pack.jd
-    task_outcome = derive_task_outcome(status="completed", eval_results=eval_results, errors=pack.errors)
+    task_outcome = derive_task_outcome(
+        status="completed",
+        eval_results=eval_results,
+        errors=pack.errors,
+        out_of_scope=ctx.out_of_scope,
+    )
     error_types = classify_error_types(pack.errors)
     try:
         job_artifact = build_job_extraction_artifact(
@@ -1185,7 +1217,15 @@ def _complete_run_record(
         "compile_outcome": ctx.compile_outcome,
         "mutation_summary": ctx.mutation_summary,
     }
-    task_outcome = derive_task_outcome(status="completed", eval_results=eval_results, errors=pack.errors)
+    task_outcome = derive_task_outcome(
+        status="completed",
+        eval_results=eval_results,
+        errors=pack.errors,
+        out_of_scope=ctx.out_of_scope,
+    )
+    run_context["out_of_scope"] = ctx.out_of_scope
+    if ctx.out_of_scope_reason:
+        run_context["out_of_scope_reason"] = ctx.out_of_scope_reason
     error_types = classify_error_types(pack.errors)
     pack.run_id = log_run(
         "inbox",
@@ -1262,6 +1302,23 @@ def _handle_eval_log(
         "soft_jd_accuracy": soft_jd_accuracy,
     }
     pack.eval_results = eval_results
+
+    # Soft-eval hard floor: if the LLM judge scored resume relevance below the
+    # quality threshold, append an error so derive_task_outcome demotes the
+    # outcome from success → partial. Prevents low-quality artifacts from
+    # silently shipping (see run-144b1afaef4a where soft=0.0 was informational).
+    SOFT_RELEVANCE_FLOOR = 0.4
+    if (
+        soft_resume_relevance is not None
+        and soft_resume_relevance < SOFT_RELEVANCE_FLOOR
+        and not ctx.out_of_scope
+    ):
+        msg = (
+            f"soft_eval_below_floor: resume_relevance={soft_resume_relevance:.2f} "
+            f"< {SOFT_RELEVANCE_FLOOR} — artifact may be misaligned with JD"
+        )
+        logger.warning(msg)
+        pack.errors.append(msg)
 
     artifact_paths = _persist_artifacts(pack, ctx, eval_results)
     _complete_run_record(pack, ctx, eval_results, artifact_paths, latency_ms)
@@ -1396,6 +1453,11 @@ def _run_step_with_retry(
             except Exception:
                 logger.debug("Failed to complete audit step for %s (non-fatal)", step.name)
             return StepResult(step_name=step.name, success=True, attempts=attempt)
+        except OutOfScopeError as exc:
+            # Out-of-scope is a deterministic decision, not a transient error.
+            # Do not retry; let the dispatch loop abort the pipeline.
+            last_error = exc
+            break
         except Exception as exc:
             last_error = exc
             if step.retry_on_transient and attempt < step.max_attempts and _is_transient_error(exc):

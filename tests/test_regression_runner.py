@@ -15,20 +15,25 @@ def test_dataset_has_minimum_cases():
 
 def test_run_regression_with_mock_executor_passes():
     def _executor(case):
+        # Pick the first allowed outcome from the case so the mock satisfies
+        # each case's expected task_outcome_in (e.g. out_of_scope cases).
+        allowed = case.get("expected", {}).get("task_outcome_in") or ["success"]
+        outcome = allowed[0]
+        compile_success = bool(case.get("expected", {}).get("compile_success", True))
         return {
             "run_id": f"run-{case['id']}",
             "pack_eval_results": {
-                "compile_success": True,
+                "compile_success": compile_success,
                 "forbidden_claims_count": 0,
                 "edit_scope_violations": 0,
                 "keyword_coverage": 0.8,
             },
             "pack_errors": [],
             "db_run": {
-                "task_outcome": "success",
+                "task_outcome": outcome,
                 "error_types": [],
                 "eval_results": {
-                    "compile_success": True,
+                    "compile_success": compile_success,
                     "forbidden_claims_count": 0,
                     "edit_scope_violations": 0,
                     "keyword_coverage": 0.8,
