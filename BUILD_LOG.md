@@ -2,7 +2,7 @@
 
 Chronological record of how the Job Search Agent was built — decisions, issues, solutions, and milestones. Updated as the codebase evolves.
 
-Last updated: 2026-04-08
+Last updated: 2026-04-30
 
 ---
 
@@ -241,6 +241,39 @@ Production crash and edge case hardening from python-patterns audit:
 | `update.message` could be None on edge-case Telegram updates | Certain update types have no message attribute | Early return guard on all 5 handlers |
 | Executor `_parse_json_object` unhandled JSONDecodeError | Final fallback `json.loads` not wrapped in try/except | Wrap so it falls through to ValueError (expected by retry logic) |
 | Profile load failure silently degrades mutation quality | Bare except returns empty dict | Log warning so it's visible in telemetry |
+
+---
+
+### Application Reporting + Integrity Tooling (2026-04-23)
+
+**Commits:** `bf90a59` and adjacent Phase 3 updates
+
+- Added `application_report.md` generation (A-F sections, fit breakdown, mutation summary, collateral status).
+- Added report upload into per-application Google Drive folders.
+- Added `python main.py pipeline-check` to detect DB/artifact/report drift.
+- Marked Telegram-originated intake as manually vetted source input (`jobs.user_vetted = 1`).
+- Reframed Phase 3 execution toward operator product surface (scanner/dashboard/report integrity).
+
+### Persona-Mutation Incident + Gate Plan (2026-04-29)
+
+**Primary runs:** `run-d8c3e572aded`, `run-144b1afaef4a`
+
+- Incident class: out-of-scope JD produced persona-misaligned application output.
+- Root pattern: empty-skills extraction + zero-signal resume selection fallback + no early out-of-scope gate.
+- Resulting plan: five gates (persona rewrite guard, min-fit floor, JD-role allowlist, soft-eval floor enforcement, Google-auth step bundling).
+- Immediate implementation moved to branch `fix/out-of-scope-gate`.
+
+### Out-of-Scope Gate Hardening + Soft-Eval Parser Fix (2026-04-30)
+
+**Commit:** `69ebd60`
+
+- Gate #1 shipped: resume mutation prompt tightened to prevent persona drift.
+- Gate #2 shipped: min-fit out-of-scope floor in resume selection path.
+- Gate #4 corrected: soft-eval floor existed but was silently broken by fenced JSON parsing; parser now recovers first valid JSON object.
+- Gate #5 shipped: auth-gated Google tool steps bundle under one preflight.
+- Regression runner now fails fast on missing runtime env vars and can assert soft-score floors per case.
+- CI gate DB stats path fixed for psycopg2 cursor semantics.
+- Remaining gap: gate #3 (JD-role allowlist) still pending.
 
 ---
 

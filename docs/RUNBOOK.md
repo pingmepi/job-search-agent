@@ -1,6 +1,7 @@
-# Job Search Agent - Runbook
+# Job Search Agent - Operational Runbook
 
-This document explains how to run the full `job-search-agent` project in webhook mode (no Telegram polling).
+This is the canonical operator runbook for setup, runtime, and debugging.
+For architecture and system narrative, use `docs/PROJECT_OVERVIEW.md`.
 
 ## Related Operational Docs
 

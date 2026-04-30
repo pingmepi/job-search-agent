@@ -1,6 +1,9 @@
-# Telegram Webhook Service Specification (Implemented)
+# Telegram Webhook Service - Quick Reference
 
-This project now uses webhook delivery for Telegram updates and does not use polling.
+Canonical runbook: `docs/RUNBOOK.md`
+Historical design notes: `docs/webhook-service.md`
+
+This file is the short behavior reference only.
 
 ## Endpoints
 

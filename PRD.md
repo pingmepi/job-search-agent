@@ -12,7 +12,7 @@ This is explicit. No vibes.
 
 # 📄 PRD v3 — Multi-Agent Job Application System
 
-## Project Name: `inbox-agent`
+## Project Name: `job-search-agent` (formerly `inbox-agent`)
 
 ---
 

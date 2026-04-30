@@ -15,7 +15,7 @@ Scanned 9 doc surfaces (README.md, PRD.md, AGENTS.md, AGENT_HANDOFF.md, BUILD_LO
 ## Findings
 
 ### [MED] stale-instruction — hardcoded user-specific path in setup docs
-**File:** [docs/README.md:73](docs/README.md#L73)
+**File:** [docs/RUNBOOK.md:73](docs/RUNBOOK.md#L73)
 **Says:** Step 3 setup block uses `cd /Users/karan/Desktop/job-search-agent`.
 **Actually:** This path is the original author's local checkout. New contributors copy-pasting this command will fail. The README runbook is the canonical setup guide for the repo.
 **Fix:** Replace with `cd <path-to-your-checkout>` or drop the `cd` line; environment cloning should be path-agnostic.
@@ -54,12 +54,12 @@ Scanned 9 doc surfaces (README.md, PRD.md, AGENTS.md, AGENT_HANDOFF.md, BUILD_LO
 
 - README.md `## Commands` section fully matches `main.py` subcommand parsing (verified line-by-line; 11 commands, all argparse paths exist).
 - `.env.example` LLM, Telegram, Google, Cost, Database sections — all variables read by `core/config.py` are now present (`TELEGRAM_ALLOWED_CHAT_IDS` and `MAX_CONDENSE_RETRIES` added 2026-04-30).
-- `docs/README.md` `## 6) Start Webhook Service` and `## 6c) Pipeline Integrity Check` sections match `app.py` and `core/pipeline_checks.py` implementations.
+- `docs/RUNBOOK.md` `## 6) Start Webhook Service` and `## 6c) Pipeline Integrity Check` sections match `app.py` and `core/pipeline_checks.py` implementations.
 - All 5 master resume templates referenced in PROJECT_OVERVIEW.md (`AI, Technical, Growth, Agentic, Founders`) exist on disk under `resumes/master_*.tex`.
 - 5 PostgreSQL tables (`jobs`, `runs`, `run_steps`, `webhook_events`, `article_signals`) documented in PROJECT_OVERVIEW match `core/db.py` DDL.
 - 56-entry bullet bank claim in PROJECT_OVERVIEW.md matches actual `profile/bullet_bank.json` length.
 - Dockerfile `python:3.11-slim` base image matches PROJECT_OVERVIEW deployment claim.
 - Pre-commit hook installer `bash scripts/install-hooks.sh` referenced in AGENT_HANDOFF and PROJECT_OVERVIEW exists at `scripts/install-hooks.sh`.
-- `python main.py pipeline-check` referenced in docs/README.md and AGENT_HANDOFF — implementation present in `core/pipeline_checks.py` and main.py:297-313.
+- `python main.py pipeline-check` referenced in docs/RUNBOOK.md and AGENT_HANDOFF — implementation present in `core/pipeline_checks.py` and main.py:297-313.
 - PRD.md agent-count claim now matches code reality (four agents) as of 2026-04-30.
 - Dead-link scan: 0 dead relative markdown links across 118 scanned markdown files.

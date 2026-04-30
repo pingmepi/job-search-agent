@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-04-23
+Last updated: 2026-04-30
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -12,12 +12,19 @@ Last updated: 2026-04-23
 ## Current Status
 - Phase: Phase 3 product workflow expansion in progress.
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
-- Test status: `251 passed, 37 skipped` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
+- Test status: `318 passed, 39 skipped, 2 deselected` via `.venv/bin/pytest -q -m "not live"` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
 - CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
 - Pre-commit: ruff lint + format + pytest. Install: `bash scripts/install-hooks.sh`.
-- Active issue: `KAR-62` (Phase 3 product workflow expansion).
+- Active focus: `fix/out-of-scope-gate` hardening (gates 1/2/4/5 shipped, gate 3 pending). `KAR-62` remains paused (3/5 done).
 
-## Latest Progress (2026-04-23)
+## Latest Progress (2026-04-30)
+- Completed out-of-scope hardening pass after persona-mutation incident analysis (`run-144b1afaef4a` family).
+- Shipped gate #1 (persona rewrite constraints), gate #2 (min-fit out-of-scope floor), gate #4 fix (soft-eval floor was present but parser-broken), and gate #5 (Google-auth preflight bundling).
+- Hardened soft-eval parsing in `evals/soft.py` to recover fenced JSON and prevent silent `0.0` soft scores.
+- Extended regression runner with preflight env checks and optional soft-score expectations.
+- Fixed CI gate psycopg2 DB stats query path (`cursor.execute` compatibility).
+
+## Previous Progress (2026-04-23)
 - Added `application_report.md` artifact with A-F framing, selected base resume details, mutation summary, collateral status, and execution summary.
 - Wired markdown report upload into the per-application Google Drive folder alongside the resume and generated collateral.
 - Added `python main.py pipeline-check` for DB/artifact integrity checks, including report presence validation.
@@ -133,7 +140,7 @@ Last updated: 2026-04-23
 - [ ] KAR-75 Define and persist formal JSON artifacts for job/resume/eval outputs
 - [ ] KAR-76 Auto-create/update Linear application issue from pipeline output
 
-## Merged From `docs/execution_plan` (Tracker Superset)
+## Merged From `docs/execution_plan.md` (Tracker Superset)
 - [ ] Add webhook raw event persistence to `data/raw_events/` (`KAR-72`).
 - [ ] Add default memory/fallback agent behavior beyond current clarify response (`KAR-74`).
 - [ ] Define and persist structured JSON artifacts for job posting, resume output, and eval result (partially covered by existing run logs; formal schema artifacts tracked in `KAR-75`).
@@ -159,5 +166,5 @@ Last updated: 2026-04-23
 - Pipeline artifacts persist to `runs/artifacts/`.
 - CI gate: fixture-based, all 5 thresholds green. Historical live-DB noise is non-blocking.
 - Follow-up scheduler: `python main.py followup-runner --once` (or loop mode).
-- `docs/execution_plan` merged into this tracker; this file is the canonical superset.
+- `docs/execution_plan.md` merged into this tracker; this file is the canonical superset.
 - See `BUILD_LOG.md` for full project evolution history.
