@@ -29,10 +29,22 @@ class EditableRegion:
     end_line: int
 
 
+@dataclass(frozen=True)
+class BulletOccurrence:
+    """A bullet found inside an editable region."""
+
+    region_index: int
+    bullet_index: int
+    line_index: int
+    prefix: str
+    content: str
+
+
 # ── Parsing ───────────────────────────────────────────────────────
 
 _BEGIN_MARKER = "%%BEGIN_EDITABLE"
 _END_MARKER = "%%END_EDITABLE"
+_ITEM_LINE_RE = re.compile(r"^(\s*\\item(?:\[[^\]]+\])?\s*)(.*)$")
 
 
 def parse_editable_regions(tex_content: str) -> list[EditableRegion]:
@@ -67,6 +79,96 @@ def parse_editable_regions(tex_content: str) -> list[EditableRegion]:
             region_lines.append(line)
 
     return regions
+
+
+def _split_item_line(line: str) -> tuple[str, str] | None:
+    match = _ITEM_LINE_RE.match(line)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _strip_item_prefix(text: str) -> str:
+    stripped = (text or "").strip()
+    if not stripped.startswith(r"\item"):
+        return stripped
+    parts = _split_item_line(stripped)
+    if parts is None:
+        return stripped.replace(r"\item", "", 1).strip()
+    _, content = parts
+    return content.strip()
+
+
+def _normalize_bullet_text(text: str) -> str:
+    return re.sub(r"\s+", " ", _strip_item_prefix(text)).strip()
+
+
+def _canonicalize_item_prefix(prefix: str) -> str:
+    cleaned = prefix.rstrip()
+    return f"{cleaned} "
+
+
+def extract_bullet_occurrences(tex_content: str) -> list[BulletOccurrence]:
+    """Return bullets inside editable regions with stable region/bullet coordinates."""
+    regions = parse_editable_regions(tex_content)
+    if not regions:
+        return []
+
+    lines = tex_content.split("\n")
+    occurrences: list[BulletOccurrence] = []
+    for region_index, region in enumerate(regions):
+        bullet_index = 0
+        for line_index in range(region.start_line - 1, region.end_line):
+            parts = _split_item_line(lines[line_index])
+            if parts is None:
+                continue
+            prefix, content = parts
+            occurrences.append(
+                BulletOccurrence(
+                    region_index=region_index,
+                    bullet_index=bullet_index,
+                    line_index=line_index,
+                    prefix=prefix,
+                    content=content.strip(),
+                )
+            )
+            bullet_index += 1
+    return occurrences
+
+
+def find_blank_bullets(tex_content: str) -> list[BulletOccurrence]:
+    """Return editable bullets whose payload is empty or whitespace-only."""
+    return [occ for occ in extract_bullet_occurrences(tex_content) if not occ.content.strip()]
+
+
+def replace_bullet_at(
+    tex_content: str,
+    *,
+    region_index: int,
+    bullet_index: int,
+    replacement: str,
+) -> str:
+    """Replace a single bullet payload, preserving its existing indentation and \\item marker."""
+    target = next(
+        (
+            occ
+            for occ in extract_bullet_occurrences(tex_content)
+            if occ.region_index == region_index and occ.bullet_index == bullet_index
+        ),
+        None,
+    )
+    if target is None:
+        return tex_content
+
+    payload = _strip_item_prefix(replacement).strip()
+    if not payload:
+        return tex_content
+
+    lines = tex_content.split("\n")
+    lines[target.line_index] = (
+        f"{_canonicalize_item_prefix(target.prefix)}{escape_latex_specials(payload)}"
+    )
+    return "\n".join(lines)
 
 
 # ── Mutation validation ───────────────────────────────────────────
@@ -151,16 +253,48 @@ def apply_mutations(
     for region in reversed(regions):
         start_idx = region.start_line - 1
         end_idx = region.end_line
-        region_text = "\n".join(lines[start_idx:end_idx])
+        region_lines = lines[start_idx:end_idx]
+        region_text = "\n".join(region_lines)
 
         for m in mutations:
             original = m.get("original")
             replacement = m.get("replacement")
             if not isinstance(original, str) or not isinstance(replacement, str):
                 continue
-            if original and original in region_text:
+            if not original:
+                continue
+
+            normalized_original = _normalize_bullet_text(original)
+            bullet_applied = False
+            if normalized_original:
+                for idx, line in enumerate(region_lines):
+                    parts = _split_item_line(line)
+                    if parts is None:
+                        continue
+                    prefix, payload = parts
+                    stripped_line = line.strip()
+                    if stripped_line != original.strip() and _normalize_bullet_text(payload) != normalized_original:
+                        continue
+
+                    normalized_replacement = _strip_item_prefix(replacement).strip()
+                    if normalized_replacement:
+                        region_lines[idx] = (
+                            f"{_canonicalize_item_prefix(prefix)}"
+                            f"{escape_latex_specials(normalized_replacement)}"
+                        )
+                    else:
+                        del region_lines[idx]
+                    bullet_applied = True
+                    break
+
+            if bullet_applied:
+                region_text = "\n".join(region_lines)
+                continue
+
+            if original in region_text:
                 safe_replacement = escape_latex_specials(replacement)
                 region_text = region_text.replace(original, safe_replacement, 1)
+                region_lines = region_text.split("\n")
 
         lines[start_idx:end_idx] = region_text.split("\n")
 

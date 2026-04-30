@@ -10,7 +10,9 @@ from agents.inbox.resume import (
     apply_mutations,
     compute_keyword_overlap,
     escape_latex_specials,
+    find_blank_bullets,
     parse_editable_regions,
+    replace_bullet_at,
     select_base_resume_with_details,
     select_base_resume_with_score,
 )
@@ -127,6 +129,35 @@ Built ML pipeline improving accuracy by 20\%
         # Editable bullet should be updated.
         assert "  \\item Built ML pipeline improving accuracy by 30\\%" in updated
 
+    def test_apply_mutations_deletes_full_item_for_empty_replacement(self):
+        updated = apply_mutations(
+            SAMPLE_TEX,
+            [
+                {
+                    "original": "Led team of 5 engineers",
+                    "replacement": "",
+                }
+            ],
+        )
+
+        assert "Led team of 5 engineers" not in updated
+        assert "\\item \n" not in updated
+        assert not find_blank_bullets(updated)
+
+    def test_apply_mutations_rewires_payload_match_to_existing_item_line(self):
+        updated = apply_mutations(
+            SAMPLE_TEX,
+            [
+                {
+                    "original": r"\item Led team of 5 engineers",
+                    "replacement": "Led cross-functional product and engineering team",
+                }
+            ],
+        )
+
+        assert "Led cross-functional product and engineering team" in updated
+        assert "Led team of 5 engineers" not in updated
+
 
 class TestApplyMutationsDefensiveness:
     """Ensure apply_mutations handles malformed LLM output gracefully."""
@@ -166,6 +197,38 @@ class TestApplyMutationsDefensiveness:
         ]
         result = apply_mutations(SAMPLE_TEX, mutations)
         assert "accuracy by 30" in result
+
+
+class TestBulletRepairHelpers:
+    def test_find_blank_bullets_detects_empty_item(self):
+        tex = (
+            "\n%%BEGIN_EDITABLE\n"
+            "\\begin{itemize}\n"
+            "  \\item Filled bullet\n"
+            "  \\item   \n"
+            "\\end{itemize}\n"
+            "%%END_EDITABLE\n"
+        )
+        blanks = find_blank_bullets(tex)
+        assert len(blanks) == 1
+        assert blanks[0].bullet_index == 1
+
+    def test_replace_bullet_at_preserves_item_prefix(self):
+        tex = (
+            "\n%%BEGIN_EDITABLE\n"
+            "\\begin{itemize}\n"
+            "  \\item   \n"
+            "\\end{itemize}\n"
+            "%%END_EDITABLE\n"
+        )
+        repaired = replace_bullet_at(
+            tex,
+            region_index=0,
+            bullet_index=0,
+            replacement="Recovered bullet text",
+        )
+        assert "  \\item Recovered bullet text" in repaired
+        assert not find_blank_bullets(repaired)
 
 
 class TestSkillMatchingImprovements:

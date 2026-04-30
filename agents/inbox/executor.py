@@ -46,8 +46,11 @@ from agents.inbox.planner import (
 from agents.inbox.resume import (
     apply_mutations,
     compile_latex,
+    extract_bullet_occurrences,
+    find_blank_bullets,
     get_pdf_page_count,
     parse_editable_regions,
+    replace_bullet_at,
     select_base_resume_with_details,
 )
 from core.feedback import (
@@ -63,6 +66,20 @@ if TYPE_CHECKING:
     from agents.inbox.agent import ApplicationPack
 
 logger = logging.getLogger(__name__)
+_BLANK_BULLET_RECOVERY_SYSTEM = """
+You repair one blank bullet in a resume.
+
+Return JSON with exactly:
+{
+  "replacement": "one non-empty bullet line without the \\item prefix"
+}
+
+Rules:
+- Ground the text only in the provided original bullet, same-role context, and JD context.
+- Do not invent new companies, roles, metrics, dates, or named entities.
+- Keep the bullet concise enough for a one-page resume.
+- Output plain bullet text only, not LaTeX markup or a leading \\item.
+""".strip()
 
 
 # ── Step result ───────────────────────────────────────────────────────────────
@@ -158,6 +175,10 @@ def _extract_bullets(text: str) -> list[str]:
     return bullets
 
 
+def _tokenize_bullet(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
 @lru_cache(maxsize=32)
 def _load_profile_json(profile_path: str) -> dict[str, Any]:
     """Load and cache the profile JSON for the lifetime of the process."""
@@ -195,7 +216,7 @@ def _slugify(value: str, fallback: str) -> str:
 
 
 def _sanitize_mutations(raw: list[dict]) -> list[dict]:
-    """Drop mutations where original/replacement is not a non-empty string."""
+    """Drop mutations where original/replacement are not strings or original is empty."""
     clean = []
     for m in raw:
         orig = m.get("original")
@@ -221,6 +242,201 @@ def _record_inline_prompt(ctx: "ExecutionContext", label: str) -> None:
 def _record_model(ctx: "ExecutionContext", model: str | None) -> None:
     if model:
         ctx.models_used.append(model)
+
+
+def _accumulate_llm_usage(
+    ctx: "ExecutionContext",
+    *,
+    key: str,
+    response: Any,
+    generation_label: str,
+) -> None:
+    ctx.total_tokens += int(getattr(response, "total_tokens", 0) or 0)
+    _record_model(ctx, getattr(response, "model", None))
+    generation_id = getattr(response, "generation_id", None)
+    if generation_id:
+        ctx.generation_ids.append((generation_label, generation_id))
+
+    existing = ctx.llm_usage_breakdown.get(
+        key,
+        {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0,
+        },
+    )
+    existing["prompt_tokens"] += int(getattr(response, "prompt_tokens", 0) or 0)
+    existing["completion_tokens"] += int(getattr(response, "completion_tokens", 0) or 0)
+    existing["total_tokens"] += int(getattr(response, "total_tokens", 0) or 0)
+    existing["cost_estimate"] += float(getattr(response, "cost_estimate", 0.0) or 0.0)
+    ctx.llm_usage_breakdown[key] = existing
+
+
+def _load_relevant_bullet_bank_values(ctx: "ExecutionContext", jd: Any) -> list[str]:
+    from agents.inbox.bullet_relevance import select_relevant_bullets
+
+    bullet_bank_raw = json.loads(ctx.settings.bullet_bank_path.read_text(encoding="utf-8"))
+    relevant_bullets = select_relevant_bullets(
+        bullet_bank_raw,
+        jd.skills,
+        jd.description,
+        top_n=12,
+    )
+    return [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and b.get("bullet")]
+
+
+def _select_swap_bullet(
+    *,
+    original_bullet: str,
+    current_tex: str,
+    bullet_bank_values: list[str],
+) -> Optional[str]:
+    current_normalized = {
+        re.sub(r"\s+", " ", bullet).strip().lower() for bullet in _extract_bullets(current_tex)
+    }
+    original_tokens = _tokenize_bullet(original_bullet)
+    best_candidate: Optional[str] = None
+    best_score = -1.0
+
+    for candidate in bullet_bank_values:
+        normalized = re.sub(r"\s+", " ", candidate).strip().lower()
+        if not normalized or normalized in current_normalized:
+            continue
+        candidate_tokens = _tokenize_bullet(candidate)
+        if original_tokens:
+            score = len(original_tokens & candidate_tokens) / len(original_tokens)
+        else:
+            score = 0.0
+        if score > best_score or (
+            score == best_score and best_candidate is not None and len(candidate) < len(best_candidate)
+        ):
+            best_candidate = candidate
+            best_score = score
+
+    return best_candidate
+
+
+def _recover_blank_bullets(
+    *,
+    tex: str,
+    original_tex: str,
+    jd: Any,
+    bullet_bank_values: list[str],
+    ctx: "ExecutionContext",
+    pack: "ApplicationPack",
+    stage_label: str,
+) -> tuple[str, dict[str, Any]]:
+    stats: dict[str, Any] = {
+        "blank_items_detected": 0,
+        "blank_items_recovered": 0,
+        "blank_items_restored": 0,
+        "recovery_passes_used": 0,
+        "recovery_strategy_counts": {"regen": 0, "swap": 0, "rewire": 0},
+        "remaining_blank_items": 0,
+    }
+
+    detected = find_blank_bullets(tex)
+    stats["blank_items_detected"] = len(detected)
+    if not detected:
+        return tex, stats
+
+    _record_inline_prompt(ctx, "blank_bullet_recovery:inline_prompt:v1")
+    original_map = {
+        (occ.region_index, occ.bullet_index): occ for occ in extract_bullet_occurrences(original_tex)
+    }
+
+    for pass_no in range(1, 3):
+        blanks = find_blank_bullets(tex)
+        if not blanks:
+            break
+        stats["recovery_passes_used"] = pass_no
+
+        current_occurrences = {
+            (occ.region_index, occ.bullet_index): occ for occ in extract_bullet_occurrences(tex)
+        }
+        for blank in blanks:
+            key = (blank.region_index, blank.bullet_index)
+            original_occ = original_map.get(key)
+            current_occ = current_occurrences.get(key)
+            if current_occ is None:
+                continue
+
+            original_bullet = (original_occ.content if original_occ else "").strip()
+            role_context = [
+                occ.content
+                for occ in current_occurrences.values()
+                if occ.region_index == blank.region_index and occ.content.strip()
+            ]
+
+            replacement = ""
+            if original_bullet:
+                recovery_user = (
+                    f"JD context:\n{jd.company} | {jd.role}\n"
+                    f"Skills: {', '.join(s for s in jd.skills if s)}\n"
+                    f"Description: {jd.description}\n\n"
+                    f"Original bullet:\n{original_bullet}\n\n"
+                    f"Other bullets in the same role:\n"
+                    + "\n".join(f"- {line}" for line in role_context[:5])
+                )
+                try:
+                    recovery_data, recovery_response = _chat_json_with_retry(
+                        system=_BLANK_BULLET_RECOVERY_SYSTEM,
+                        user_msg=recovery_user,
+                        step_name="Blank bullet recovery",
+                        max_attempts=2,
+                    )
+                    _accumulate_llm_usage(
+                        ctx,
+                        key="blank_bullet_recovery",
+                        response=recovery_response,
+                        generation_label="blank_bullet_recovery",
+                    )
+                    replacement = str(recovery_data.get("replacement") or "").strip()
+                except Exception as exc:
+                    pack.errors.append(f"{stage_label} blank bullet regen failed: {exc}")
+
+            if replacement:
+                tex = replace_bullet_at(
+                    tex,
+                    region_index=blank.region_index,
+                    bullet_index=blank.bullet_index,
+                    replacement=replacement,
+                )
+                stats["blank_items_recovered"] += 1
+                stats["recovery_strategy_counts"]["regen"] += 1
+                continue
+
+            swap_candidate = _select_swap_bullet(
+                original_bullet=original_bullet,
+                current_tex=tex,
+                bullet_bank_values=bullet_bank_values,
+            )
+            if swap_candidate:
+                tex = replace_bullet_at(
+                    tex,
+                    region_index=blank.region_index,
+                    bullet_index=blank.bullet_index,
+                    replacement=swap_candidate,
+                )
+                stats["blank_items_recovered"] += 1
+                stats["recovery_strategy_counts"]["swap"] += 1
+                continue
+
+            if original_bullet:
+                tex = replace_bullet_at(
+                    tex,
+                    region_index=blank.region_index,
+                    bullet_index=blank.bullet_index,
+                    replacement=original_bullet,
+                )
+                stats["blank_items_recovered"] += 1
+                stats["blank_items_restored"] += 1
+                stats["recovery_strategy_counts"]["rewire"] += 1
+
+    remaining = find_blank_bullets(tex)
+    stats["remaining_blank_items"] = len(remaining)
+    return tex, stats
 
 
 def _ensure_markdown_report(pack: "ApplicationPack", ctx: ExecutionContext) -> Optional[Path]:
@@ -439,9 +655,7 @@ def _handle_resume_mutate(
         jd.description,
         top_n=12,
     )
-    bullet_bank_values = [
-        b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b
-    ]
+    bullet_bank_values = [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b]
 
     bullet_bank_formatted = "\n".join(
         f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
@@ -475,16 +689,12 @@ def _handle_resume_mutate(
         step_name="Resume mutation",
         max_attempts=step.max_attempts,
     )
-    ctx.total_tokens += response.total_tokens
-    _record_model(ctx, response.model)
-    if response.generation_id:
-        ctx.generation_ids.append(("resume_mutation", response.generation_id))
-    ctx.llm_usage_breakdown["resume_mutation"] = {
-        "prompt_tokens": response.prompt_tokens,
-        "completion_tokens": response.completion_tokens,
-        "total_tokens": response.total_tokens,
-        "cost_estimate": response.cost_estimate,
-    }
+    _accumulate_llm_usage(
+        ctx,
+        key="resume_mutation",
+        response=response,
+        generation_label="resume_mutation",
+    )
 
     mutations = _sanitize_mutations(mutations_data.get("mutations", []))
     mutated_tex = apply_mutations(original_tex, mutations)
@@ -546,6 +756,19 @@ def _handle_resume_mutate(
         ctx.last_step_audit["truthfulness"] = truthfulness
         ctx.mutation_summary["truthfulness"] = truthfulness
 
+    mutated_tex, bullet_quality = _recover_blank_bullets(
+        tex=mutated_tex,
+        original_tex=original_tex,
+        jd=jd,
+        bullet_bank_values=bullet_bank_values,
+        ctx=ctx,
+        pack=pack,
+        stage_label="resume_mutation",
+    )
+    if bullet_quality["blank_items_detected"]:
+        ctx.last_step_audit["bullet_quality"] = bullet_quality
+        ctx.mutation_summary["bullet_quality"] = bullet_quality
+
     pack.mutated_tex = mutated_tex
     return pack
 
@@ -570,6 +793,7 @@ def _handle_compile(
     pack.output_dir = app_output_dir
 
     base_path = ctx.base_path
+    bullet_bank_values = _load_relevant_bullet_bank_values(ctx, jd)
 
     def _compile_and_persist(tex_content: str, suffix: str = "") -> Path:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -643,6 +867,46 @@ def _handle_compile(
         shutil.copy2(committed_pdf, dest)
         return dest
 
+    def _fallback_to_base_resume() -> None:
+        try:
+            base_tex = base_path.read_text(encoding="utf-8")
+            pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
+            ctx.compile_rollback_used = True
+            fb_pages = _safe_page_count(pack.pdf_path) if enforce else None
+            if enforce and fb_pages is not None and fb_pages > 1:
+                pack.errors.append(
+                    f"Resume exceeds one page ({fb_pages} pages) and base fallback "
+                    "also exceeds one page."
+                )
+                committed = _use_committed_master_pdf()
+                if committed is not None:
+                    pack.pdf_path = committed
+                    ctx.compile_outcome = "fallback_success"
+                    ctx.single_page_target_met = True
+                    ctx.single_page_status = "committed_master_used"
+                    pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
+                else:
+                    pack.pdf_path = None
+                    _cleanup_pdfs(app_output_dir)
+                    ctx.single_page_status = "failed_multi_page_terminal"
+                    ctx.compile_outcome = None
+                    pack.errors.append("No committed master PDF available.")
+            else:
+                ctx.compile_outcome = "fallback_success"
+                ctx.single_page_status = "fallback_base_used"
+                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
+        except Exception as fallback_err:
+            pack.errors.append(f"LaTeX compile fallback failed: {fallback_err}")
+            committed = _use_committed_master_pdf()
+            if committed is not None:
+                pack.pdf_path = committed
+                ctx.compile_outcome = "fallback_success"
+                ctx.single_page_target_met = True
+                ctx.single_page_status = "committed_master_used"
+                pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
+            else:
+                ctx.single_page_status = "fallback_failed"
+
     enforce = getattr(ctx.settings, "enforce_single_page", True)
     max_condense = getattr(ctx.settings, "max_condense_retries", 2)
 
@@ -671,16 +935,12 @@ def _handle_compile(
                 step_name="Resume condense",
                 max_attempts=2,
             )
-            ctx.total_tokens += response.total_tokens
-            _record_model(ctx, response.model)
-            if response.generation_id:
-                ctx.generation_ids.append(("resume_condense", response.generation_id))
-            ctx.llm_usage_breakdown["resume_condense"] = {
-                "prompt_tokens": response.prompt_tokens,
-                "completion_tokens": response.completion_tokens,
-                "total_tokens": response.total_tokens,
-                "cost_estimate": response.cost_estimate,
-            }
+            _accumulate_llm_usage(
+                ctx,
+                key="resume_condense",
+                response=response,
+                generation_label="resume_condense",
+            )
             # Build combined mutation list: rewrites + removals (empty replacement)
             mutations = data.get("mutations", [])
             for removed in data.get("bullets_removed", []):
@@ -691,7 +951,26 @@ def _handle_compile(
                     }
                 )
             mutations = _sanitize_mutations(mutations)
-            return apply_mutations(tex, mutations)
+            condensed_tex = apply_mutations(tex, mutations)
+            condensed_tex, bullet_quality = _recover_blank_bullets(
+                tex=condensed_tex,
+                original_tex=ctx.original_tex or tex,
+                jd=jd,
+                bullet_bank_values=bullet_bank_values,
+                ctx=ctx,
+                pack=pack,
+                stage_label=f"resume_condense_attempt_{attempt}",
+            )
+            if bullet_quality["blank_items_detected"]:
+                ctx.last_step_audit["bullet_quality"] = bullet_quality
+                ctx.mutation_summary["bullet_quality"] = bullet_quality
+            if bullet_quality["remaining_blank_items"] > 0:
+                pack.errors.append(
+                    f"Resume condense attempt {attempt} left "
+                    f"{bullet_quality['remaining_blank_items']} blank bullets after recovery."
+                )
+                return None
+            return condensed_tex
         except Exception as exc:
             pack.errors.append(f"Resume condense failed: {exc}")
             logger.warning("Condense LLM call failed: %s", exc)
@@ -736,51 +1015,7 @@ def _handle_compile(
                     logger.warning(
                         "Condense exhausted (%d retries); falling back to base.", max_condense
                     )
-                    try:
-                        base_tex = base_path.read_text(encoding="utf-8")
-                        pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
-                        ctx.compile_rollback_used = True
-                        fb_pages = _safe_page_count(pack.pdf_path)
-                        if fb_pages is not None and fb_pages > 1:
-                            # Recompiled base exceeds one page — use committed master PDF
-                            pack.errors.append(
-                                f"Resume exceeds one page ({fb_pages} pages) and base fallback "
-                                "also exceeds one page."
-                            )
-                            committed = _use_committed_master_pdf()
-                            if committed is not None:
-                                pack.pdf_path = committed
-                                ctx.compile_outcome = "fallback_success"
-                                ctx.single_page_target_met = True
-                                ctx.single_page_status = "committed_master_used"
-                                pack.errors.append(
-                                    "Used pre-compiled committed master PDF as terminal fallback."
-                                )
-                            else:
-                                pack.pdf_path = None
-                                _cleanup_pdfs(app_output_dir)
-                                ctx.single_page_status = "failed_multi_page_terminal"
-                                ctx.compile_outcome = None
-                                pack.errors.append("No committed master PDF available.")
-                        else:
-                            ctx.compile_outcome = "fallback_success"
-                            ctx.single_page_status = "fallback_base_used"
-                            pack.errors.append(
-                                "LaTeX compile rollback applied: used base resume artifact."
-                            )
-                    except Exception as fe:
-                        pack.errors.append(f"LaTeX compile fallback failed: {fe}")
-                        committed = _use_committed_master_pdf()
-                        if committed is not None:
-                            pack.pdf_path = committed
-                            ctx.compile_outcome = "fallback_success"
-                            ctx.single_page_target_met = True
-                            ctx.single_page_status = "committed_master_used"
-                            pack.errors.append(
-                                "Used pre-compiled committed master PDF as terminal fallback."
-                            )
-                        else:
-                            ctx.single_page_status = "fallback_failed"
+                    _fallback_to_base_resume()
             elif pages is None:
                 ctx.single_page_status = "unknown"
                 ctx.compile_outcome = "mutated_success"
@@ -792,46 +1027,7 @@ def _handle_compile(
 
     except Exception as e:
         pack.errors.append(f"LaTeX compile failed: {e}")
-        try:
-            base_tex = base_path.read_text(encoding="utf-8")
-            pack.pdf_path = _compile_and_persist(base_tex, "_fallback")
-            ctx.compile_rollback_used = True
-            fb_pages = _safe_page_count(pack.pdf_path) if enforce else None
-            if enforce and fb_pages is not None and fb_pages > 1:
-                pack.errors.append(
-                    f"Resume exceeds one page ({fb_pages} pages) and base fallback "
-                    "also exceeds one page."
-                )
-                committed = _use_committed_master_pdf()
-                if committed is not None:
-                    pack.pdf_path = committed
-                    ctx.compile_outcome = "fallback_success"
-                    ctx.single_page_target_met = True
-                    ctx.single_page_status = "committed_master_used"
-                    pack.errors.append(
-                        "Used pre-compiled committed master PDF as terminal fallback."
-                    )
-                else:
-                    pack.pdf_path = None
-                    _cleanup_pdfs(app_output_dir)
-                    ctx.single_page_status = "failed_multi_page_terminal"
-                    ctx.compile_outcome = None
-                    pack.errors.append("No committed master PDF available.")
-            else:
-                ctx.compile_outcome = "fallback_success"
-                ctx.single_page_status = "fallback_base_used"
-                pack.errors.append("LaTeX compile rollback applied: used base resume artifact.")
-        except Exception as fe:
-            pack.errors.append(f"LaTeX compile fallback failed: {fe}")
-            committed = _use_committed_master_pdf()
-            if committed is not None:
-                pack.pdf_path = committed
-                ctx.compile_outcome = "fallback_success"
-                ctx.single_page_target_met = True
-                ctx.single_page_status = "committed_master_used"
-                pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
-            else:
-                ctx.single_page_status = "fallback_failed"
+        _fallback_to_base_resume()
 
     logger.info(
         "Compile result jd_hash=%s success=%s rollback=%s condense=%d",
