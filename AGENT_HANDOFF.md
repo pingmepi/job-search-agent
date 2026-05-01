@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last updated: 2026-04-30
+Last updated: 2026-05-02
 
 ## Purpose
 
@@ -10,8 +10,8 @@ Short-lived operational handoff between sessions. Keep this file concise. Move d
 
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
-- Active focus: out-of-scope JD hardening on `fix/out-of-scope-gate` (PR #31 scope)
-- Test baseline (`.venv/bin/pytest -q -m "not live"`): `318 passed, 39 skipped, 2 deselected`
+- Active focus: `fix/telegram-length-eval-logging` (PR #32) — Telegram length safety refactored into `core/telegram_utils.py`; docs alignment fixes applied
+- Test baseline (`.venv/bin/pytest -q -m "not live"`): `324 passed, 43 skipped`
 - CI gate (`.venv/bin/python main.py ci-gate`): `PASSED` (compile 100%, forbidden 0, edit violations 0, avg cost $0.0683, avg latency 33.4s)
 - Deployment: Railway (Docker + PostgreSQL), Telegram webhook live
 

@@ -47,12 +47,6 @@ A sprint focused on closing the **persona-misalignment regression** (run-144b1af
 - `ai-product-builder` interview-prep artifact added under `interview-prep/`.
 - Test baseline: **315 passing, 0 failing** at sprint close (up from 251 earlier in the project).
 
-### Known Follow-ups
-
-- `core/contracts.py` `SCHEMA_VERSION` is still `"1.0"` despite 7 new `EvalOutputArtifact` fields — bump pending.
-- `BUILD_LOG.md`, `TRACKER.md`, `decisions.md` have stale entries (duplicate ADR-14, "251 passed" claim in 4 files, April 29–30 sprint work undocumented). Cleanup PR queued.
-- README has duplicate H2 sections ("What You Get", "Engineering Highlights") and a stale "one-page enforced" claim that ADR-12 already removed.
-
 ---
 
 _Generated 2026-05-01 from commits `1e7b6bb..f2b081a`._

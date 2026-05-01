@@ -301,7 +301,7 @@ Every pipeline run logs:
 |----------|--------|-------|
 | Timeline | Initial build duration | 51 days (2026-02-16 → 2026-04-08); active development continues |
 | Code | Commits | 114 |
-| Tests | Passing | 318 |
+| Tests | Passing | 324 |
 | Tests | Skipped (need DB) | 39 |
 | Tests | Deselected (`-m "not live"`) | 2 |
 | Milestones | Count | 14 |
