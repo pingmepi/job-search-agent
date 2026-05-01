@@ -61,6 +61,12 @@ from core.feedback import (
 )
 from core.json_utils import extract_first_json_object as _extract_first_json_object
 from core.prompts import load_prompt
+from core.telegram_utils import (
+    TELEGRAM_MIN_SUMMARY_CHARS,
+    TELEGRAM_SAFE_MESSAGE_CHARS,
+    TELEGRAM_SUMMARY_RETRIES,
+    hard_truncate,
+)
 
 if TYPE_CHECKING:
     from agents.inbox.agent import ApplicationPack
@@ -81,10 +87,6 @@ Rules:
 - Output plain bullet text only, not LaTeX markup or a leading \\item.
 """.strip()
 
-TELEGRAM_MAX_MESSAGE_CHARS = 4096
-TELEGRAM_SAFE_MESSAGE_CHARS = 3900
-TELEGRAM_SUMMARY_RETRIES = 2
-TELEGRAM_MIN_SUMMARY_CHARS = 600
 TELEGRAM_DRAFT_PREFIXES = {
     "email": "✉️ Email draft:\n\n",
     "linkedin": "💬 LinkedIn DM:\n\n",
@@ -242,19 +244,6 @@ def _sanitize_mutations(raw: list[dict]) -> list[dict]:
     return clean
 
 
-def _hard_truncate_text(text: str, limit: int) -> str:
-    """Hard-truncate text to a strict character limit."""
-    if len(text) <= limit:
-        return text
-    if limit <= 24:
-        return text[:limit]
-    suffix = f"... [truncated {len(text) - limit} chars]"
-    head_limit = max(0, limit - len(suffix))
-    if head_limit <= 0:
-        return text[:limit]
-    return text[:head_limit].rstrip() + suffix
-
-
 def _enforce_telegram_draft_limit(
     *,
     ctx: "ExecutionContext",
@@ -299,15 +288,16 @@ def _enforce_telegram_draft_limit(
         )
         try:
             response = chat_text(system, user_msg)
+            condense_label = f"telegram_draft_condense_{draft_key}_{attempt}"
             _accumulate_llm_usage(
                 ctx,
-                key="telegram_draft_condense",
+                key=condense_label,
                 response=response,
-                generation_label="telegram_draft_condense",
+                generation_label=condense_label,
             )
             condensed = (response.text or "").strip()
-            audit["summarize_attempts"] = attempt
             if condensed:
+                audit["summarize_attempts"] = attempt
                 candidate = condensed
         except Exception as exc:
             logger.warning(
@@ -321,7 +311,7 @@ def _enforce_telegram_draft_limit(
             break
 
     if len(candidate) > draft_limit:
-        candidate = _hard_truncate_text(candidate, draft_limit)
+        candidate = hard_truncate(candidate, draft_limit)
         audit["hard_truncated"] = True
 
     audit["after_chars"] = len(candidate)

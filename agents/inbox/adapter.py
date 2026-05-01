@@ -30,6 +30,13 @@ from agents.inbox.url_ingest import extract_first_url, fetch_url_text
 from core.config import get_settings
 from core.llm import chat_text
 from core.router import AgentTarget, route
+from core.telegram_utils import (
+    TELEGRAM_MAX_MESSAGE_CHARS,
+    TELEGRAM_MIN_SUMMARY_CHARS,
+    TELEGRAM_SAFE_MESSAGE_CHARS,
+    TELEGRAM_SUMMARY_RETRIES,
+    hard_truncate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,24 +62,6 @@ COLLATERAL_PROMPT = (
     "Examples: `email` or `email, linkedin`.\n"
     "Reply `none` to skip collateral generation."
 )
-
-TELEGRAM_MAX_MESSAGE_CHARS = 4096
-TELEGRAM_SAFE_MESSAGE_CHARS = 3900
-TELEGRAM_SUMMARY_RETRIES = 2
-TELEGRAM_MIN_SUMMARY_CHARS = 600
-
-
-def _hard_truncate(text: str, limit: int) -> str:
-    """Hard truncate text to a strict character limit."""
-    if len(text) <= limit:
-        return text
-    if limit <= 32:
-        return text[:limit]
-    suffix = f"\n\n...[truncated {len(text) - limit} chars]"
-    head_limit = max(0, limit - len(suffix))
-    if head_limit <= 0:
-        return text[:limit]
-    return text[:head_limit].rstrip() + suffix
 
 
 def _is_message_too_long_error(exc: Exception) -> bool:
@@ -118,7 +107,7 @@ async def _summarize_text_to_limit(text: str, *, limit: int, label: str) -> str:
         if len(candidate) <= target:
             return candidate
 
-    return _hard_truncate(candidate, limit)
+    return hard_truncate(candidate, limit)
 
 
 async def _reply_text(
@@ -153,7 +142,7 @@ async def _reply_text(
         )
 
     retry = await _summarize_text_to_limit(text, limit=TELEGRAM_SAFE_MESSAGE_CHARS, label=label)
-    retry = _hard_truncate(retry, TELEGRAM_SAFE_MESSAGE_CHARS)
+    retry = hard_truncate(retry, TELEGRAM_SAFE_MESSAGE_CHARS)
     await update.message.reply_text(retry, **kwargs)
 
 
@@ -451,7 +440,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if result.target == AgentTarget.INBOX:
         await _reply_text(
-            update, f"📥 Routing to Inbox Agent... ({result.reason})\nPreparing job input..."
+            update,
+            f"📥 Routing to Inbox Agent... ({result.reason})\nPreparing job input...",
+            label="inbox-route-start",
         )
         try:
             settings = get_settings()
@@ -465,7 +456,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 if ingest.ok:
                     pipeline_input = ingest.extracted_text
                     await _reply_text(
-                        update, "🔗 Fetched job URL successfully. Processing extracted content..."
+                        update,
+                        "🔗 Fetched job URL successfully. Processing extracted content...",
+                        label="inbox-url-fetched",
                     )
                 else:
                     await _reply_text(update, URL_FALLBACK_PROMPT, label="url-fallback")
