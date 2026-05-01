@@ -28,7 +28,15 @@ from telegram.ext import (
 from agents.inbox.collateral import normalize_collateral_selection
 from agents.inbox.url_ingest import extract_first_url, fetch_url_text
 from core.config import get_settings
+from core.llm import chat_text
 from core.router import AgentTarget, route
+from core.telegram_utils import (
+    TELEGRAM_MAX_MESSAGE_CHARS,
+    TELEGRAM_MIN_SUMMARY_CHARS,
+    TELEGRAM_SAFE_MESSAGE_CHARS,
+    TELEGRAM_SUMMARY_RETRIES,
+    hard_truncate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +62,88 @@ COLLATERAL_PROMPT = (
     "Examples: `email` or `email, linkedin`.\n"
     "Reply `none` to skip collateral generation."
 )
+
+
+def _is_message_too_long_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "message is too long" in message or "message_too_long" in message
+
+
+async def _summarize_text_to_limit(text: str, *, limit: int, label: str) -> str:
+    """
+    Summarize text with hard length constraints.
+
+    Uses a short retry loop, then always enforces a hard truncate fallback.
+    """
+    candidate = text.strip()
+    if len(candidate) <= limit:
+        return candidate
+
+    for attempt in range(1, TELEGRAM_SUMMARY_RETRIES + 1):
+        target = max(limit - (attempt - 1) * 250, TELEGRAM_MIN_SUMMARY_CHARS)
+        system = (
+            "You compress Telegram bot messages while preserving critical facts. "
+            "Return plain text only. Keep key statuses, identifiers, and action items. "
+            f"Hard requirement: output MUST be <= {target} characters."
+        )
+        user = (
+            f"Rewrite this message to <= {target} characters.\n"
+            "Do not add any preface.\n\n"
+            f"{candidate}"
+        )
+        try:
+            response = await asyncio.to_thread(chat_text, system, user)
+            condensed = (response.text or "").strip()
+        except Exception as exc:
+            logger.warning(
+                "Telegram summarization failed label=%s attempt=%d error=%s",
+                label,
+                attempt,
+                exc,
+            )
+            continue
+        if condensed:
+            candidate = condensed
+        if len(candidate) <= target:
+            return candidate
+
+    return hard_truncate(candidate, limit)
+
+
+async def _reply_text(
+    update: Update,
+    text: str,
+    *,
+    parse_mode: str | None = None,
+    label: str = "message",
+) -> None:
+    """Reply with a Telegram-safe message length via summarize+hard-cap flow."""
+    if not update.message:
+        return
+
+    kwargs = {"parse_mode": parse_mode} if parse_mode else {}
+    candidate = text
+    if len(candidate) > TELEGRAM_MAX_MESSAGE_CHARS:
+        candidate = await _summarize_text_to_limit(
+            candidate, limit=TELEGRAM_SAFE_MESSAGE_CHARS, label=label
+        )
+
+    try:
+        await update.message.reply_text(candidate, **kwargs)
+        return
+    except Exception as exc:
+        if not _is_message_too_long_error(exc):
+            raise
+        logger.warning(
+            "Telegram rejected oversized %s payload (len=%d): %s",
+            label,
+            len(candidate),
+            exc,
+        )
+
+    retry = await _summarize_text_to_limit(text, limit=TELEGRAM_SAFE_MESSAGE_CHARS, label=label)
+    retry = hard_truncate(retry, TELEGRAM_SAFE_MESSAGE_CHARS)
+    await update.message.reply_text(retry, **kwargs)
 
 
 async def _run_and_respond(
@@ -93,19 +183,22 @@ async def _run_and_respond(
                 "\n".join(f"• {e}" for e in pack.errors[:5])
                 or "• No compiled one-page resume artifact was produced."
             )
-            await update.message.reply_text(
+            await _reply_text(
+                update,
                 "❌ Process failed\n"
                 "I couldn't produce a valid one-page terminal resume artifact.\n"
                 f"🧪 Run ID: {pack.run_id or 'n/a'}\n"
                 "Details:\n"
-                f"{details}"
+                f"{details}",
+                label="pipeline-failure",
             )
             return
         jd = pack.jd
         generated_label = (
             ", ".join(pack.generated_collateral) if pack.generated_collateral else "none"
         )
-        await update.message.reply_text(
+        await _reply_text(
+            update,
             f"✅ Process completed\n"
             f"✅ JD Extracted:\n"
             f"🏢 Company: {jd.company}\n"
@@ -115,7 +208,8 @@ async def _run_and_respond(
             f"📄 Resume base: {pack.resume_base}\n"
             f"✅ Compile: {'yes' if pack.pdf_path else 'no'}\n"
             f"✉️ Collateral generated: {generated_label}\n"
-            f"🧪 Run ID: {pack.run_id or 'n/a'}"
+            f"🧪 Run ID: {pack.run_id or 'n/a'}",
+            label="pipeline-success",
         )
 
         # Send the PDF resume if compile succeeded. Isolate failures so a
@@ -141,17 +235,23 @@ async def _run_and_respond(
             await _send_safe(_send_pdf, "Resume PDF")
         if pack.email_draft:
             await _send_safe(
-                lambda: update.message.reply_text(f"✉️ Email draft:\n\n{pack.email_draft}"),
+                lambda: _reply_text(
+                    update, f"✉️ Email draft:\n\n{pack.email_draft}", label="email-draft"
+                ),
                 "Email draft",
             )
         if pack.linkedin_draft:
             await _send_safe(
-                lambda: update.message.reply_text(f"💬 LinkedIn DM:\n\n{pack.linkedin_draft}"),
+                lambda: _reply_text(
+                    update, f"💬 LinkedIn DM:\n\n{pack.linkedin_draft}", label="linkedin-draft"
+                ),
                 "LinkedIn draft",
             )
         if pack.referral_draft:
             await _send_safe(
-                lambda: update.message.reply_text(f"🤝 Referral note:\n\n{pack.referral_draft}"),
+                lambda: _reply_text(
+                    update, f"🤝 Referral note:\n\n{pack.referral_draft}", label="referral-draft"
+                ),
                 "Referral draft",
             )
         if pack.errors:
@@ -167,16 +267,18 @@ async def _run_and_respond(
             )
             if len(payload) > 3500:
                 payload = payload[:3500] + "\n... [truncated — see runs.errors_json]"
-            await update.message.reply_text(payload)
+            await _reply_text(update, payload, label="pipeline-warning")
     except OCRQualityError as e:
         logger.warning("OCR quality too low: %s", e)
-        await update.message.reply_text(
+        await _reply_text(
+            update,
             "⚠️ I couldn't extract a reliable job description from that screenshot. "
-            "Please send a clearer screenshot (full JD section, readable text, minimal cropping)."
+            "Please send a clearer screenshot (full JD section, readable text, minimal cropping).",
+            label="ocr-quality-error",
         )
     except Exception as e:
         logger.error("Pipeline execution error: %s", e)
-        await update.message.reply_text(f"❌ Error: {e}")
+        await _reply_text(update, f"❌ Error: {e}", label="pipeline-exception")
     finally:
         if image_path:
             image_path.unlink(missing_ok=True)
@@ -189,13 +291,15 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handle the /start command."""
     if not update.message:
         return
-    await update.message.reply_text(
+    await _reply_text(
+        update,
         "👋 Hi! I'm your Job Application Agent.\n\n"
         "Send me:\n"
         "📸 A screenshot of a job description\n"
         "🔗 A URL to a job listing\n"
         "📝 Raw JD text\n\n"
-        "I'll generate a tailored resume, then ask which collateral you want."
+        "I'll generate a tailored resume, then ask which collateral you want.",
+        label="start-help",
     )
 
 
@@ -203,13 +307,15 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Handle the /help command."""
     if not update.message:
         return
-    await update.message.reply_text(
+    await _reply_text(
+        update,
         "Commands:\n"
         "/start — Welcome message\n"
         "/help — This message\n"
         "/status — Check pending follow-ups\n"
         "/profile — Ask about Karan's background\n\n"
-        "Or just send a JD (text, URL, or screenshot)!"
+        "Or just send a JD (text, URL, or screenshot)!",
+        label="help",
     )
 
 
@@ -221,7 +327,7 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     jobs = detect_followups()
     if not jobs:
-        await update.message.reply_text("✅ No follow-ups pending.")
+        await _reply_text(update, "✅ No follow-ups pending.", label="followup-empty")
         return
 
     lines = ["📋 **Pending follow-ups:**\n"]
@@ -231,7 +337,12 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"• {job['company']} — {job['role']} "
             f"(tier {job.get('tier_number', 0) + 1}: {tier.get('label', 'follow-up')})"
         )
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await _reply_text(
+        update,
+        "\n".join(lines),
+        parse_mode="Markdown",
+        label="followup-status",
+    )
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -239,10 +350,10 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not update.message:
         return
     if not _is_chat_allowed(update):
-        await update.message.reply_text("⛔ Unauthorized.")
+        await _reply_text(update, "⛔ Unauthorized.", label="unauthorized-photo")
         return
     logger.info("Handling photo message via OCR path")
-    await update.message.reply_text("📸 Got your screenshot.")
+    await _reply_text(update, "📸 Got your screenshot.", label="photo-received")
 
     # Download the photo
     photo = update.message.photo[-1]  # highest resolution
@@ -264,7 +375,12 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "input_mode": "photo",
         "user_vetted": True,
     }
-    await update.message.reply_text(COLLATERAL_PROMPT, parse_mode="Markdown")
+    await _reply_text(
+        update,
+        COLLATERAL_PROMPT,
+        parse_mode="Markdown",
+        label="collateral-prompt-photo",
+    )
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -272,22 +388,24 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not update.message:
         return
     if not _is_chat_allowed(update):
-        await update.message.reply_text("⛔ Unauthorized.")
+        await _reply_text(update, "⛔ Unauthorized.", label="unauthorized-text")
         return
     text = update.message.text
     pending_request = context.user_data.get("pending_inbox_request")
     if pending_request:
         selected_collateral, valid = normalize_collateral_selection(text or "")
         if not valid or selected_collateral is None:
-            await update.message.reply_text(
+            await _reply_text(
+                update,
                 "I couldn't parse that collateral selection.\n" + COLLATERAL_PROMPT,
                 parse_mode="Markdown",
+                label="invalid-collateral-selection",
             )
             return
 
         image_path = pending_request.get("image_path")
         context.user_data.pop("pending_inbox_request", None)
-        await update.message.reply_text("⏳ Process started (JD pipeline)...")
+        await _reply_text(update, "⏳ Process started (JD pipeline)...", label="pipeline-start")
         await _run_and_respond(
             update,
             raw_text=pending_request.get("raw_text", ""),
@@ -321,8 +439,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
     if result.target == AgentTarget.INBOX:
-        await update.message.reply_text(
-            f"📥 Routing to Inbox Agent... ({result.reason})\nPreparing job input..."
+        await _reply_text(
+            update,
+            f"📥 Routing to Inbox Agent... ({result.reason})\nPreparing job input...",
+            label="inbox-route-start",
         )
         try:
             settings = get_settings()
@@ -335,11 +455,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 ingest = await asyncio.to_thread(fetch_url_text, url)
                 if ingest.ok:
                     pipeline_input = ingest.extracted_text
-                    await update.message.reply_text(
-                        "🔗 Fetched job URL successfully. Processing extracted content..."
+                    await _reply_text(
+                        update,
+                        "🔗 Fetched job URL successfully. Processing extracted content...",
+                        label="inbox-url-fetched",
                     )
                 else:
-                    await update.message.reply_text(URL_FALLBACK_PROMPT)
+                    await _reply_text(update, URL_FALLBACK_PROMPT, label="url-fallback")
                     return
 
             context.user_data["pending_inbox_request"] = {
@@ -350,12 +472,21 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "input_mode": input_mode,
                 "user_vetted": True,
             }
-            await update.message.reply_text(COLLATERAL_PROMPT, parse_mode="Markdown")
+            await _reply_text(
+                update,
+                COLLATERAL_PROMPT,
+                parse_mode="Markdown",
+                label="collateral-prompt-text",
+            )
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+            await _reply_text(update, f"❌ Error: {e}", label="inbox-route-error")
 
     elif result.target == AgentTarget.PROFILE:
-        await update.message.reply_text(f"👤 Routing to Profile Agent... ({result.reason})")
+        await _reply_text(
+            update,
+            f"👤 Routing to Profile Agent... ({result.reason})",
+            label="profile-route",
+        )
         try:
             from agents.profile.agent import run_profile_agent
 
@@ -363,42 +494,50 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             warning = ""
             if ungrounded:
                 warning = f"\n⚠️ Potential ungrounded claims: {', '.join(ungrounded)}"
-            await update.message.reply_text(
-                f"[{narrative.upper()} angle]\n\n{response_text}{warning}"
+            await _reply_text(
+                update,
+                f"[{narrative.upper()} angle]\n\n{response_text}{warning}",
+                label="profile-response",
             )
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+            await _reply_text(update, f"❌ Error: {e}", label="profile-route-error")
 
     elif result.target == AgentTarget.FOLLOWUP:
         await status_handler(update, context)
 
     elif result.target == AgentTarget.ARTICLE:
-        await update.message.reply_text("📰 Summarizing article...")
+        await _reply_text(update, "📰 Summarizing article...", label="article-start")
         try:
             from agents.article.agent import run_article_agent
 
             summary, signals, run_id = run_article_agent(text)
             signal_text = "\n".join(f"• {s}" for s in signals) if signals else "None detected."
-            await update.message.reply_text(
+            await _reply_text(
+                update,
                 f"📰 Article Summary\n\n{summary}\n\n"
                 f"🔍 Job search signals:\n{signal_text}\n\n"
-                f"🧪 Run ID: {run_id}"
+                f"🧪 Run ID: {run_id}",
+                label="article-summary",
             )
         except Exception as e:
-            await update.message.reply_text(f"❌ Error summarizing article: {e}")
+            await _reply_text(update, f"❌ Error summarizing article: {e}", label="article-error")
 
     elif result.target == AgentTarget.AMBIGUOUS_NON_JOB:
-        await update.message.reply_text(
+        await _reply_text(
+            update,
             "🤔 I need a job description input to proceed. "
-            "Send a JD URL, a screenshot, or paste the JD text."
+            "Send a JD URL, a screenshot, or paste the JD text.",
+            label="ambiguous-non-job",
         )
 
     elif result.target == AgentTarget.CLARIFY:
-        await update.message.reply_text(
+        await _reply_text(
+            update,
             "🤔 I'm not sure what to do with that. You can:\n"
             "• Send a JD (text, URL, or screenshot)\n"
             "• Ask about Karan's profile\n"
-            "• Check /status for follow-ups"
+            "• Check /status for follow-ups",
+            label="clarify",
         )
 
 

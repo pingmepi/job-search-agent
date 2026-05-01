@@ -61,6 +61,12 @@ from core.feedback import (
 )
 from core.json_utils import extract_first_json_object as _extract_first_json_object
 from core.prompts import load_prompt
+from core.telegram_utils import (
+    TELEGRAM_MIN_SUMMARY_CHARS,
+    TELEGRAM_SAFE_MESSAGE_CHARS,
+    TELEGRAM_SUMMARY_RETRIES,
+    hard_truncate,
+)
 
 if TYPE_CHECKING:
     from agents.inbox.agent import ApplicationPack
@@ -80,6 +86,12 @@ Rules:
 - Keep the bullet concise enough for a one-page resume.
 - Output plain bullet text only, not LaTeX markup or a leading \\item.
 """.strip()
+
+TELEGRAM_DRAFT_PREFIXES = {
+    "email": "✉️ Email draft:\n\n",
+    "linkedin": "💬 LinkedIn DM:\n\n",
+    "referral": "🤝 Referral note:\n\n",
+}
 
 
 # ── Step result ───────────────────────────────────────────────────────────────
@@ -141,6 +153,7 @@ class ExecutionContext:
     user_vetted: bool = False
     step_results: list[StepResult] = field(default_factory=list)
     mutation_summary: dict[str, Any] = field(default_factory=dict)
+    telegram_draft_audit: dict[str, Any] = field(default_factory=dict)
     out_of_scope: bool = False
     out_of_scope_reason: Optional[str] = None
 
@@ -231,6 +244,82 @@ def _sanitize_mutations(raw: list[dict]) -> list[dict]:
     return clean
 
 
+def _enforce_telegram_draft_limit(
+    *,
+    ctx: "ExecutionContext",
+    draft_key: str,
+    text: str,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Ensure a collateral draft fits Telegram constraints before eval logging.
+
+    Returns (final_text, audit_dict).
+    """
+    from core.llm import chat_text
+
+    prefix = TELEGRAM_DRAFT_PREFIXES[draft_key]
+    draft_limit = max(TELEGRAM_SAFE_MESSAGE_CHARS - len(prefix), TELEGRAM_MIN_SUMMARY_CHARS)
+    candidate = (text or "").strip()
+
+    audit: dict[str, Any] = {
+        "draft_key": draft_key,
+        "draft_limit": draft_limit,
+        "before_chars": len(candidate),
+        "after_chars": len(candidate),
+        "before_message_chars": len(prefix) + len(candidate),
+        "after_message_chars": len(prefix) + len(candidate),
+        "summarize_attempts": 0,
+        "hard_truncated": False,
+        "transformed": False,
+    }
+    if len(candidate) <= draft_limit:
+        return candidate, audit
+
+    _record_prompt_version(ctx, "telegram_condense", 1)
+    system = load_prompt("telegram_condense", version=1)
+
+    for attempt in range(1, TELEGRAM_SUMMARY_RETRIES + 1):
+        target = max(draft_limit - (attempt - 1) * 250, TELEGRAM_MIN_SUMMARY_CHARS)
+        user_msg = (
+            f"Draft type: {draft_key}\n"
+            f"Hard max chars for draft body: {target}\n"
+            "Rewrite the message to satisfy the limit while preserving concrete facts.\n\n"
+            f"{candidate}"
+        )
+        try:
+            response = chat_text(system, user_msg)
+            condense_label = f"telegram_draft_condense_{draft_key}_{attempt}"
+            _accumulate_llm_usage(
+                ctx,
+                key=condense_label,
+                response=response,
+                generation_label=condense_label,
+            )
+            condensed = (response.text or "").strip()
+            if condensed:
+                audit["summarize_attempts"] = attempt
+                candidate = condensed
+        except Exception as exc:
+            logger.warning(
+                "Telegram draft condense failed draft=%s attempt=%d error=%s",
+                draft_key,
+                attempt,
+                exc,
+            )
+            continue
+        if len(candidate) <= target:
+            break
+
+    if len(candidate) > draft_limit:
+        candidate = hard_truncate(candidate, draft_limit)
+        audit["hard_truncated"] = True
+
+    audit["after_chars"] = len(candidate)
+    audit["after_message_chars"] = len(prefix) + len(candidate)
+    audit["transformed"] = candidate != (text or "").strip()
+    return candidate, audit
+
+
 def _record_prompt_version(ctx: "ExecutionContext", name: str, version: int) -> None:
     ctx.prompt_versions.append(f"{name}:v{version}")
 
@@ -309,7 +398,9 @@ def _select_swap_bullet(
         else:
             score = 0.0
         if score > best_score or (
-            score == best_score and best_candidate is not None and len(candidate) < len(best_candidate)
+            score == best_score
+            and best_candidate is not None
+            and len(candidate) < len(best_candidate)
         ):
             best_candidate = candidate
             best_score = score
@@ -343,7 +434,8 @@ def _recover_blank_bullets(
 
     _record_inline_prompt(ctx, "blank_bullet_recovery:inline_prompt:v1")
     original_map = {
-        (occ.region_index, occ.bullet_index): occ for occ in extract_bullet_occurrences(original_tex)
+        (occ.region_index, occ.bullet_index): occ
+        for occ in extract_bullet_occurrences(original_tex)
     }
 
     for pass_no in range(1, 3):
@@ -655,7 +747,9 @@ def _handle_resume_mutate(
         jd.description,
         top_n=12,
     )
-    bullet_bank_values = [b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b]
+    bullet_bank_values = [
+        b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b
+    ]
 
     bullet_bank_formatted = "\n".join(
         f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
@@ -884,7 +978,9 @@ def _handle_compile(
                     ctx.compile_outcome = "fallback_success"
                     ctx.single_page_target_met = True
                     ctx.single_page_status = "committed_master_used"
-                    pack.errors.append("Used pre-compiled committed master PDF as terminal fallback.")
+                    pack.errors.append(
+                        "Used pre-compiled committed master PDF as terminal fallback."
+                    )
                 else:
                     pack.pdf_path = None
                     _cleanup_pdfs(app_output_dir)
@@ -1074,7 +1170,11 @@ def _handle_draft(
         resp = generate_email_draft(name, positioning, jd.company, jd.role)
         _record_prompt_version(ctx, "draft_email", 1)
         _record_model(ctx, getattr(resp, "model", None))
-        pack.email_draft = resp.text
+        final_text, audit = _enforce_telegram_draft_limit(
+            ctx=ctx, draft_key="email", text=resp.text
+        )
+        pack.email_draft = final_text
+        ctx.telegram_draft_audit["email"] = audit
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("email")
         gen_id = getattr(resp, "generation_id", None)
@@ -1091,7 +1191,11 @@ def _handle_draft(
         resp = generate_linkedin_dm(name, positioning, jd.company, jd.role)
         _record_prompt_version(ctx, "draft_linkedin", 1)
         _record_model(ctx, getattr(resp, "model", None))
-        pack.linkedin_draft = resp.text
+        final_text, audit = _enforce_telegram_draft_limit(
+            ctx=ctx, draft_key="linkedin", text=resp.text
+        )
+        pack.linkedin_draft = final_text
+        ctx.telegram_draft_audit["linkedin"] = audit
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("linkedin")
         gen_id = getattr(resp, "generation_id", None)
@@ -1108,7 +1212,11 @@ def _handle_draft(
         resp = generate_referral_template(name, positioning, jd.company, jd.role)
         _record_prompt_version(ctx, "draft_referral", 1)
         _record_model(ctx, getattr(resp, "model", None))
-        pack.referral_draft = resp.text
+        final_text, audit = _enforce_telegram_draft_limit(
+            ctx=ctx, draft_key="referral", text=resp.text
+        )
+        pack.referral_draft = final_text
+        ctx.telegram_draft_audit["referral"] = audit
         ctx.total_tokens += getattr(resp, "total_tokens", 0)
         pack.generated_collateral.append("referral")
         gen_id = getattr(resp, "generation_id", None)
@@ -1421,6 +1529,12 @@ def _complete_run_record(
         "collateral_generation_status": pack.collateral_generation_status,
         "collateral_generation_reason": pack.collateral_generation_reason,
         "collateral_files": pack.collateral_files,
+        "final_collateral_drafts": {
+            "email": pack.email_draft,
+            "linkedin": pack.linkedin_draft,
+            "referral": pack.referral_draft,
+        },
+        "telegram_draft_audit": ctx.telegram_draft_audit,
         "error_count": len(pack.errors),
         "artifact_paths": artifact_paths,
         "single_page_status": ctx.single_page_status,
@@ -1472,12 +1586,28 @@ def _handle_eval_log(
     _resolve_costs(pack, ctx)
     forbidden_claims_count, edit_scope_violations = _run_hard_evals(pack, ctx)
     soft_resume_relevance, soft_jd_accuracy = _run_soft_evals(pack, ctx)
+    telegram_lengths = {
+        "email": len(TELEGRAM_DRAFT_PREFIXES["email"]) + len(pack.email_draft or ""),
+        "linkedin": len(TELEGRAM_DRAFT_PREFIXES["linkedin"]) + len(pack.linkedin_draft or ""),
+        "referral": len(TELEGRAM_DRAFT_PREFIXES["referral"]) + len(pack.referral_draft or ""),
+    }
+    telegram_length_ok = {
+        key: (value <= TELEGRAM_SAFE_MESSAGE_CHARS)
+        for key, value in telegram_lengths.items()
+        if key in set(pack.generated_collateral)
+    }
 
     eval_results = {
         "compile_success": bool(pack.pdf_path and pack.pdf_path.exists()),
         "forbidden_claims_count": forbidden_claims_count,
         "edit_scope_violations": edit_scope_violations,
         "draft_length_ok": check_draft_length(pack.linkedin_draft or "", max_chars=300),
+        "telegram_draft_lengths": telegram_lengths,
+        "telegram_draft_length_ok": telegram_length_ok,
+        "telegram_draft_length_all_ok": all(telegram_length_ok.values())
+        if telegram_length_ok
+        else True,
+        "telegram_draft_audit": ctx.telegram_draft_audit,
         "cost_ok": check_cost(ctx.total_cost, threshold=ctx.settings.max_cost_per_job),
         "keyword_coverage": _keyword_coverage(jd.skills, pack.mutated_tex or ""),
         "compile_rollback_used": ctx.compile_rollback_used,

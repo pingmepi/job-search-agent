@@ -125,6 +125,13 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
     assert pack.eval_results["llm_total_tokens"] > 0
     assert "llm_usage_breakdown" in pack.eval_results
     assert "keyword_coverage" in pack.eval_results
+    assert pack.eval_results["telegram_draft_length_all_ok"] is True
+    assert pack.eval_results["telegram_draft_length_ok"] == {
+        "email": True,
+        "linkedin": True,
+        "referral": True,
+    }
+    assert "telegram_draft_audit" in pack.eval_results
     assert (runs_dir / "artifacts" / pack.run_id / "job_extraction.json").exists()
     assert (runs_dir / "artifacts" / pack.run_id / "resume_output.json").exists()
     assert (runs_dir / "artifacts" / pack.run_id / "eval_output.json").exists()
@@ -154,6 +161,140 @@ def test_run_pipeline_persists_job_and_run_with_mocks(db, tmp_path: Path, monkey
     context = json.loads(run_row["context_json"])
     assert "artifact_paths" in context
     assert "job_extraction" in context["artifact_paths"]
+    assert context["final_collateral_drafts"]["email"] == "email"
+    assert context["final_collateral_drafts"]["linkedin"] == "linkedin"
+    assert context["final_collateral_drafts"]["referral"] == "referral"
+    assert "telegram_draft_audit" in context
+
+
+def test_run_pipeline_logs_and_evals_condensed_final_draft_text(
+    db, tmp_path: Path, monkeypatch
+) -> None:
+    runs_dir = tmp_path / "runs"
+    profile_path = tmp_path / "profile.json"
+    bullet_bank_path = tmp_path / "bullet_bank.json"
+    base_resume = tmp_path / "base.tex"
+
+    profile_path.write_text(
+        json.dumps(
+            {
+                "identity": {"name": "Karan"},
+                "positioning": {"ai": "Product Manager"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    bullet_bank_path.write_text("[]", encoding="utf-8")
+    base_resume.write_text(
+        "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    fake_settings = SimpleNamespace(
+        database_url=db,
+        runs_dir=runs_dir,
+        resumes_dir=tmp_path,
+        profile_path=profile_path,
+        bullet_bank_path=bullet_bank_path,
+        max_cost_per_job=1.0,
+    )
+
+    monkeypatch.setattr("agents.inbox.agent.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("core.db.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("evals.logger.get_settings", lambda: fake_settings)
+
+    jd = JDSchema(
+        company="Acme Corp",
+        role="AI PM",
+        location="Remote",
+        experience_required="5 years",
+        skills=["python"],
+        description="Own AI product roadmap.",
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.extract_jd_with_usage",
+        lambda _text: (
+            jd,
+            {
+                "prompt_tokens": 5,
+                "completion_tokens": 7,
+                "total_tokens": 12,
+                "cost_estimate": 0.00012,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.executor.select_base_resume_with_details",
+        lambda *_args, **_kwargs: (
+            base_resume,
+            0.75,
+            {"selected_resume": base_resume.name, "normalized_score": 0.75},
+        ),
+    )
+
+    def _fake_compile(_tex_path: Path, out_dir: Path) -> Path:
+        pdf_path = out_dir / "out.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n%fake\n")
+        return pdf_path
+
+    monkeypatch.setattr("agents.inbox.executor.compile_latex", _fake_compile)
+
+    very_long_email = "E" * 5200
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_email_draft",
+        lambda *_args, **_kwargs: _response(very_long_email),
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_linkedin_dm", lambda *_args, **_kwargs: _response("linkedin")
+    )
+    monkeypatch.setattr(
+        "agents.inbox.drafts.generate_referral_template",
+        lambda *_args, **_kwargs: _response("referral"),
+    )
+    monkeypatch.setattr(
+        "core.llm.chat_text",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            text="condensed email",
+            prompt_tokens=3,
+            completion_tokens=2,
+            total_tokens=5,
+            cost_estimate=0.0,
+            generation_id=None,
+            model="test-model",
+        ),
+    )
+
+    monkeypatch.setattr("evals.soft.score_resume_relevance", lambda *_a, **_k: 0.8)
+    monkeypatch.setattr("evals.soft.score_jd_accuracy", lambda *_a, **_k: 0.9)
+
+    pack = run_pipeline(
+        "raw jd text",
+        selected_collateral=["email", "linkedin", "referral"],
+        skip_upload=True,
+        skip_calendar=True,
+    )
+
+    assert pack.email_draft == "condensed email"
+    assert pack.eval_results["telegram_draft_length_all_ok"] is True
+    assert pack.eval_results["telegram_draft_length_ok"]["email"] is True
+    assert pack.eval_results["telegram_draft_audit"]["email"]["transformed"] is True
+
+    conn = psycopg2.connect(db, cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT eval_results, context_json FROM runs WHERE run_id = %s",
+            (pack.run_id,),
+        )
+        run_row = cur.fetchone()
+    finally:
+        conn.close()
+
+    assert run_row is not None
+    eval_results = json.loads(run_row["eval_results"])
+    assert eval_results["telegram_draft_audit"]["email"]["transformed"] is True
+    context = json.loads(run_row["context_json"])
+    assert context["final_collateral_drafts"]["email"] == "condensed email"
 
 
 def test_run_pipeline_persists_user_vetted_when_requested(db, tmp_path: Path, monkeypatch) -> None:
@@ -635,17 +776,76 @@ def test_run_pipeline_uploads_only_selected_artifacts_to_drive(
 
 
 class _FakeMessage:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, fail_on_too_long: bool = False) -> None:
         self.text = text
         self.replies: list[tuple[str, dict]] = []
+        self.fail_on_too_long = fail_on_too_long
+        self.reply_attempts = 0
 
     async def reply_text(self, text: str, **kwargs) -> None:
+        self.reply_attempts += 1
+        if self.fail_on_too_long and len(text) > 4096:
+            raise Exception("Bad Request: message is too long")
         self.replies.append((text, kwargs))
 
 
 class _FakeUpdate:
-    def __init__(self, text: str) -> None:
-        self.message = _FakeMessage(text)
+    def __init__(self, text: str, *, fail_on_too_long: bool = False) -> None:
+        self.message = _FakeMessage(text, fail_on_too_long=fail_on_too_long)
+
+
+@pytest.mark.asyncio
+async def test_reply_text_summarizes_oversized_payload_before_sending(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    long_text = "x" * 5000
+
+    def _fake_chat_text(_system: str, _user: str):
+        return SimpleNamespace(text="s" * 3500)
+
+    monkeypatch.setattr(adapter, "chat_text", _fake_chat_text)
+    update = _FakeUpdate("hi", fail_on_too_long=True)
+
+    await adapter._reply_text(update, long_text, label="long-test")
+
+    assert len(update.message.replies) == 1
+    sent_text = update.message.replies[0][0]
+    assert len(sent_text) <= adapter.TELEGRAM_SAFE_MESSAGE_CHARS
+    assert update.message.reply_attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_run_and_respond_summarizes_very_long_exception_message(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    def _raise_pipeline(*_args, **_kwargs):
+        raise RuntimeError("boom-" + ("e" * 7000))
+
+    def _fake_chat_text(_system: str, _user: str):
+        return SimpleNamespace(text="summarized failure")
+
+    async def _direct_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("agents.inbox.agent.run_pipeline", _raise_pipeline)
+    monkeypatch.setattr(adapter, "chat_text", _fake_chat_text)
+    monkeypatch.setattr(adapter.asyncio, "to_thread", _direct_to_thread)
+
+    update = _FakeUpdate("trigger", fail_on_too_long=True)
+    await adapter._run_and_respond(
+        update,
+        raw_text="jd text",
+        image_path=None,
+        selected_collateral=[],
+        skip_upload=True,
+        skip_calendar=True,
+        user_vetted=True,
+    )
+
+    assert len(update.message.replies) == 1
+    sent_text = update.message.replies[0][0]
+    assert sent_text
+    assert len(sent_text) <= adapter.TELEGRAM_SAFE_MESSAGE_CHARS
 
 
 @pytest.mark.asyncio
