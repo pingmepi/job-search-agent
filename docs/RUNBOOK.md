@@ -108,7 +108,7 @@ OCR_MIN_ALPHA_CHARS=35
 OCR_REQUIRE_JD_INDICATOR=true
 TELEGRAM_ENABLE_DRIVE_UPLOAD=false
 TELEGRAM_ENABLE_CALENDAR_EVENTS=false
-TELEGRAM_DEMO_MODE=false
+TELEGRAM_DEMO_MODE=false            # true = public demo onboarding + bypasses chat allowlist
 
 # Google Cloud (Drive + Calendar)
 GOOGLE_CREDENTIALS_PATH=credentials/google_oauth.json
@@ -120,7 +120,7 @@ MAX_COST_PER_JOB=0.15
 DATABASE_URL=postgresql://user:password@host:5432/inbox_agent
 
 # Security & resume policy (optional — safe to leave as defaults)
-TELEGRAM_ALLOWED_CHAT_IDS=          # comma-separated chat IDs; empty = allow all
+TELEGRAM_ALLOWED_CHAT_IDS=          # comma-separated chat IDs; empty = allow all (ignored in demo mode)
 ENFORCE_SINGLE_PAGE=true
 MAX_CONDENSE_RETRIES=3
 ```
