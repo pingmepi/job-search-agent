@@ -795,6 +795,110 @@ class _FakeUpdate:
 
 
 @pytest.mark.asyncio
+async def test_start_handler_shares_public_demo_intro(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_demo_mode=True),
+    )
+
+    update = _FakeUpdate("/start")
+    context = SimpleNamespace(user_data={})
+
+    await adapter.start_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    payload = update.message.replies[0][0]
+    assert "public demo" in payload.lower()
+    assert "Send a job description" in payload
+    assert "/status" in payload
+
+
+@pytest.mark.asyncio
+async def test_start_handler_uses_standard_intro_when_demo_mode_disabled(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_demo_mode=False),
+    )
+
+    update = _FakeUpdate("/start")
+    context = SimpleNamespace(user_data={})
+
+    await adapter.start_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    payload = update.message.replies[0][0]
+    assert "public demo" not in payload.lower()
+    assert "I'm your Job Application Agent" in payload
+
+
+@pytest.mark.asyncio
+async def test_text_handler_greeting_shows_intro_without_start(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(
+            telegram_enable_drive_upload=False,
+            telegram_enable_calendar_events=False,
+            telegram_allowed_chat_ids="",
+            telegram_demo_mode=True,
+        ),
+    )
+
+    update = _FakeUpdate("hi")
+    context = SimpleNamespace(user_data={})
+
+    await adapter.text_handler(update, context)
+
+    assert len(update.message.replies) == 1
+    assert "public demo" in update.message.replies[0][0].lower()
+    assert context.user_data.get("demo_intro_sent") is True
+
+
+@pytest.mark.asyncio
+async def test_text_handler_greeting_intro_shows_once_then_routes(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(
+            telegram_enable_drive_upload=False,
+            telegram_enable_calendar_events=False,
+            telegram_allowed_chat_ids="",
+            telegram_demo_mode=True,
+        ),
+    )
+    monkeypatch.setattr(
+        adapter,
+        "route",
+        lambda _text: RouteResult(
+            AgentTarget.AMBIGUOUS_NON_JOB,
+            "ambiguous route",
+            "ambiguous_non_job",
+        ),
+    )
+
+    context = SimpleNamespace(user_data={})
+    first = _FakeUpdate("hello")
+    await adapter.text_handler(first, context)
+    second = _FakeUpdate("hello")
+    await adapter.text_handler(second, context)
+
+    assert len(first.message.replies) == 1
+    assert "public demo" in first.message.replies[0][0].lower()
+    assert len(second.message.replies) == 1
+    assert "need a job description input" in second.message.replies[0][0]
+
+
+@pytest.mark.asyncio
 async def test_reply_text_summarizes_oversized_payload_before_sending(monkeypatch) -> None:
     from agents.inbox import adapter
 

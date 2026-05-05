@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -63,10 +64,49 @@ COLLATERAL_PROMPT = (
     "Reply `none` to skip collateral generation."
 )
 
+START_MESSAGE_DEMO = (
+    "👋 Hi! This is Karan's Job Search Agent (public demo).\n\n"
+    "What you can do here:\n"
+    "1) Send a job description (paste text, drop a URL, or upload a screenshot).\n"
+    "   I will tailor a resume and generate optional outreach drafts.\n"
+    "2) Ask about Karan's background and positioning.\n"
+    "3) Share an article to get a summary and job-search signals.\n"
+    "4) Use /status to see pending follow-ups.\n\n"
+    "Quick try:\n"
+    "• `Paste any JD text`\n"
+    "• `https://company.com/careers/role`\n"
+    "• `Tell me about Karan's experience in AI product work`"
+)
+
+START_MESSAGE_STANDARD = (
+    "👋 Hi! I'm your Job Application Agent.\n\n"
+    "Send me:\n"
+    "📸 A screenshot of a job description\n"
+    "🔗 A URL to a job listing\n"
+    "📝 Raw JD text\n\n"
+    "I'll generate a tailored resume, then ask which collateral you want."
+)
+
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|yo|start|help)(?:[\s!,.?]+(?:bot|there))?\s*$",
+    re.IGNORECASE,
+)
+
 
 def _is_message_too_long_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return "message is too long" in message or "message_too_long" in message
+
+
+def _looks_like_greeting(text: str | None) -> bool:
+    if not text:
+        return False
+    return bool(_GREETING_PATTERN.match(text.strip()))
+
+
+def _is_demo_mode_enabled() -> bool:
+    settings = get_settings()
+    return bool(getattr(settings, "telegram_demo_mode", False))
 
 
 async def _summarize_text_to_limit(text: str, *, limit: int, label: str) -> str:
@@ -291,16 +331,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handle the /start command."""
     if not update.message:
         return
-    await _reply_text(
-        update,
-        "👋 Hi! I'm your Job Application Agent.\n\n"
-        "Send me:\n"
-        "📸 A screenshot of a job description\n"
-        "🔗 A URL to a job listing\n"
-        "📝 Raw JD text\n\n"
-        "I'll generate a tailored resume, then ask which collateral you want.",
-        label="start-help",
-    )
+    context.user_data["demo_intro_sent"] = True
+    message = START_MESSAGE_DEMO if _is_demo_mode_enabled() else START_MESSAGE_STANDARD
+    await _reply_text(update, message, label="start-help")
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -418,6 +451,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     logger.info("Handling text message via router path")
+    if (
+        _is_demo_mode_enabled()
+        and not context.user_data.get("demo_intro_sent")
+        and _looks_like_greeting(text)
+    ):
+        context.user_data["demo_intro_sent"] = True
+        await _reply_text(update, START_MESSAGE_DEMO, label="start-help-auto")
+        return
+
     result = route(text)
     input_mode = "url" if extract_first_url(text or "") else "text"
     preview = (text or "").replace("\n", " ").strip()

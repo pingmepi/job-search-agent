@@ -73,6 +73,9 @@ class Settings:
     telegram_enable_calendar_events: bool = field(
         default_factory=lambda: _env_bool("TELEGRAM_ENABLE_CALENDAR_EVENTS", default=False)
     )
+    telegram_demo_mode: bool = field(
+        default_factory=lambda: _env_bool("TELEGRAM_DEMO_MODE", default=False)
+    )
 
     # ── Google Cloud ──────────────────────────────────────────────
     google_credentials_path: str = field(
