@@ -794,6 +794,34 @@ class _FakeUpdate:
         self.message = _FakeMessage(text, fail_on_too_long=fail_on_too_long)
 
 
+def test_is_chat_allowed_bypasses_allowlist_in_demo_mode(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_demo_mode=True, telegram_allowed_chat_ids="123"),
+    )
+    update = SimpleNamespace(effective_chat=SimpleNamespace(id=999), message=None)
+
+    assert adapter._is_chat_allowed(update) is True
+
+
+def test_is_chat_allowed_enforces_allowlist_when_demo_mode_disabled(monkeypatch) -> None:
+    from agents.inbox import adapter
+
+    monkeypatch.setattr(
+        adapter,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_demo_mode=False, telegram_allowed_chat_ids="123,456"),
+    )
+    blocked = SimpleNamespace(effective_chat=SimpleNamespace(id=999), message=None)
+    allowed = SimpleNamespace(effective_chat=SimpleNamespace(id=456), message=None)
+
+    assert adapter._is_chat_allowed(blocked) is False
+    assert adapter._is_chat_allowed(allowed) is True
+
+
 @pytest.mark.asyncio
 async def test_start_handler_shares_public_demo_intro(monkeypatch) -> None:
     from agents.inbox import adapter

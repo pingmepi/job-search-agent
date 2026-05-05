@@ -43,8 +43,14 @@ logger = logging.getLogger(__name__)
 
 
 def _is_chat_allowed(update: Update) -> bool:
-    """Check if the chat is in the allowlist (empty list = allow all)."""
+    """Check if chat access is allowed.
+
+    In demo mode, allow all chats so recruiter/public trials work without
+    maintaining allowlists.
+    """
     settings = get_settings()
+    if bool(getattr(settings, "telegram_demo_mode", False)):
+        return True
     allowlist = settings.telegram_allowed_chat_ids.strip()
     if not allowlist:
         return True
