@@ -49,4 +49,7 @@ Thumbs.db
 # Claude Code internal worktrees
 .claude/worktrees/
 
+# Docs-alignment skill cache (regenerated locally, not source-controlled)
+.alignment-cache.json
+
 AGENTS.md
