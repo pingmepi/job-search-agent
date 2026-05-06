@@ -1,6 +1,6 @@
 # Job Search Agent Tracker
 
-Last updated: 2026-04-30
+Last updated: 2026-05-05
 
 ## Sources Of Truth
 - PRD: `PRD.md`
@@ -12,7 +12,7 @@ Last updated: 2026-04-30
 ## Current Status
 - Phase: Phase 3 product workflow expansion in progress.
 - Deployment: Railway (PostgreSQL + Docker). Webhook live.
-- Test status: `324 passed, 43 skipped` via `.venv/bin/pytest -q -m "not live"` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
+- Test status: `330 passed, 41 skipped` via `.venv/bin/pytest -q -m "not live"` (ruff lint clean, pre-commit hooks active). Live E2E: `pytest -m live`.
 - CI gate status: `PASSED` (fixture-based gating, all 5 thresholds green).
 - Pre-commit: ruff lint + format + pytest. Install: `bash scripts/install-hooks.sh`.
 - Active focus: `fix/out-of-scope-gate` hardening (gates 1/2/4/5 shipped, gate 3 pending). `KAR-62` remains paused (3/5 done).

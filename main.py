@@ -14,6 +14,9 @@ Usage:
     python main.py followup-runner [options]     # Run scheduled follow-up detection
     python main.py replay-webhook [options]      # Replay persisted webhook event
     python main.py build-skill-index             # Rebuild profile/skill_index.json
+    python main.py runs [run_id] [--steps]       # Inspect run audit trail (or list recent)
+    python main.py auth-google                   # Authenticate Google Drive + Calendar
+    python main.py encode-token                  # Base64-encode google_token.json for Railway
 """
 
 from __future__ import annotations

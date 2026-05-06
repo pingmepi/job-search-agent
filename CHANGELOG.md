@@ -2,9 +2,13 @@
 
 All notable changes to job-search-agent are recorded here. Dates use ISO format (YYYY-MM-DD).
 
-## [Unreleased] — 2026-04-24 → 2026-04-30
+## [Unreleased] — 2026-04-24 → 2026-05-05
 
-A sprint focused on closing the **persona-misalignment regression** (run-144b1afaef4a, where a Portuguese sales-engineer JD silently rebranded the candidate's resume) and on tightening the eval/regression harness so similar drift is caught automatically.
+A sprint focused on closing the **persona-misalignment regression** (run-144b1afaef4a, where a Portuguese sales-engineer JD silently rebranded the candidate's resume), tightening the eval/regression harness so similar drift is caught automatically, hardening Telegram message-length safety, and adding a recruiter-facing demo onboarding mode.
+
+### Features (2026-05-05)
+
+- **Recruiter demo onboarding mode (`TELEGRAM_DEMO_MODE`).** When the env flag is enabled, the Telegram bot serves a demo-tuned `/start` greeting on first contact and bypasses `TELEGRAM_ALLOWED_CHAT_IDS` so anyone can try the bot end-to-end. Standard mode (default) preserves the existing allowlist behavior. Wired in `core/config.py` and `agents/inbox/adapter.py`.
 
 ### Fixes (2026-05-02)
 
@@ -43,10 +47,12 @@ A sprint focused on closing the **persona-misalignment regression** (run-144b1af
 
 ### Internal
 
+- **PR #32 review-fix.** Greptile/Codex feedback on the Telegram length-safety system addressed: shared constants and `hard_truncate` extracted into `core/telegram_utils.py`, two diverging `_hard_truncate` impls unified, missing `label=` args added to `_reply_text` calls in adapter, summarize-attempts audit guarded inside `if condensed:`, and per-attempt generation labels added so condense-loop costs accumulate.
+- **Docs-alignment fixes (2026-05-02 → 2026-05-05).** `SCHEMA_VERSION` bumped 1.0 → 1.1, duplicate `.env.example` keys removed, test-count snapshots refreshed across TRACKER / AGENT_HANDOFF / PROJECT_OVERVIEW / setup-and-test, README "Common Commands" expanded to cover all 15 `main.py` subcommands.
 - Alignment cache (`.alignment-cache.json`) refreshed; docs-alignment audit run end-to-end with HIGH issues resolved.
 - `ai-product-builder` interview-prep artifact added under `interview-prep/`.
-- Test baseline: **315 passing, 0 failing** at sprint close (up from 251 earlier in the project).
+- Test baseline: **330 passing, 41 skipped** at sprint close (up from 315 mid-sprint and 251 earlier in the project).
 
 ---
 
-_Generated 2026-05-01 from commits `1e7b6bb..f2b081a`._
+_Generated 2026-05-05 from commits `1e7b6bb..dbf469a`._
