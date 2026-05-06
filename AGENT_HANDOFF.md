@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last updated: 2026-05-02
+Last updated: 2026-05-05
 
 ## Purpose
 
@@ -10,12 +10,18 @@ Short-lived operational handoff between sessions. Keep this file concise. Move d
 
 - Project: `job-search-agent`
 - Linear project: https://linear.app/karans/project/job-search-agent-d5014a28b093
-- Active focus: `fix/telegram-length-eval-logging` (PR #32) — Telegram length safety refactored into `core/telegram_utils.py`; docs alignment fixes applied
-- Test baseline (`.venv/bin/pytest -q -m "not live"`): `324 passed, 43 skipped`
+- Active focus: `fix/telegram-length-eval-logging` — Telegram length safety refactored into `core/telegram_utils.py`; recruiter demo onboarding mode shipped (PR #33 follow-ups still open, see below)
+- Test baseline (`.venv/bin/pytest -q -m "not live"`): `330 passed, 41 skipped`
 - CI gate (`.venv/bin/python main.py ci-gate`): `PASSED` (compile 100%, forbidden 0, edit violations 0, avg cost $0.0683, avg latency 33.4s)
 - Deployment: Railway (Docker + PostgreSQL), Telegram webhook live
 
-## What Completed This Session (2026-04-30)
+## What Completed This Session (2026-05-05)
+
+- Recruiter demo onboarding mode (`TELEGRAM_DEMO_MODE`) added: toggleable `/start` flow surfaces demo copy and bypasses `TELEGRAM_ALLOWED_CHAT_IDS` when enabled (commits `337e36a`, `dbf469a`).
+- Docs-alignment fixes from the 2026-05-02 audit applied to `.env.example` (deduped keys), `core/contracts.py` (`SCHEMA_VERSION = "1.1"`), and test-count snapshots (commit `21be2cf`).
+- Re-ran codebase-docs-alignment audit; 1 HIGH (README command list), 4 MED, 3 LOW. Findings applied across README, CHANGELOG, TRACKER, PROJECT_OVERVIEW, setup-and-test, and this file.
+
+## Previous Session (2026-04-30)
 
 - Soft-eval parser hardening fixed fenced-JSON judge outputs that were silently forcing soft scores to `0.0`.
 - Regression runner gained preflight env checks and optional soft-score floor assertions.
@@ -28,6 +34,14 @@ Short-lived operational handoff between sessions. Keep this file concise. Move d
 - Eval report artifact loading still depends on local `runs/artifacts/*`; Railway redeploys can drop historical files.
 - Follow-Up Agent runner exists, but Telegram adapter still primarily exposes status instead of draft-generation UX.
 - Google Calendar/Drive steps can fail on expired OAuth tokens; run `python main.py auth-google` when needed.
+
+## Unresolved Review Comments — PR #33 (merged, follow-up branch needed)
+
+Three P2 issues raised by Greptile on PR #33 were never addressed before merge. All in `agents/inbox/adapter.py`:
+
+1. **Silent fallback masks missing attribute** — `agents/inbox/adapter.py:52` and `:116` use `getattr(settings, "telegram_demo_mode", False)`. `Settings` is a typed dataclass that always declares the field; direct attribute access (`settings.telegram_demo_mode`) would raise a clear `AttributeError` on a stale or wrong settings object instead of silently returning `False`.
+2. **`demo_intro_sent` set unconditionally** — `agents/inbox/adapter.py:341` writes `context.user_data["demo_intro_sent"] = True` regardless of whether demo mode is enabled. If an operator later toggles demo mode on, users who already ran `/start` will skip the auto-greeting forever. Guard with `if _is_demo_mode_enabled():`.
+3. **Greeting regex captures `start`/`help`** — `agents/inbox/adapter.py:98` `_GREETING_PATTERN` matches plain-text `start` and `help` as greetings. In demo mode, typing `help` (no slash) triggers the demo intro on first use, then falls through to the router on subsequent uses instead of returning help content. Remove `start` and `help` from the alternation.
 
 ## Next Recommended Actions
 

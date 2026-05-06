@@ -46,4 +46,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code internal worktrees
+.claude/worktrees/
+
+# Docs-alignment skill cache (regenerated locally, not source-controlled)
+.alignment-cache.json
+
 AGENTS.md

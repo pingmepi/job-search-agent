@@ -72,12 +72,13 @@ COLLATERAL_PROMPT = (
 
 START_MESSAGE_DEMO = (
     "👋 Hi! This is Karan's Job Search Agent (public demo).\n\n"
+    "Important: this bot is grounded on Karan's profile only.\n"
+    "If you send a JD, you'll get a demo output tailored for Karan, not for you.\n\n"
     "What you can do here:\n"
-    "1) Send a job description (paste text, drop a URL, or upload a screenshot).\n"
-    "   I will tailor a resume and generate optional outreach drafts.\n"
+    "1) Send a job description (paste text, drop a URL, or upload a screenshot)\n"
+    "   to see how Karan's resume/drafts are generated.\n"
     "2) Ask about Karan's background and positioning.\n"
-    "3) Share an article to get a summary and job-search signals.\n"
-    "4) Use /status to see pending follow-ups.\n\n"
+    "3) Share an article to get a best-effort summary and job-search signals.\n\n"
     "Quick try:\n"
     "• `Paste any JD text`\n"
     "• `https://company.com/careers/role`\n"

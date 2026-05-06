@@ -85,7 +85,7 @@ Expected output pattern (with DATABASE_URL):
 
 ```text
 ...                                                                      [100%]
-324 passed in <time>s
+330 passed in <time>s
 ```
 
 ## Stage 5: Runtime Data Sanity Check

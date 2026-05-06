@@ -61,5 +61,15 @@ python main.py webhook
 - `python main.py pipeline-check`
 - `python main.py regression-run [--json] [--case <id>]`
 - `python main.py runs [run_id] [--steps] [--limit N]`
+- `python main.py db-stats`
+- `python main.py eval-report [--json]`
+- `python main.py feedback <run_id> --label <helpful|not_helpful> [--reason <text>]`
+- `python main.py feedback-report [--days N]`
+- `python main.py followup-runner [--once] [--dry-run] [--interval-minutes N]`
+- `python main.py replay-webhook [options]`
+- `python main.py build-skill-index`
 - `python main.py auth-google`
+- `python main.py encode-token`
 - `.venv/bin/pytest -q -m "not live"`
+
+See `docs/RUNBOOK.md` for the full operator workflow.

@@ -1,65 +1,46 @@
 # Docs Alignment Report — job-search-agent
 
-Scanned 9 doc surfaces (README.md, PRD.md, AGENTS.md, AGENT_HANDOFF.md, BUILD_LOG.md, TRACKER.md, .env.example, and `docs/*.md`) against the current code state on 2026-04-30. Repo HEAD: `7406eed` (working tree has uncommitted fixes from this audit).
+Scanned 9 primary doc surfaces against ~93 Python source files on 2026-05-05 (post-fix pass).
+
+Tool version: 1.0.0. Repo HEAD: `dbf469a` (branch `fix/telegram-length-eval-logging`, with uncommitted doc fixes applied).
 
 ## Summary
-- HIGH: 0     (would mislead someone in setup, usage, or an interview answer)
-- MED:  4     (noticeable, can trip a careful reader, doesn't break core understanding)
-- LOW:  2     (cosmetic / stale-dated / minor inconsistency)
+- HIGH: 0
+- MED:  0
+- LOW:  2     (cosmetic, archival)
 
-## Resolved This Pass (2026-04-30)
-- **HIGH config-env-drift** — Added `TELEGRAM_ALLOWED_CHAT_IDS=` to [.env.example](.env.example) with comment on the comma-separated chat-ID allowlist.
-- **HIGH config-env-drift** — Added `MAX_CONDENSE_RETRIES=3` to [.env.example](.env.example) under the LLM section.
-- **MED version-drift** — Updated [PRD.md:6](PRD.md#L6) header and [PRD.md:34](PRD.md#L34) §2 preamble to declare four agents (Inbox, Profile, Follow-Up, Article) with pointer to `docs/PROJECT_OVERVIEW.md` as canonical.
+All HIGH and MED findings from the 2026-05-05 pre-fix audit have been resolved. Two LOW findings remain in archival files and are tracked here for visibility but were intentionally not edited.
 
-## Findings
+## Resolved in this pass
 
-### [MED] stale-instruction — hardcoded user-specific path in setup docs
-**File:** [docs/RUNBOOK.md:73](docs/RUNBOOK.md#L73)
-**Says:** Step 3 setup block uses `cd /Users/karan/Desktop/job-search-agent`.
-**Actually:** This path is the original author's local checkout. New contributors copy-pasting this command will fail. The README runbook is the canonical setup guide for the repo.
-**Fix:** Replace with `cd <path-to-your-checkout>` or drop the `cd` line; environment cloning should be path-agnostic.
+| Pre-fix | Category | Resolution |
+|---|---|---|
+| HIGH — README missing 8 CLI subcommands | stale-instruction | README.md "Common Commands" expanded to 15 entries; pointer to `docs/RUNBOOK.md` added. main.py docstring also extended with `runs`, `auth-google`, `encode-token`. |
+| MED — test count 324 → 330 in 4 docs | test-claim-mismatch | Updated AGENT_HANDOFF.md, TRACKER.md, docs/PROJECT_OVERVIEW.md, docs/setup-and-test.md to `330 passed, 41 skipped`. |
+| MED — TELEGRAM_DEMO_MODE undocumented | undocumented-feature | New "Features (2026-05-05)" stanza in CHANGELOG.md; AGENT_HANDOFF.md "What Completed This Session (2026-05-05)" block added. |
+| MED — AGENT_HANDOFF.md 3 days behind | stale-instruction | "Last updated" bumped to 2026-05-05; new session block; previous session block preserved. |
+| MED — PROJECT_OVERVIEW commit count 114 → 122 | version-drift | Updated to 122 (and skipped-tests row to 41). |
 
-### [MED] stale-instruction — README quickstart `DATABASE_URL` example omits credentials
-**File:** [README.md:49](README.md#L49)
-**Says:** "`DATABASE_URL` — PostgreSQL connection string (e.g. `postgresql://localhost/inbox_agent`)"
-**Actually:** [.env.example:30](.env.example#L30) uses `postgresql://user:password@localhost:5432/inbox_agent`. The README example will fail on any non-trust-auth Postgres install (which is the default on macOS Homebrew, Docker, Railway, and most cloud Postgres). New users following the quickstart will hit auth errors.
-**Fix:** Use the full `postgresql://user:password@localhost:5432/inbox_agent` form to match `.env.example`, or point at `.env.example` for the canonical template.
+## Remaining LOW findings (intentionally not auto-edited)
 
-### [MED] stale-comments-docstrings — test-baseline counts likely stale after recent commits
-**File:** [AGENT_HANDOFF.md:12](AGENT_HANDOFF.md#L12)
-**Says:** "Current test baseline: `251 passed, 37 skipped`."
-**Actually:** This baseline figure also appears in [docs/PROJECT_OVERVIEW.md:304-305](docs/PROJECT_OVERVIEW.md#L304-L305) as 251 passing / 37 skipped. After commits `bf90a59` (feedback loop telemetry + regression runner) and `7406eed` (out-of-scope gate, persona lock, skill-empty fallback) added new tests, this number is likely stale — neither doc was updated.
-**Fix:** Re-run `.venv/bin/pytest -q -m "not live"` and update both files with the current pass/skip counts.
+### [LOW] dead-link — Conceptual "memory" / "execution_plan" references in archived docs
+**File:** docs-review-2026-04-30.md:70, docs-review-2026-04-30.md:117, docs-review-2026-04-30.md:241, interview-prep/ai-engineer-llm.md:261, interview-prep/ai-engineer-llm.md:387
+**Says:** Markdown links of the form `[memory 594](memory)` and `[docs/execution_plan](docs/execution_plan)`.
+**Actually:** These resolve to the auto-memory observation system, not filesystem paths. `docs/execution_plan` exists as `docs/execution_plan.md`.
+**Fix (deferred):** Either de-link the bracketed text or extend `docs/execution_plan` → `docs/execution_plan.md`. Both files are archival snapshots; editing in place would distort the captured-at-time record.
 
-### [MED] stale-comments-docstrings — PROJECT_OVERVIEW "What's Next" doesn't reflect current incident work
-**File:** [docs/PROJECT_OVERVIEW.md:354-368](docs/PROJECT_OVERVIEW.md#L354-L368)
-**Says:** Immediate priorities are Follow-Up Agent UX and draft cost tracking.
-**Actually:** [AGENT_HANDOFF.md:57+](AGENT_HANDOFF.md#L57) documents the 2026-04-30 persona-mutation incident (run-144b1afaef4a) and identifies five missing pipeline gates. Branch `fix/out-of-scope-gate` and commit `7406eed` are actively addressing these — but the public PROJECT_OVERVIEW still presents Follow-Up UX as the headline next item.
-**Fix:** Add an "Immediate" bullet for the persona-lock / out-of-scope gate work or note that priorities have shifted.
-
-### [LOW] version-drift — "Current metrics (2026-04-08)" snapshot is stale-dated
-**File:** [docs/PROJECT_OVERVIEW.md:275](docs/PROJECT_OVERVIEW.md#L275)
-**Says:** "Current metrics (2026-04-08): Compile success 100%, Forbidden 0, Edit violations 0, Avg cost $0.07, Avg latency 33s."
-**Actually:** Today is 2026-04-30; over three weeks have elapsed and the CI gate has run many times since (still PASSING per AGENT_HANDOFF.md). The numbers may still be accurate but the date label undermines the "current" claim.
-**Fix:** Either re-run `python main.py ci-gate` and refresh the date, or relabel as "Snapshot 2026-04-08" and link to the current report.
-
-### [LOW] version-drift — "Timeline | Duration | 51 days" treats 2026-04-08 as project end
-**File:** [docs/PROJECT_OVERVIEW.md:302](docs/PROJECT_OVERVIEW.md#L302)
-**Says:** "Timeline | Duration | 51 days (2026-02-16 → 2026-04-08)"
-**Actually:** The project is still active — `git log` shows commits through 2026-04-30 including out-of-scope gate work. The 51-day figure was a milestone metric, but the framing implies the project ended.
-**Fix:** Reframe as "Initial build duration" or update end date to current.
+### [LOW] stale-instruction — TRACKER.md historical test baselines accumulating without rollup
+**File:** TRACKER.md:71,87,91,94
+**Says:** Multiple historical "Test baseline expanded to 222 passed", "114 passed", "98 passed" entries.
+**Actually:** Each is correct as a snapshot but the file has no current-state header — a reader has to scan to find today's number.
+**Fix (deferred):** Promote line 15 ("Test status: 330 passed, 41 skipped") into a "Current state" block at the top; demote historical lines to a "Baseline history" subsection. Skipped because it is a structural rewrite, not a correctness fix.
 
 ## Clean Areas
-
-- README.md `## Commands` section fully matches `main.py` subcommand parsing (verified line-by-line; 11 commands, all argparse paths exist).
-- `.env.example` LLM, Telegram, Google, Cost, Database sections — all variables read by `core/config.py` are now present (`TELEGRAM_ALLOWED_CHAT_IDS` and `MAX_CONDENSE_RETRIES` added 2026-04-30).
-- `docs/RUNBOOK.md` `## 6) Start Webhook Service` and `## 6c) Pipeline Integrity Check` sections match `app.py` and `core/pipeline_checks.py` implementations.
-- All 5 master resume templates referenced in PROJECT_OVERVIEW.md (`AI, Technical, Growth, Agentic, Founders`) exist on disk under `resumes/master_*.tex`.
-- 5 PostgreSQL tables (`jobs`, `runs`, `run_steps`, `webhook_events`, `article_signals`) documented in PROJECT_OVERVIEW match `core/db.py` DDL.
-- 56-entry bullet bank claim in PROJECT_OVERVIEW.md matches actual `profile/bullet_bank.json` length.
-- Dockerfile `python:3.11-slim` base image matches PROJECT_OVERVIEW deployment claim.
-- Pre-commit hook installer `bash scripts/install-hooks.sh` referenced in AGENT_HANDOFF and PROJECT_OVERVIEW exists at `scripts/install-hooks.sh`.
-- `python main.py pipeline-check` referenced in docs/RUNBOOK.md and AGENT_HANDOFF — implementation present in `core/pipeline_checks.py` and main.py:297-313.
-- PRD.md agent-count claim now matches code reality (four agents) as of 2026-04-30.
-- Dead-link scan: 0 dead relative markdown links across 118 scanned markdown files.
+- `.env.example` keys all referenced in `core/config.py` (`OPENROUTER_API_KEY`, `TELEGRAM_*`, `WEBHOOK_*`, `PORT`, `MAX_CONDENSE_RETRIES`, `OCR_*`, `DATABASE_URL`, `ENFORCE_SINGLE_PAGE`, `GOOGLE_*`, `MAX_COST_PER_JOB`).
+- `SCHEMA_VERSION = "1.1"` in core/contracts.py:9 has no stale `"1.0"` doc claim remaining.
+- docs/RUNBOOK.md §4 includes `TELEGRAM_DEMO_MODE` and `MAX_CONDENSE_RETRIES`, matching `.env.example`.
+- AGENTS.md agent inventory (Inbox/Profile/Followup/Article) matches `agents/` directory listing.
+- README.md Quick Start commands all resolve.
+- `docs/decisions.md` ADR log and `core/contracts.py` schema bump are mutually consistent.
+- main.py module docstring covers all 15 dispatched subcommands.
+- Test baseline `330 passed, 41 skipped` consistent across AGENT_HANDOFF, TRACKER, PROJECT_OVERVIEW, setup-and-test.

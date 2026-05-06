@@ -840,8 +840,9 @@ async def test_start_handler_shares_public_demo_intro(monkeypatch) -> None:
     assert len(update.message.replies) == 1
     payload = update.message.replies[0][0]
     assert "public demo" in payload.lower()
-    assert "Send a job description" in payload
-    assert "/status" in payload
+    assert "grounded on Karan's profile only" in payload
+    assert "not for you" in payload
+    assert "best-effort summary" in payload
 
 
 @pytest.mark.asyncio
