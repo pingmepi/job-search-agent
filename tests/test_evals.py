@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agents.inbox.resume import EditableRegion
 from evals.hard import (
     check_cost,
     check_draft_length,
@@ -9,6 +10,7 @@ from evals.hard import (
     check_forbidden_claims,
     check_forbidden_claims_per_bullet,
     check_jd_schema,
+    check_scope_violations,
 )
 
 
@@ -169,3 +171,57 @@ class TestCost:
 
     def test_at_threshold(self):
         assert check_cost(0.15, threshold=0.15) is True
+
+
+class TestScopeViolations:
+    def _region(self, content: str, reference: str | None) -> EditableRegion:
+        return EditableRegion(content=content, start_line=1, end_line=2, reference=reference)
+
+    def _bank(self) -> list[dict]:
+        return [
+            {"id": "miles-001", "bullet": "Miles bullet", "reference": "Miles Education"},
+            {"id": "upgrad-001", "bullet": "upGrad bullet", "reference": "upGrad"},
+        ]
+
+    def test_no_violations_when_bullet_matches_region(self):
+        regions = [self._region("Miles bullet", "Miles Education")]
+        mutations = [{"type": "SWAP", "source": "bank:miles-001", "original": "Miles bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []
+
+    def test_violation_when_bullet_placed_in_wrong_region(self):
+        regions = [self._region("some upGrad bullet", "upGrad")]
+        mutations = [{"type": "SWAP", "source": "bank:miles-001", "original": "some upGrad bullet"}]
+        violations = check_scope_violations(mutations, regions, self._bank())
+        assert len(violations) == 1
+        assert violations[0]["bullet_id"] == "miles-001"
+        assert violations[0]["placed_in_region"] == "upGrad"
+        assert violations[0]["bullet_reference"] == "Miles Education"
+
+    def test_rewrite_mutations_never_flagged(self):
+        regions = [self._region("some bullet", "upGrad")]
+        mutations = [{"type": "REWRITE", "source": "bank:miles-001", "original": "some bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []
+
+    def test_generate_mutations_never_flagged(self):
+        regions = [self._region("some bullet", "upGrad")]
+        mutations = [{"type": "GENERATE", "source": "profile:x", "original": "some bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []
+
+    def test_unscoped_region_not_flagged(self):
+        regions = [self._region("Miles bullet", None)]
+        mutations = [{"type": "SWAP", "source": "bank:miles-001", "original": "Miles bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []
+
+    def test_unknown_bullet_id_not_flagged(self):
+        regions = [self._region("some bullet", "upGrad")]
+        mutations = [{"type": "SWAP", "source": "bank:nonexistent", "original": "some bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []
+
+    def test_empty_mutations_returns_empty(self):
+        regions = [self._region("Miles bullet", "Miles Education")]
+        assert check_scope_violations([], regions, self._bank()) == []
+
+    def test_original_not_in_any_region_skipped(self):
+        regions = [self._region("other content entirely", "upGrad")]
+        mutations = [{"type": "SWAP", "source": "bank:miles-001", "original": "Miles bullet"}]
+        assert check_scope_violations(mutations, regions, self._bank()) == []

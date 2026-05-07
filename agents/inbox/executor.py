@@ -208,7 +208,7 @@ def _load_profile(ctx: "ExecutionContext") -> dict:
 
 
 def _outside_editable_content_changed(original_tex: str, mutated_tex: str) -> bool:
-    pattern = re.compile(r"(%%BEGIN_EDITABLE)(.*?)(%%END_EDITABLE)", re.DOTALL)
+    pattern = re.compile(r"(%%BEGIN_EDITABLE(?:\[[^\]]*\])?)(.*?)(%%END_EDITABLE)", re.DOTALL)
     original_masked = pattern.sub(r"\1\n__EDITABLE_REGION__\n\3", original_tex)
     mutated_masked = pattern.sub(r"\1\n__EDITABLE_REGION__\n\3", mutated_tex)
     return original_masked != mutated_masked
@@ -710,7 +710,7 @@ def _handle_resume_mutate(
     ctx: ExecutionContext,
 ) -> "ApplicationPack":
     from agents.inbox.bullet_relevance import select_relevant_bullets
-    from evals.hard import check_forbidden_claims_per_bullet
+    from evals.hard import check_forbidden_claims_per_bullet, check_scope_violations
 
     assert ctx.base_path is not None
     original_tex = ctx.base_path.read_text(encoding="utf-8")
@@ -738,23 +738,37 @@ def _handle_resume_mutate(
         pack.mutated_tex = original_tex
         return pack
 
-    editable_content = "\n".join(r.content for r in regions)
-
     bullet_bank_raw = json.loads(ctx.settings.bullet_bank_path.read_text(encoding="utf-8"))
-    relevant_bullets = select_relevant_bullets(
-        bullet_bank_raw,
-        jd.skills,
-        jd.description,
-        top_n=12,
-    )
-    bullet_bank_values = [
-        b["bullet"] for b in relevant_bullets if isinstance(b, dict) and "bullet" in b
-    ]
 
-    bullet_bank_formatted = "\n".join(
-        f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
-        for b in relevant_bullets
-    )
+    region_blocks: list[str] = []
+    all_bullet_values: list[str] = []
+    bullets_per_region: dict[int, int] = {}
+
+    for i, region in enumerate(regions):
+        pool = select_relevant_bullets(
+            bullet_bank_raw,
+            jd.skills,
+            jd.description,
+            top_n=8,
+            target_reference=region.reference,
+        )
+        bullets_per_region[i] = len(pool)
+        all_bullet_values.extend(b["bullet"] for b in pool if b.get("bullet"))
+
+        label = region.reference or f"region-{i + 1}"
+        bullets_fmt = "\n".join(
+            f"[{b.get('id', '?')}] (tags: {', '.join(b.get('tags', []))}) {b.get('bullet', '')}"
+            for b in pool
+        )
+        region_blocks.append(
+            f"=== Region {i + 1} ({label}) ===\n"
+            f"Current content:\n{region.content}\n\n"
+            f"Available bullets for this region:\n"
+            f"{bullets_fmt or '(none — use REWRITE or GENERATE only)'}"
+        )
+
+    bullet_bank_values = list(dict.fromkeys(all_bullet_values))
+    editable_content_structured = "\n\n".join(region_blocks)
 
     profile = _load_profile(ctx)
     allowed_tools = profile.get("allowed_tools", [])
@@ -766,14 +780,13 @@ def _handle_resume_mutate(
 
     current_bullet_count = len(_extract_bullets(original_tex))
 
-    _record_prompt_version(ctx, "resume_mutate", 3)
-    system = load_prompt("resume_mutate", version=3)
+    _record_prompt_version(ctx, "resume_mutate", 4)
+    system = load_prompt("resume_mutate", version=4)
     user_msg = (
         f"JD:\n{json.dumps({'company': jd.company, 'role': jd.role, 'skills': jd.skills, 'description': jd.description})}\n\n"
-        f"Current editable bullets:\n{editable_content}\n\n"
+        f"Current editable regions (each with its own bullet pool):\n{editable_content_structured}\n\n"
         f"Current bullet count: {current_bullet_count}. "
         f"Do NOT exceed {current_bullet_count} total bullets — the resume must fit on 1 page.\n\n"
-        f"Relevant bullet bank entries:\n{bullet_bank_formatted}\n\n"
         f"Profile context:\n{profile_context}"
     )
 
@@ -799,8 +812,9 @@ def _handle_resume_mutate(
         "mutations_count": len(mutations),
         "mutation_types": mutation_types,
         "mutations": mutations,
-        "bank_bullets_sent": len(relevant_bullets),
+        "bank_bullets_sent": len(bullet_bank_values),
         "bank_bullets_total": len(bullet_bank_raw),
+        "bank_bullets_per_region": bullets_per_region,
     }
     ctx.last_step_audit = dict(audit_blob)
     ctx.mutation_summary = dict(audit_blob)
@@ -862,6 +876,12 @@ def _handle_resume_mutate(
     if bullet_quality["blank_items_detected"]:
         ctx.last_step_audit["bullet_quality"] = bullet_quality
         ctx.mutation_summary["bullet_quality"] = bullet_quality
+
+    scope_violations = check_scope_violations(mutations, regions, bullet_bank_raw)
+    ctx.last_step_audit["scope_violations"] = scope_violations
+    ctx.last_step_audit["scope_violations_count"] = len(scope_violations)
+    ctx.mutation_summary["scope_violations"] = scope_violations
+    ctx.mutation_summary["scope_violations_count"] = len(scope_violations)
 
     pack.mutated_tex = mutated_tex
     return pack

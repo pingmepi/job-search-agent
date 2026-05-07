@@ -200,6 +200,46 @@ def check_forbidden_claims_per_bullet(
     return results
 
 
+def check_scope_violations(
+    mutations: list[dict],
+    regions: list,
+    bullet_bank: list[dict],
+) -> list[dict]:
+    """Return SWAP mutations where the placed bullet's reference doesn't match the region.
+
+    Deterministic — no LLM call. Each violation dict contains:
+    {bullet_id, bullet_reference, placed_in_region, original_bullet}
+    """
+    from agents.inbox.bullet_relevance import _normalize_company
+
+    bank_by_id = {b["id"]: b for b in bullet_bank if b.get("id")}
+    violations: list[dict] = []
+    for mutation in mutations:
+        if mutation.get("type") != "SWAP":
+            continue
+        source = mutation.get("source", "")
+        bullet_id = source.replace("bank:", "").strip()
+        bullet = bank_by_id.get(bullet_id)
+        if not bullet:
+            continue
+        bullet_ref = _normalize_company(bullet.get("reference"))
+        original = mutation.get("original", "")
+        for region in regions:
+            if original in region.content:
+                region_ref = _normalize_company(region.reference) if region.reference else None
+                if region_ref and bullet_ref and bullet_ref != region_ref:
+                    violations.append(
+                        {
+                            "bullet_id": bullet_id,
+                            "bullet_reference": bullet.get("reference"),
+                            "placed_in_region": region.reference,
+                            "original_bullet": original[:80],
+                        }
+                    )
+                break
+    return violations
+
+
 def check_forbidden_claims(
     original_bullets: list[str],
     mutated_bullets: list[str],

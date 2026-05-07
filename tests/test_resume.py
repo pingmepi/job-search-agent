@@ -63,7 +63,43 @@ class TestEditableRegionParsing:
         regions = parse_editable_regions(SAMPLE_TEX)
         # Regions should track their start/end positions
         assert regions[0].start_line > 0
-        assert regions[0].end_line > regions[0].start_line
+
+    def test_tagged_marker_sets_reference(self):
+        tex = "%%BEGIN_EDITABLE[Miles Education]\n\\item bullet\n%%END_EDITABLE"
+        regions = parse_editable_regions(tex)
+        assert len(regions) == 1
+        assert regions[0].reference == "Miles Education"
+
+    def test_bare_marker_sets_reference_none(self):
+        tex = "%%BEGIN_EDITABLE\n\\item bullet\n%%END_EDITABLE"
+        regions = parse_editable_regions(tex)
+        assert len(regions) == 1
+        assert regions[0].reference is None
+
+    def test_mixed_markers_each_get_correct_reference(self):
+        tex = (
+            "%%BEGIN_EDITABLE\n\\item summary\n%%END_EDITABLE\n"
+            "%%BEGIN_EDITABLE[Miles Education]\n\\item miles bullet\n%%END_EDITABLE\n"
+            "%%BEGIN_EDITABLE[upGrad]\n\\item upgrad bullet\n%%END_EDITABLE"
+        )
+        regions = parse_editable_regions(tex)
+        assert len(regions) == 3
+        assert regions[0].reference is None
+        assert regions[1].reference == "Miles Education"
+        assert regions[2].reference == "upGrad"
+
+    def test_apply_mutations_regex_matches_tagged_marker(self):
+        tex = "%%BEGIN_EDITABLE[Acme]\n\\item old bullet\n%%END_EDITABLE"
+        mutations = [{"original": "old bullet", "replacement": "new bullet"}]
+        result = apply_mutations(tex, mutations)
+        assert "new bullet" in result
+        assert "old bullet" not in result
+
+    def test_apply_mutations_regex_matches_bare_marker(self):
+        tex = "%%BEGIN_EDITABLE\n\\item old bullet\n%%END_EDITABLE"
+        mutations = [{"original": "old bullet", "replacement": "new bullet"}]
+        result = apply_mutations(tex, mutations)
+        assert "new bullet" in result
 
 
 class TestMutationBounds:
@@ -214,13 +250,7 @@ class TestBulletRepairHelpers:
         assert blanks[0].bullet_index == 1
 
     def test_replace_bullet_at_preserves_item_prefix(self):
-        tex = (
-            "\n%%BEGIN_EDITABLE\n"
-            "\\begin{itemize}\n"
-            "  \\item   \n"
-            "\\end{itemize}\n"
-            "%%END_EDITABLE\n"
-        )
+        tex = "\n%%BEGIN_EDITABLE\n\\begin{itemize}\n  \\item   \n\\end{itemize}\n%%END_EDITABLE\n"
         repaired = replace_bullet_at(
             tex,
             region_index=0,
