@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
+
+# Stripped during company-name comparison so "Acme Inc." matches "Acme".
+# Longer forms first so "Corporation" wins over "Corp" on suffix match.
+_COMPANY_SUFFIXES = (
+    "corporation",
+    "incorporated",
+    "limited",
+    "company",
+    "corp",
+    "ltd",
+    "llc",
+    "inc",
+    "co",
+)
 
 
 def _normalize(text: str) -> str:
@@ -10,6 +27,20 @@ def _normalize(text: str) -> str:
     if not text:
         return ""
     return re.sub(r"[-_]", " ", text.lower().strip())
+
+
+def _normalize_company(name: str | None) -> str:
+    """Case-fold, trim, collapse whitespace, strip trailing punctuation and one corporate suffix."""
+    if not name:
+        return ""
+    norm = re.sub(r"\s+", " ", name.strip().lower()).rstrip(".,;:")
+    for suffix in _COMPANY_SUFFIXES:
+        if norm == suffix:
+            return ""
+        if norm.endswith(" " + suffix):
+            norm = norm[: -(len(suffix) + 1)].rstrip(" .,;:")
+            break
+    return norm
 
 
 def score_bullet_relevance(
@@ -54,14 +85,36 @@ def select_relevant_bullets(
     jd_skills: list[str],
     jd_description: str,
     top_n: int = 12,
+    target_reference: str | None = None,
 ) -> list[dict]:
     """Select the top-N most relevant bullet bank entries for a JD.
 
     Each returned entry gets a ``_relevance_score`` field for logging.
     Returns all entries if the bank has fewer than ``top_n`` entries.
+
+    When ``target_reference`` is set, bullets are first filtered to those whose
+    ``reference`` field (the past employer or project where the work was done)
+    matches — case-insensitive, suffix-tolerant. This blocks cross-company
+    attribution in boomerang/return-to-former-employer applications. If no
+    bullets match (the common case: applying to a company the candidate has
+    not worked at), falls back to the unfiltered bank to preserve prior behavior.
     """
+    target_norm = _normalize_company(target_reference)
+
+    candidates = bullet_bank
+    if target_norm:
+        scoped = [b for b in bullet_bank if _normalize_company(b.get("reference")) == target_norm]
+        if scoped:
+            candidates = scoped
+        else:
+            logger.info(
+                "bullet_bank: no entries matched target_reference=%r; "
+                "falling back to unscoped bank",
+                target_reference,
+            )
+
     scored = []
-    for bullet in bullet_bank:
+    for bullet in candidates:
         score = score_bullet_relevance(bullet, jd_skills, jd_description)
         entry = dict(bullet)
         entry["_relevance_score"] = round(score, 4)

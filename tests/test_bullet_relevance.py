@@ -1,6 +1,10 @@
 """Tests for bullet bank relevance scoring."""
 
-from agents.inbox.bullet_relevance import score_bullet_relevance, select_relevant_bullets
+from agents.inbox.bullet_relevance import (
+    _normalize_company,
+    score_bullet_relevance,
+    select_relevant_bullets,
+)
 
 
 class TestScoreBulletRelevance:
@@ -84,3 +88,73 @@ class TestSelectRelevantBullets:
         result = select_relevant_bullets(bank, ["python"], "")
         assert "_relevance_score" in result[0]
         assert isinstance(result[0]["_relevance_score"], float)
+
+
+class TestNormalizeCompany:
+    def test_lowercase_and_trim(self):
+        assert _normalize_company("  Acme  ") == "acme"
+
+    def test_strip_inc_suffix(self):
+        assert _normalize_company("Acme Inc") == "acme"
+        assert _normalize_company("Acme Inc.") == "acme"
+
+    def test_strip_llc_ltd_corp(self):
+        assert _normalize_company("Acme LLC") == "acme"
+        assert _normalize_company("Acme Ltd") == "acme"
+        assert _normalize_company("Acme Corp") == "acme"
+
+    def test_strip_longest_suffix_wins(self):
+        # "corporation" must strip before "corp" matches partially.
+        assert _normalize_company("Acme Corporation") == "acme"
+
+    def test_no_suffix_unchanged(self):
+        assert _normalize_company("Google") == "google"
+
+    def test_none_and_empty(self):
+        assert _normalize_company(None) == ""
+        assert _normalize_company("") == ""
+        assert _normalize_company("   ") == ""
+
+    def test_internal_whitespace_collapsed(self):
+        assert _normalize_company("Miles  Education") == "miles education"
+
+
+class TestTargetReferenceFilter:
+    def _bank(self) -> list[dict]:
+        return [
+            {"id": "a-1", "bullet": "Did A work", "tags": ["python"], "reference": "Acme Inc"},
+            {"id": "a-2", "bullet": "More A work", "tags": ["python"], "reference": "Acme Inc."},
+            {"id": "b-1", "bullet": "Did B work", "tags": ["python"], "reference": "Globex LLC"},
+        ]
+
+    def test_target_reference_none_returns_all(self):
+        result = select_relevant_bullets(self._bank(), ["python"], "", target_reference=None)
+        assert len(result) == 3
+
+    def test_target_reference_filters_other_companies(self):
+        result = select_relevant_bullets(self._bank(), ["python"], "", target_reference="Acme")
+        assert {b["id"] for b in result} == {"a-1", "a-2"}
+
+    def test_target_reference_case_and_suffix_insensitive(self):
+        result = select_relevant_bullets(self._bank(), ["python"], "", target_reference="acme corp")
+        # "acme corp" normalizes to "acme", matches Acme Inc / Acme Inc.
+        assert {b["id"] for b in result} == {"a-1", "a-2"}
+
+    def test_target_reference_no_match_falls_back_to_full_bank(self):
+        # Applying to a never-worked-at company: filter yields 0,
+        # so we fall back to the unscoped bank to preserve prior behavior.
+        result = select_relevant_bullets(self._bank(), ["python"], "", target_reference="Initech")
+        assert len(result) == 3
+
+    def test_target_reference_excludes_bullets_with_missing_reference(self):
+        bank = [
+            {"id": "a-1", "bullet": "Acme work", "tags": ["python"], "reference": "Acme"},
+            {"id": "u-1", "bullet": "Unknown work", "tags": ["python"]},
+            {"id": "u-2", "bullet": "Empty ref", "tags": ["python"], "reference": ""},
+        ]
+        result = select_relevant_bullets(bank, ["python"], "", target_reference="Acme")
+        assert {b["id"] for b in result} == {"a-1"}
+
+    def test_target_reference_empty_string_treated_as_none(self):
+        result = select_relevant_bullets(self._bank(), ["python"], "", target_reference="")
+        assert len(result) == 3

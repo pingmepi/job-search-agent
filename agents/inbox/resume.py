@@ -27,6 +27,7 @@ class EditableRegion:
     content: str
     start_line: int
     end_line: int
+    reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class BulletOccurrence:
 
 _BEGIN_MARKER = "%%BEGIN_EDITABLE"
 _END_MARKER = "%%END_EDITABLE"
+_BEGIN_MARKER_RE = re.compile(r"^%%BEGIN_EDITABLE(?:\[([^\]]+)\])?$")
 _ITEM_LINE_RE = re.compile(r"^(\s*\\item(?:\[[^\]]+\])?\s*)(.*)$")
 
 
@@ -59,22 +61,27 @@ def parse_editable_regions(tex_content: str) -> list[EditableRegion]:
     in_region = False
     region_start = 0
     region_lines: list[str] = []
+    pending_reference: str | None = None
 
     for i, line in enumerate(lines, start=1):
         stripped = line.strip()
-        if stripped == _BEGIN_MARKER:
+        m = _BEGIN_MARKER_RE.match(stripped)
+        if m:
             in_region = True
             region_start = i + 1
             region_lines = []
+            pending_reference = (m.group(1) or "").strip() or None
         elif stripped == _END_MARKER and in_region:
             regions.append(
                 EditableRegion(
                     content="\n".join(region_lines),
                     start_line=region_start,
                     end_line=i - 1,
+                    reference=pending_reference,
                 )
             )
             in_region = False
+            pending_reference = None
         elif in_region:
             region_lines.append(line)
 
@@ -273,7 +280,10 @@ def apply_mutations(
                         continue
                     prefix, payload = parts
                     stripped_line = line.strip()
-                    if stripped_line != original.strip() and _normalize_bullet_text(payload) != normalized_original:
+                    if (
+                        stripped_line != original.strip()
+                        and _normalize_bullet_text(payload) != normalized_original
+                    ):
                         continue
 
                     normalized_replacement = _strip_item_prefix(replacement).strip()

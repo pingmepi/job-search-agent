@@ -40,7 +40,6 @@ def _load_eval_artifacts(artifacts_dir: Path | None = None) -> list[dict[str, An
 def _extract_metrics(artifact: dict[str, Any]) -> dict[str, Any]:
     """Extract a flat metrics dict from an eval_output artifact."""
     er = artifact.get("eval_results", {})
-    usage = er.get("llm_usage_breakdown", {})
 
     # Sum total tokens across all steps
     total_tokens = er.get("llm_total_tokens", 0)
@@ -60,6 +59,7 @@ def _extract_metrics(artifact: dict[str, Any]) -> dict[str, Any]:
         "feedback_label": artifact.get("feedback_label"),
         "feedback_reason": artifact.get("feedback_reason"),
         "forbidden_claims": er.get("forbidden_claims_count", 0),
+        "scope_violations": er.get("mutation_summary", {}).get("scope_violations_count", 0),
         "edit_violations": er.get("edit_scope_violations", 0),
         "draft_length_ok": er.get("draft_length_ok"),
         "cost_ok": er.get("cost_ok"),
@@ -92,23 +92,15 @@ def build_report(artifacts_dir: Path | None = None) -> dict[str, Any]:
     # ── Aggregate stats ───────────────────────────────────────────
     compile_runs = [r for r in runs if r["compile_success"] is not None]
     compile_successes = sum(1 for r in compile_runs if r["compile_success"])
-    compile_rate = (
-        compile_successes / len(compile_runs) if compile_runs else None
-    )
+    compile_rate = compile_successes / len(compile_runs) if compile_runs else None
 
     total_forbidden = sum(r["forbidden_claims"] for r in runs)
     total_violations = sum(r["edit_violations"] for r in runs)
 
     relevance_scores = [
-        r["soft_resume_relevance"]
-        for r in runs
-        if r["soft_resume_relevance"] is not None
+        r["soft_resume_relevance"] for r in runs if r["soft_resume_relevance"] is not None
     ]
-    accuracy_scores = [
-        r["soft_jd_accuracy"]
-        for r in runs
-        if r["soft_jd_accuracy"] is not None
-    ]
+    accuracy_scores = [r["soft_jd_accuracy"] for r in runs if r["soft_jd_accuracy"] is not None]
 
     total_tokens_all = [r["total_tokens"] for r in runs if r["total_tokens"]]
     total_costs_all = [r["total_cost"] for r in runs if r["total_cost"] is not None]
@@ -138,24 +130,16 @@ def build_report(artifacts_dir: Path | None = None) -> dict[str, Any]:
         "total_forbidden_claims": total_forbidden,
         "total_edit_violations": total_violations,
         "avg_resume_relevance": (
-            sum(relevance_scores) / len(relevance_scores)
-            if relevance_scores
-            else None
+            sum(relevance_scores) / len(relevance_scores) if relevance_scores else None
         ),
         "min_resume_relevance": min(relevance_scores) if relevance_scores else None,
         "max_resume_relevance": max(relevance_scores) if relevance_scores else None,
         "avg_jd_accuracy": (
-            sum(accuracy_scores) / len(accuracy_scores)
-            if accuracy_scores
-            else None
+            sum(accuracy_scores) / len(accuracy_scores) if accuracy_scores else None
         ),
         "min_jd_accuracy": min(accuracy_scores) if accuracy_scores else None,
         "max_jd_accuracy": max(accuracy_scores) if accuracy_scores else None,
-        "avg_tokens": (
-            sum(total_tokens_all) / len(total_tokens_all)
-            if total_tokens_all
-            else None
-        ),
+        "avg_tokens": (sum(total_tokens_all) / len(total_tokens_all) if total_tokens_all else None),
         "total_cost": sum(total_costs_all) if total_costs_all else 0.0,
         "success_count": success_count,
         "partial_count": partial_count,
@@ -193,9 +177,7 @@ def format_markdown(report: dict[str, Any]) -> str:
     compile_rate = summary.get("compile_rate")
     if compile_rate is not None:
         icon = "✅" if compile_rate >= 0.95 else "❌"
-        lines.append(
-            f"| Metric | Value | Status |"
-        )
+        lines.append("| Metric | Value | Status |")
         lines.append("| --- | --- | --- |")
         lines.append(
             f"| Compile rate | {compile_rate:.0%}"
@@ -206,13 +188,9 @@ def format_markdown(report: dict[str, Any]) -> str:
         lines.append("| --- | --- | --- |")
 
     fc = summary["total_forbidden_claims"]
-    lines.append(
-        f"| Forbidden claims | {fc} | {'✅' if fc == 0 else '❌'} |"
-    )
+    lines.append(f"| Forbidden claims | {fc} | {'✅' if fc == 0 else '❌'} |")
     ev = summary["total_edit_violations"]
-    lines.append(
-        f"| Edit violations | {ev} | {'✅' if ev == 0 else '❌'} |"
-    )
+    lines.append(f"| Edit violations | {ev} | {'✅' if ev == 0 else '❌'} |")
 
     avg_rel = summary.get("avg_resume_relevance")
     if avg_rel is not None:
@@ -264,11 +242,9 @@ def format_markdown(report: dict[str, Any]) -> str:
     lines.append("## Per-Run Detail")
     lines.append("")
     lines.append(
-        "| Run | Date | Outcome | Errors | Compile | Rollback | Forbidden | Relevance | JD Acc | Tokens |"
+        "| Run | Date | Outcome | Errors | Compile | Rollback | Forbidden | Scope Viol | Relevance | JD Acc | Tokens |"
     )
-    lines.append(
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
-    )
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
 
     for r in runs:
         run_id = r["run_id"]
@@ -282,7 +258,10 @@ def format_markdown(report: dict[str, Any]) -> str:
 
         rollback = "yes" if r["compile_rollback_used"] else "no"
         forbidden = str(r["forbidden_claims"])
-        relevance = f"{r['soft_resume_relevance']:.2f}" if r["soft_resume_relevance"] is not None else "—"
+        scope_viol = str(r.get("scope_violations", 0))
+        relevance = (
+            f"{r['soft_resume_relevance']:.2f}" if r["soft_resume_relevance"] is not None else "—"
+        )
         accuracy = f"{r['soft_jd_accuracy']:.2f}" if r["soft_jd_accuracy"] is not None else "—"
         tokens = f"{r['total_tokens']:,}" if r["total_tokens"] else "—"
         outcome = r.get("task_outcome") or "—"
@@ -296,7 +275,7 @@ def format_markdown(report: dict[str, Any]) -> str:
 
         lines.append(
             f"| `{run_id}` | {date} | {outcome} | {error_cell} | {compile_icon}"
-            f" | {rollback} | {forbidden} | {relevance} | {accuracy} | {tokens} |"
+            f" | {rollback} | {forbidden} | {scope_viol} | {relevance} | {accuracy} | {tokens} |"
         )
 
     lines.append("")
